@@ -1,103 +1,42 @@
 # Code Review Checklist
 
-## Overview
+See `laravel_review_guide.md` for Laravel / PHP patterns.
+See `vue_review_guide.md` for Vue / Vuex / JS patterns.
 
-This reference guide provides comprehensive information for code reviewer.
+## Quick checklist — apply to every diff
 
-## Patterns and Practices
+### Correctness
+- [ ] No null dereference on potentially-null return values
+- [ ] No race condition (separate exists-check + create → use firstOrCreate)
+- [ ] No wrong HTTP status code in a JSON response
+- [ ] Return type matches all code paths in the method signature
 
-### Pattern 1: Best Practice Implementation
+### Security
+- [ ] No whereRaw/DB::statement with string interpolation
+- [ ] No fill/update with $request->all() (mass assignment)
+- [ ] No {!! $var !!} on user-supplied content (XSS)
+- [ ] No v-html on user-supplied content (XSS)
+- [ ] File upload FormRequest rules include mimes: and max:
+- [ ] Resource owns the object it fetches (IDOR check)
 
-**Description:**
-Detailed explanation of the pattern.
+### Data integrity
+- [ ] Multi-write paths wrapped in DB::transaction()
+- [ ] No check-then-act without locking
 
-**When to Use:**
-- Scenario 1
-- Scenario 2
-- Scenario 3
+### Performance
+- [ ] No Eloquent / relationship access inside loops (N+1)
+- [ ] No ->load() inside loops — lift above the loop
+- [ ] Http:: calls chain ->timeout(N)
+- [ ] ->exists() / ->count() used instead of ->get() + isEmpty / count
 
-**Implementation:**
-```typescript
-// Example code implementation
-export class Example {
-  // Implementation details
-}
-```
+### Vue
+- [ ] Every v-for has :key bound to a stable ID (not index)
+- [ ] v-if and v-for not on the same element
+- [ ] addEventListener has paired removeEventListener in beforeUnmount
+- [ ] No direct Vuex state mutation ($store.state.x = y)
+- [ ] Async store actions have try/catch
 
-**Benefits:**
-- Benefit 1
-- Benefit 2
-- Benefit 3
-
-**Trade-offs:**
-- Consider 1
-- Consider 2
-- Consider 3
-
-### Pattern 2: Advanced Technique
-
-**Description:**
-Another important pattern for code reviewer.
-
-**Implementation:**
-```typescript
-// Advanced example
-async function advancedExample() {
-  // Code here
-}
-```
-
-## Guidelines
-
-### Code Organization
-- Clear structure
-- Logical separation
-- Consistent naming
-- Proper documentation
-
-### Performance Considerations
-- Optimization strategies
-- Bottleneck identification
-- Monitoring approaches
-- Scaling techniques
-
-### Security Best Practices
-- Input validation
-- Authentication
-- Authorization
-- Data protection
-
-## Common Patterns
-
-### Pattern A
-Implementation details and examples.
-
-### Pattern B
-Implementation details and examples.
-
-### Pattern C
-Implementation details and examples.
-
-## Anti-Patterns to Avoid
-
-### Anti-Pattern 1
-What not to do and why.
-
-### Anti-Pattern 2
-What not to do and why.
-
-## Tools and Resources
-
-### Recommended Tools
-- Tool 1: Purpose
-- Tool 2: Purpose
-- Tool 3: Purpose
-
-### Further Reading
-- Resource 1
-- Resource 2
-- Resource 3
-
-## Conclusion
-
-Key takeaways for using this reference guide effectively.
+### Tests
+- [ ] Test has at least one assertion beyond assertStatus
+- [ ] Unauthenticated path tested
+- [ ] No withoutExceptionHandling() committed

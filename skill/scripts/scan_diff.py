@@ -4,7 +4,7 @@ scan_diff.py — pattern scanner for the current branch's diff.
 
 Scans `git diff origin/develop...HEAD` for known red-flag patterns from
 .coderabbit.yaml and CLAUDE.md, scoped by the layer of the file being
-touched (Controller / Service / Repository / Vue / Blade).
+touched (Controller / Service / Repository / Model / Vue / Blade).
 
 This is a *pre-pass* for the code-reviewer skill — it gives the agent
 a structured starting point of mechanical pattern matches. The agent
@@ -29,7 +29,6 @@ from dataclasses import dataclass
 
 
 # Capitalised tokens that look like Models in static-call form but aren't.
-# Used to suppress false positives in the "direct Eloquent" pattern.
 NON_MODEL_PREFIXES = {
     "Arr", "Artisan", "Auth", "Blade", "Bus", "Cache", "Carbon", "Config",
     "Cookie", "Crypt", "DB", "Date", "Event", "File", "Gate", "Hash",
@@ -57,53 +56,87 @@ class Finding:
     snippet: str
 
 
-# Each rule: (severity, rule-id, compiled-regex, message, predicate?)
-# predicate(match, line) -> bool; if False the finding is suppressed.
 def model_predicate(m, _line):
     return m.group(1) not in NON_MODEL_PREFIXES
 
+
+# ─── Rules applied to every file ────────────────────────────────────────────
 
 ALWAYS_RULES = [
     ("MUST", "no-dd-dump-die",
      re.compile(r"\b(?:dd|dump|die)\s*\("),
      "dd()/dump()/die() — forbidden in committed code", None),
+
     ("MUST", "no-superglobals",
      re.compile(r"\$_(?:SERVER|ENV|GET|POST|REQUEST)\b"),
      "PHP superglobal — use Laravel helpers (request(), config())", None),
+
     ("MUST", "raw-sql-interpolation",
      re.compile(r"->whereRaw\s*\(\s*['\"][^'\"]*\$|DB::statement\s*\(\s*['\"][^'\"]*\$"),
-     "whereRaw/DB::statement with interpolated value — SQL injection risk", None),
+     "whereRaw/DB::statement with interpolated value — SQL injection risk; use bound parameters", None),
+
+    ("MUST", "no-debug-output",
+     re.compile(r"\b(?:error_log|var_dump|print_r)\s*\("),
+     "error_log/var_dump/print_r — use Log::info/error/debug instead", None),
 ]
+
+# ─── PHP-wide (all .php files) ──────────────────────────────────────────────
+
+PHP_RULES = [
+    ("MUST", "missing-return-type",
+     re.compile(r"^\s*(?:public|protected|private)\s+(?:static\s+)?function\s+\w+\s*\([^)]*\)\s*\{"),
+     "method signature missing return type — add return type declaration", None),
+
+    ("MUST", "env-outside-config",
+     re.compile(r"\benv\s*\("),
+     "env() outside config/ — returns null when config is cached; use config() with a config key instead", None),
+
+    ("WARN", "http-without-timeout",
+     re.compile(r"\bHttp::(get|post|put|patch|delete|send|withHeaders|withToken|withBasicAuth|withBody|asForm|asJson)\s*\("),
+     "Http:: call — verify ->timeout(N) is chained; without it the request can hang indefinitely", None),
+]
+
+# ─── Controllers ────────────────────────────────────────────────────────────
 
 CONTROLLER_RULES = [
     ("MUST", "no-direct-model",
      MODEL_STATIC_RE,
-     "direct Eloquent in Controller — delegate to Repository/Service", model_predicate),
+     "direct Eloquent in Controller — delegate to Repository or Service", model_predicate),
+
     ("MUST", "no-inline-validate",
      re.compile(r"\$request->validate\s*\("),
-     "inline validation — move to a FormRequest", None),
+     "inline validation — move to a dedicated FormRequest class", None),
+
     ("MUST", "no-inline-role",
      re.compile(r"auth\(\s*\)->user\(\s*\)->role\b"),
-     "inline role check — use a Policy/Gate", None),
-    ("WARN", "request-file-on-base",
+     "inline role check — use a Policy or Gate", None),
+
+    ("WARN", "request-file-no-mimes",
      re.compile(r"\$request->(file|hasFile|allFiles)\s*\("),
-     "$request->file/hasFile — ensure $request is a FormRequest with mimes:+max: rules, not the base Request", None),
+     "$request->file/hasFile — confirm FormRequest has both mimes:/mimetypes: and max: on the file rule", None),
 ]
+
+# ─── Services ───────────────────────────────────────────────────────────────
 
 SERVICE_RULES = [
     ("MUST", "no-request-in-service",
      re.compile(r"use\s+Illuminate\\Http\\Request\b|\bRequest\s+\$\w+"),
-     "Request used inside a Service — pass plain values or DTOs", None),
+     "Request in Service — pass plain values or DTOs; Services must be HTTP-agnostic", None),
+
     ("MUST", "no-auth-in-service",
      re.compile(r"\bAuth::|^\s*.*\bauth\(\s*\)->"),
-     "Auth facade / auth() used in Service — pass the user as a parameter", None),
+     "Auth facade / auth() in Service — resolve the user in the Controller and pass it as a parameter", None),
+
     ("MUST", "no-response-in-service",
      re.compile(r"\b(?:redirect|response)\s*\("),
-     "redirect()/response() in Service — belongs in Controller", None),
+     "redirect()/response() in Service — HTTP response construction belongs in the Controller", None),
+
     ("MUST", "no-direct-model",
      MODEL_STATIC_RE,
-     "direct Eloquent in Service — use a Repository", model_predicate),
+     "direct Eloquent in Service — all DB access must go through a Repository", model_predicate),
 ]
+
+# ─── Repositories ───────────────────────────────────────────────────────────
 
 REPOSITORY_RULES = [
     ("MUST", "no-http-in-repo",
@@ -111,52 +144,98 @@ REPOSITORY_RULES = [
      "HTTP concern (Auth/redirect/response/session) in Repository", None),
 ]
 
+# ─── Models ─────────────────────────────────────────────────────────────────
+
+MODEL_RULES = [
+    ("WARN", "empty-guarded",
+     re.compile(r"\$guarded\s*=\s*\[\s*\]"),
+     "$guarded = [] — use an explicit $fillable list to prevent mass-assignment of sensitive columns", None),
+
+    ("WARN", "fill-all-request",
+     re.compile(r"->(?:fill|update)\s*\(\s*\$request->all\s*\(\s*\)\s*\)"),
+     "fill/update with $request->all() — explicitly whitelist fields to prevent mass assignment", None),
+]
+
+# ─── FormRequests ───────────────────────────────────────────────────────────
+
+FORM_REQUEST_RULES = [
+    ("WARN", "authorize-true",
+     re.compile(r"return\s+true\s*;"),
+     "authorize() returns true unconditionally — add a Policy/Gate check or acknowledge the intent", None),
+]
+
+# ─── Vue / JS ───────────────────────────────────────────────────────────────
+
 VUE_RULES = [
     ("WARN", "no-console-log",
      re.compile(r"\bconsole\.(?:log|debug)\s*\("),
      "console.log/debug in committed code", None),
+
     ("WARN", "no-debugger",
      re.compile(r"\bdebugger\s*[;\n]"),
      "debugger statement in committed code", None),
-    ("WARN", "v-html",
+
+    ("MUST", "v-html",
      re.compile(r"\bv-html\s*="),
-     "v-html — XSS risk unless the value is sanitised", None),
-    ("WARN", "direct-store-mutate",
+     "v-html — XSS risk if the value is not sanitised before assignment (DOMPurify or trusted internal source only)", None),
+
+    ("MUST", "direct-store-mutate",
      re.compile(r"\$store\.state\.[A-Za-z_][\w.]*\s*="),
-     "direct Vuex state mutation — dispatch an action / commit a mutation", None),
+     "direct Vuex state mutation — use commit('mutation') so DevTools tracks the change", None),
+
+    ("WARN", "key-is-index",
+     re.compile(r":key\s*=\s*[\"']?\s*index\s*[\"']?|:key\s*=\s*\"\s*\$index\s*\""),
+     ":key bound to loop index — use a stable unique ID (record.id) so Vue patches the right instances when items reorder", None),
+
+    ("WARN", "direct-dom",
+     re.compile(r"\bdocument\.(querySelector|getElementById|getElementsBy)\s*\("),
+     "direct DOM manipulation in Vue — use this.$refs.name instead so Vue controls the element lifecycle", None),
+
+    ("WARN", "add-event-listener",
+     re.compile(r"\baddEventListener\s*\("),
+     "addEventListener — verify a matching removeEventListener exists in beforeUnmount()/destroyed() to prevent memory leaks", None),
 ]
+
+# ─── Blade ──────────────────────────────────────────────────────────────────
 
 BLADE_RULES = [
-    ("MUST", "no-unescaped-output",
+    ("MUST", "unescaped-output",
      re.compile(r"\{!!\s*\$"),
-     "unescaped Blade output — XSS risk if value comes from user input", None),
-    ("MUST", "no-env-in-blade",
-     re.compile(r"\benv\s*\("),
-     "env() in Blade — returns null when config is cached, use config()", None),
-]
+     "unescaped Blade output {!! $var !!} — XSS risk if value originates from user input", None),
 
-# Repo-wide PHP type checks: function signature without a return type.
-TYPE_RULES = [
-    ("MUST", "missing-return-type",
-     re.compile(r"^\s*(?:public|protected|private)\s+(?:static\s+)?function\s+\w+\s*\([^)]*\)\s*\{"),
-     "method signature missing return type — see .coderabbit.yaml Type declarations", None),
+    ("MUST", "env-in-blade",
+     re.compile(r"\benv\s*\("),
+     "env() in Blade — returns null when config is cached; use config() instead", None),
 ]
 
 
 def select_rules(path: str):
     rules = list(ALWAYS_RULES)
     if path.endswith(".php"):
-        rules += TYPE_RULES
+        # env() rule only for non-config files
+        if not path.startswith("config/"):
+            rules += PHP_RULES
+        else:
+            # In config files, env() is correct — skip PHP_RULES env check
+            rules += [r for r in PHP_RULES if r[1] != "env-outside-config"]
+
         if "/Http/Controllers/" in path:
             rules += CONTROLLER_RULES
         elif "/Services/" in path:
             rules += SERVICE_RULES
         elif "/Repositories/" in path:
             rules += REPOSITORY_RULES
+        elif "/Models/" in path:
+            rules += MODEL_RULES
+        elif "/Http/Requests/" in path:
+            rules += FORM_REQUEST_RULES
+
     if path.endswith(".vue"):
         rules += VUE_RULES
+
     if path.endswith(".blade.php"):
         rules += BLADE_RULES
+
     return rules
 
 
@@ -238,11 +317,11 @@ def render(findings, show_snippets: bool):
             if show_snippets:
                 print(f"          | {f.snippet}")
 
-    counts = {"MUST": 0, "WARN": 0}
+    counts: dict[str, int] = {}
     for f in findings:
         counts[f.severity] = counts.get(f.severity, 0) + 1
     print()
-    print(f"Total: {counts['MUST']} MUST FIX, {counts['WARN']} WARN")
+    print(f"Total: {counts.get('MUST', 0)} MUST FIX, {counts.get('WARN', 0)} WARN")
 
 
 def main():

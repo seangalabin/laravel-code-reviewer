@@ -1,103 +1,234 @@
 # Common Antipatterns
 
-## Overview
+Patterns that appear frequently in PRs and cause bugs, performance issues, or security problems. Each entry has the bad pattern, why it's wrong, and the fix.
 
-This reference guide provides comprehensive information for code reviewer.
+---
 
-## Patterns and Practices
+## PHP / Laravel
 
-### Pattern 1: Best Practice Implementation
+### N+1 — query inside a loop
+```php
+// BAD
+foreach ($properties as $property) {
+    $assets = Asset::where('property_id', $property->id)->get(); // 1 query per iteration
+}
 
-**Description:**
-Detailed explanation of the pattern.
-
-**When to Use:**
-- Scenario 1
-- Scenario 2
-- Scenario 3
-
-**Implementation:**
-```typescript
-// Example code implementation
-export class Example {
-  // Implementation details
+// GOOD
+$assets = Asset::whereIn('property_id', $propertyIds)->get()->groupBy('property_id');
+foreach ($properties as $property) {
+    $propertyAssets = $assets->get($property->id, collect());
 }
 ```
 
-**Benefits:**
-- Benefit 1
-- Benefit 2
-- Benefit 3
+### ->load() inside a loop
+```php
+// BAD
+foreach ($orders as $order) {
+    $order->load('items');  // 1 query per order
+}
 
-**Trade-offs:**
-- Consider 1
-- Consider 2
-- Consider 3
+// GOOD
+$orders->load('items');  // 1 query for all orders, called before the loop
+```
 
-### Pattern 2: Advanced Technique
+### Race condition: exists + create
+```php
+// BAD — two requests can both pass the check and both insert
+if (!Agent::where('email', $email)->exists()) {
+    Agent::create(['email' => $email]);
+}
 
-**Description:**
-Another important pattern for code reviewer.
+// GOOD — atomic
+Agent::firstOrCreate(['email' => $email], $otherFields);
+```
 
-**Implementation:**
-```typescript
-// Advanced example
-async function advancedExample() {
-  // Code here
+### Multi-write without transaction
+```php
+// BAD — if the second write fails, the first is committed with no rollback
+$order = Order::create($data);
+$order->items()->createMany($items);
+
+// GOOD
+DB::transaction(function () use ($data, $items) {
+    $order = Order::create($data);
+    $order->items()->createMany($items);
+});
+```
+
+### Mass assignment via $request->all()
+```php
+// BAD — user can inject any field (is_admin, balance, role, etc.)
+$model->update($request->all());
+$model->fill($request->all())->save();
+
+// GOOD
+$model->update($request->safe()->only(['name', 'email', 'phone']));
+// or define $fillable on the Model and use validated():
+$model->update($request->validated());
+```
+
+### env() outside config files
+```php
+// BAD — returns null when config is cached in production
+$key = env('STRIPE_SECRET');
+
+// GOOD — define in config/services.php, call via config()
+$key = config('services.stripe.secret');
+```
+
+### Http:: without timeout
+```php
+// BAD — hangs indefinitely, blocks a queue worker slot
+$response = Http::get($url);
+
+// GOOD
+$response = Http::timeout(30)->get($url);
+```
+
+### Direct Eloquent in a Controller
+```php
+// BAD — violates Repository layer
+class OrderController {
+    public function index() {
+        $orders = Order::where('user_id', auth()->id())->get();
+    }
+}
+
+// GOOD
+class OrderController {
+    public function index(OrderRepository $repo) {
+        $orders = $repo->getForUser(auth()->user());
+    }
 }
 ```
 
-## Guidelines
+### Inline validation in a Controller
+```php
+// BAD
+public function store(Request $request) {
+    $request->validate(['name' => 'required']);
+}
 
-### Code Organization
-- Clear structure
-- Logical separation
-- Consistent naming
-- Proper documentation
+// GOOD — move to a FormRequest
+public function store(StoreOrderRequest $request) {
+    // validation already passed
+}
+```
 
-### Performance Considerations
-- Optimization strategies
-- Bottleneck identification
-- Monitoring approaches
-- Scaling techniques
+### authorize() always returns true
+```php
+// BAD — any user can do anything
+public function authorize(): bool { return true; }
 
-### Security Best Practices
-- Input validation
-- Authentication
-- Authorization
-- Data protection
+// GOOD
+public function authorize(): bool {
+    return $this->user()->can('create', Order::class);
+}
+```
 
-## Common Patterns
+### Logging via echo / error_log
+```php
+// BAD — goes to PHP error log or stdout, not configurable
+echo "processing order $id";
+error_log("failed: " . $e->getMessage());
 
-### Pattern A
-Implementation details and examples.
+// GOOD — structured, level-aware, routes through Laravel's log channels
+Log::info('Processing order', ['order_id' => $id]);
+Log::error('Order processing failed', ['order_id' => $id, 'error' => $e->getMessage()]);
+```
 
-### Pattern B
-Implementation details and examples.
+---
 
-### Pattern C
-Implementation details and examples.
+## Vue / JavaScript
 
-## Anti-Patterns to Avoid
+### Missing :key in v-for
+```html
+<!-- BAD — Vue reuses DOM nodes in document order -->
+<tr v-for="order in orders">
 
-### Anti-Pattern 1
-What not to do and why.
+<!-- GOOD -->
+<tr v-for="order in orders" :key="order.id">
+```
 
-### Anti-Pattern 2
-What not to do and why.
+### Index as :key
+```html
+<!-- BAD — when items reorder, Vue patches the wrong instances -->
+<li v-for="(item, index) in items" :key="index">
 
-## Tools and Resources
+<!-- GOOD — use a stable database ID -->
+<li v-for="item in items" :key="item.id">
+```
 
-### Recommended Tools
-- Tool 1: Purpose
-- Tool 2: Purpose
-- Tool 3: Purpose
+### v-if + v-for on same element
+```html
+<!-- BAD — v-for runs first, then v-if filters per item — wasteful -->
+<li v-for="item in items" v-if="item.active" :key="item.id">
 
-### Further Reading
-- Resource 1
-- Resource 2
-- Resource 3
+<!-- GOOD — filter in a computed -->
+<li v-for="item in activeItems" :key="item.id">
+```
 
-## Conclusion
+### Direct Vuex state mutation
+```js
+// BAD — bypasses DevTools tracking, breaks strict mode
+this.$store.state.orders.list = [];
 
-Key takeaways for using this reference guide effectively.
+// GOOD
+this.$store.commit('orders/SET_LIST', []);
+```
+
+### addEventListener without cleanup
+```js
+// BAD — handler persists after component is destroyed; accumulates on re-mount
+mounted() {
+    window.addEventListener('resize', this.onResize);
+}
+
+// GOOD
+mounted() {
+    this._onResize = () => this.onResize();
+    window.addEventListener('resize', this._onResize);
+},
+beforeUnmount() {
+    window.removeEventListener('resize', this._onResize);
+}
+```
+
+### Async action without error handling
+```js
+// BAD — unhandled rejection on non-2xx; UI stays in loading state
+async fetchAgent({ commit }, id) {
+    const { data } = await axios.get(`/api/agents/${id}`);
+    commit('SET_AGENT', data.data);
+}
+
+// GOOD
+async fetchAgent({ commit }, id) {
+    try {
+        const { data } = await axios.get(`/api/agents/${id}`);
+        commit('SET_AGENT', data.data);
+    } catch (error) {
+        commit('SET_ERROR', error.response?.data?.message ?? 'Failed to load agent');
+    } finally {
+        commit('SET_LOADING', false);
+    }
+}
+```
+
+### v-html with user content
+```html
+<!-- BAD — XSS if $description is user-supplied -->
+<div v-html="agent.description"></div>
+
+<!-- GOOD — only when content is from a trusted internal source -->
+<!-- or sanitise first: <div v-html="sanitise(agent.description)"> -->
+```
+
+### Direct DOM manipulation
+```js
+// BAD — bypasses Vue's lifecycle; breaks SSR; ref is lost after re-render
+document.querySelector('#search-input').focus();
+
+// GOOD
+this.$refs.searchInput.focus();
+```
