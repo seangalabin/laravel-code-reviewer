@@ -1,0 +1,18 @@
+{
+  "name": "@redhq/code-reviewer",
+  "version": "1.0.0",
+  "description": "Claude Code review skill for Laravel / Bitbucket projects",
+  "bin": {
+    "code-reviewer": "./bin/install.js"
+  },
+  "files": [
+    "bin/",
+    "skill/"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "keywords": ["claude", "code-review", "laravel", "bitbucket"],
+  "license": "UNLICENSED",
+  "private": true
+}
