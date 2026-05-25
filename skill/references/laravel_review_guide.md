@@ -1,6 +1,6 @@
 # Laravel Review Guide
 
-Patterns, anti-patterns, and correctness traps specific to this Laravel 10 / PHP 8.3 monolith. Secondary to `.coderabbit.yaml` — use this to fill gaps the yaml doesn't cover.
+Patterns, anti-patterns, and correctness traps specific to this Laravel 10 / PHP 8.3 monolith. Rules in `.coderabbit.yaml` take precedence over everything here — read that file first if it exists.
 
 ---
 
@@ -106,6 +106,149 @@ Methods returning `null` when no record is found should declare `?Model` return 
 Use the Laravel logging stack, not PHP primitives:
 - `Log::info('msg', ['context' => $data])` — structured, level-aware, configurable per environment
 - `error_log(...)` / `echo` — goes to PHP error log or stdout, not Laravel's channels
+
+---
+
+---
+
+## DTOs (Data Transfer Objects)
+
+### Why DTOs at layer boundaries
+
+Data that crosses from Controller into Service (or from Service into a Repository command) must be typed, not a raw `array`. A typed DTO:
+- Makes the method signature self-documenting — callers know exactly what fields are required
+- Fails fast with a type error rather than a silent missing-key bug
+- Is trivially mockable and assertable in tests
+
+### Minimal DTO pattern
+
+```php
+final class UserData
+{
+    public function __construct(
+        public readonly string $name,
+        public readonly string $email,
+        public readonly ?string $phone = null,
+    ) {}
+
+    public static function fromRequest(StoreUserRequest $request): self
+    {
+        return new self(
+            name: $request->validated('name'),
+            email: $request->validated('email'),
+            phone: $request->validated('phone'),
+        );
+    }
+}
+```
+
+### What to flag
+
+- `function create(array $data)` on a Service — the caller can pass anything; use a DTO.
+- `function create(UserData $data)` on a Repository — fine; the Repository just persists it.
+- DTOs that type-hint `Request` — they must not know about HTTP.
+
+---
+
+## Jobs, Events, Listeners, Observers
+
+### When to require a Job
+
+Dispatch a Job instead of doing work inline when:
+- The operation takes >~500ms (email, PDF, image processing, external API)
+- The operation must survive HTTP request timeouts
+- The operation needs retry logic
+
+```php
+// BAD — blocks the web request for every PDF
+public function store(StoreOrderRequest $request): OrderResource {
+    $order = $this->service->create(...);
+    $pdf = PDF::loadView('order', compact('order'))->save($path);  // 2-3s
+    Mail::to($order->user)->send(new OrderConfirmation($order, $pdf));
+    return new OrderResource($order);
+}
+
+// GOOD — returns immediately; worker handles the rest
+public function store(StoreOrderRequest $request): OrderResource {
+    $order = $this->service->create(...);
+    GenerateOrderPdf::dispatch($order);
+    return new OrderResource($order);
+}
+```
+
+### When to require an Event + Listener
+
+Use an Event when a single action has multiple unrelated side effects — keeps each side effect in its own Listener, decoupled from the triggering action:
+
+```php
+// BAD — Controller owns all side effects
+$user = $this->service->create($data);
+Mail::to($user)->send(new WelcomeMail($user));
+Slack::notify("#signups", "New user: {$user->email}");
+$user->subscription()->create(['plan' => 'trial']);
+
+// GOOD — Controller fires one event; Listeners handle each effect
+event(new UserRegistered($user));
+```
+
+### When to require an Observer
+
+Use a Model Observer instead of inline hooks when:
+- The same lifecycle event (`created`, `updated`, `deleted`) is handled in multiple Controllers
+- A Controller or Service contains `if ($model->wasRecentlyCreated)` logic
+
+```php
+// In a Service — BAD
+if ($user->wasRecentlyCreated) {
+    $this->repo->createProfile($user);
+    Cache::forget("user:{$user->id}");
+}
+
+// In UserObserver — GOOD
+public function created(User $user): void {
+    $user->profile()->create();
+    Cache::forget("user:{$user->id}");
+}
+```
+
+---
+
+## API Resources
+
+### Never return raw model data in a JSON response
+
+`->toArray()`, `->toJson()`, `response()->json($model)` return all columns including any that are hidden via `$hidden` only in some serialisation paths, and expose the internal schema to API consumers:
+
+```php
+// BAD — exposes password_hash, remember_token, internal IDs
+return response()->json($user->toArray());
+return response()->json($users->map->toArray());
+
+// GOOD — explicit field contract
+return new UserResource($user);
+return UserResource::collection($users);
+return UserResource::collection($users->paginate(20));
+```
+
+### Resource must list fields explicitly
+
+An API Resource that calls `parent::toArray($request)` or `$this->resource->toArray()` defeats its own purpose:
+
+```php
+// BAD — passes all model attributes through
+public function toArray(Request $request): array {
+    return parent::toArray($request);
+}
+
+// GOOD — explicit field list
+public function toArray(Request $request): array {
+    return [
+        'id'    => $this->id,
+        'name'  => $this->name,
+        'email' => $this->email,
+    ];
+}
+```
 
 ---
 

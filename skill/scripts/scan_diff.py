@@ -84,12 +84,16 @@ ALWAYS_RULES = [
 
 PHP_RULES = [
     ("MUST", "missing-return-type",
-     re.compile(r"^\s*(?:public|protected|private)\s+(?:static\s+)?function\s+\w+\s*\([^)]*\)\s*\{"),
-     "method signature missing return type — add return type declaration", None),
+     re.compile(r"^\s*(?:public|protected|private)\s+(?:static\s+)?function\s+\w+\s*\([^)]*\)\s*$"),
+     "method signature missing return type — add `: ReturnType` before the opening brace", None),
 
     ("MUST", "env-outside-config",
      re.compile(r"\benv\s*\("),
      "env() outside config/ — returns null when config is cached; use config() with a config key instead", None),
+
+    ("WARN", "missing-strict-types",
+     re.compile(r"^<\?php\s*$"),
+     "new PHP file — confirm declare(strict_types=1) appears as first statement after <?php", None),
 
     ("WARN", "http-without-timeout",
      re.compile(r"\bHttp::(get|post|put|patch|delete|send|withHeaders|withToken|withBasicAuth|withBody|asForm|asJson)\s*\("),
@@ -108,12 +112,28 @@ CONTROLLER_RULES = [
      "inline validation — move to a dedicated FormRequest class", None),
 
     ("MUST", "no-inline-role",
-     re.compile(r"auth\(\s*\)->user\(\s*\)->role\b"),
-     "inline role check — use a Policy or Gate", None),
+     re.compile(r"(?:auth\(\s*\)->user\(\s*\)->role\b|\$user->role\s*===|\$request->user\(\s*\)->is_admin)"),
+     "inline role/permission check — use a Policy or Gate", None),
+
+    ("MUST", "no-raw-toarray-response",
+     re.compile(r"->toArray\s*\(\s*\)|->toJson\s*\(\s*\)|response\(\s*\)->json\s*\(\s*\$\w+->toArray"),
+     "raw ->toArray() / ->toJson() in controller response — use an API Resource class instead", None),
+
+    ("MUST", "no-raw-model-json",
+     re.compile(r"response\(\s*\)->json\s*\(\s*\$[a-z]\w*\s*\)"),
+     "response()->json($model) — use an API Resource to control the schema", None),
+
+    ("MUST", "no-mass-assignment-request-all",
+     re.compile(r"::create\s*\(\s*\$request->all\s*\(\s*\)\s*\)|->update\s*\(\s*\$request->all\s*\(\s*\)\s*\)"),
+     "mass assignment via $request->all() — use $request->safe()->only([...]) or $request->validated() with $fillable", None),
 
     ("WARN", "request-file-no-mimes",
      re.compile(r"\$request->(file|hasFile|allFiles)\s*\("),
      "$request->file/hasFile — confirm FormRequest has both mimes:/mimetypes: and max: on the file rule", None),
+
+    ("WARN", "no-di-new-service",
+     re.compile(r"\bnew\s+[A-Z][A-Za-z0-9]+(?:Service|Repository|Manager|Handler)\s*\("),
+     "uninjected Service/Repository — use constructor injection so the container can resolve it and tests can mock it", None),
 ]
 
 # ─── Services ───────────────────────────────────────────────────────────────
@@ -131,9 +151,21 @@ SERVICE_RULES = [
      re.compile(r"\b(?:redirect|response)\s*\("),
      "redirect()/response() in Service — HTTP response construction belongs in the Controller", None),
 
+    ("MUST", "no-session-in-service",
+     re.compile(r"\bsession\s*\("),
+     "session() in Service — HTTP session access belongs in the Controller or Middleware", None),
+
     ("MUST", "no-direct-model",
      MODEL_STATIC_RE,
      "direct Eloquent in Service — all DB access must go through a Repository", model_predicate),
+
+    ("WARN", "array-boundary-dto",
+     re.compile(r"function\s+\w+\s*\(\s*array\s+\$\w+\s*[,)]"),
+     "Service method accepts raw array — consider a typed DTO class for the cross-layer boundary", None),
+
+    ("WARN", "synchronous-mail-in-service",
+     re.compile(r"\bMail::(to|send|queue)\s*\("),
+     "synchronous Mail:: in Service — consider dispatching a queued Job or firing a UserRegistered event", None),
 ]
 
 # ─── Repositories ───────────────────────────────────────────────────────────
@@ -196,6 +228,70 @@ VUE_RULES = [
      "addEventListener — verify a matching removeEventListener exists in beforeUnmount()/destroyed() to prevent memory leaks", None),
 ]
 
+# ─── API Resources ──────────────────────────────────────────────────────────
+
+RESOURCE_RULES = [
+    ("MUST", "resource-db-query",
+     MODEL_STATIC_RE,
+     "Eloquent query inside an API Resource toArray() — Resources must only transform already-loaded data; eager-load in the Repository/Controller instead", model_predicate),
+
+    ("WARN", "resource-missing-when-loaded",
+     re.compile(r"\$this->(?!when(?:Loaded|Pivot|Count|Has)?)\w+\s*(?:->|\[)"),
+     "relation accessed directly in Resource — use $this->whenLoaded('relation') to avoid N+1 when relation is not eager-loaded", None),
+]
+
+# ─── Console Commands ────────────────────────────────────────────────────────
+
+COMMAND_RULES = [
+    ("MUST", "command-direct-model",
+     MODEL_STATIC_RE,
+     "direct Eloquent in Console Command handle() — delegate to a Repository", model_predicate),
+
+    ("MUST", "command-business-logic",
+     re.compile(r"(?:if\s*\(|foreach\s*\(|for\s*\(|while\s*\()"),
+     "business logic in Console Command handle() — delegate conditionals and loops to a Service or Repository", None),
+
+    ("WARN", "command-echo-output",
+     re.compile(r"\becho\s+"),
+     "echo in Console Command — use $this->info() / $this->error() so output goes through Laravel's console stack", None),
+]
+
+# ─── Migrations ──────────────────────────────────────────────────────────────
+
+MIGRATION_RULES = [
+    ("WARN", "migration-model-import",
+     re.compile(r"use\s+App\\Models\\[A-Z]\w+\s*;"),
+     "Model class imported in migration — use DB:: or raw table names so the migration survives Model renames or deletions", None),
+
+    ("WARN", "migration-model-reference",
+     re.compile(r"\b[A-Z][A-Za-z0-9]+::(?:create|find|where|insert|update|delete|all|get)\s*\("),
+     "Model static call in migration — use DB:: or raw table names so the migration survives Model renames", None),
+
+    ("WARN", "migration-no-down",
+     re.compile(r"public\s+function\s+down\s*\(\s*\)\s*$"),
+     "down() method is present but may be empty — ensure rollback logic is implemented", None),
+]
+
+# ─── Tests ───────────────────────────────────────────────────────────────────
+
+TEST_RULES = [
+    ("MUST", "test-stray-http",
+     re.compile(r"\bHttp::(get|post|put|patch|delete)\s*\("),
+     "outbound Http:: in test without Http::fake() — add Http::fake() or fakeHttpResponse() to prevent stray requests", None),
+
+    ("MUST", "test-reflection-private",
+     re.compile(r"ReflectionClass|ReflectionMethod|setAccessible\s*\("),
+     "testing private/protected method via reflection — test observable behaviour through the public API instead", None),
+
+    ("WARN", "test-without-exception-handling",
+     re.compile(r"->withoutExceptionHandling\s*\("),
+     "withoutExceptionHandling() — debugging aid must not be merged", None),
+
+    ("WARN", "test-mockery-direct",
+     re.compile(r"\bMockery::mock\s*\("),
+     "Mockery::mock() used directly — use mock(ClassName::class) from tests/Helpers.php so the binding resolves via the container", None),
+]
+
 # ─── Blade ──────────────────────────────────────────────────────────────────
 
 BLADE_RULES = [
@@ -229,6 +325,14 @@ def select_rules(path: str):
             rules += MODEL_RULES
         elif "/Http/Requests/" in path:
             rules += FORM_REQUEST_RULES
+        elif "/Http/Resources/" in path:
+            rules += RESOURCE_RULES
+        elif "/Console/Commands/" in path:
+            rules += COMMAND_RULES
+        elif path.startswith("database/migrations/"):
+            rules += MIGRATION_RULES
+        elif path.startswith("tests/"):
+            rules += TEST_RULES
 
     if path.endswith(".vue"):
         rules += VUE_RULES
