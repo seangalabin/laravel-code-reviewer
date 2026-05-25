@@ -6,22 +6,53 @@ A [Claude Code](https://claude.ai/code) skill that reviews pull requests on Lara
 
 Run `/code-reviewer` in Claude Code and it will:
 
-1. Diff the current branch against `develop`
-2. Run Pint, Pest, and ESLint as gates
-3. Apply the rules from `.coderabbit.yaml` and `CLAUDE.md`
-4. Post each finding as an **inline comment** on the Bitbucket PR, anchored to the exact file and line
-5. Post a compliance summary (gate results + merge verdict) as a top-level PR comment
+1. Read `.coderabbit.yaml` and `CLAUDE.md` — project rules take precedence over all defaults
+2. Diff the current branch against `develop`
+3. Run a mechanical pre-pass (`scan_diff.py`) over the changed lines to surface red flags
+4. Apply a 14-dimension review lens to every hunk (see below)
+5. Post each finding as an **inline comment** on the Bitbucket PR, anchored to the exact file and line
+6. Post a scorecard (Architecture, PSR-12, Security, Testability) and merge verdict as a summary comment
+
+## Review dimensions
+
+| # | Dimension | Examples |
+|---|---|---|
+| 1 | Architecture & Layering | Controller→Service→Repository, DTOs, FormRequests, Console Commands |
+| 2 | PSR-12 & Code Standards | `strict_types`, return types, parameter types, property types, naming |
+| 3 | Security | Mass assignment, SQL injection, IDOR, inline role checks, file uploads, XSS |
+| 4 | Laravel Best Practices | N+1, API Resources, Jobs/Events/Observers, DI, `DB::transaction()` |
+| 5 | Models | Business logic, HTTP concerns, scopes vs own queries |
+| 6 | Enums | Business logic beyond label/color helpers |
+| 7 | Correctness | Null dereferences, race conditions, wrong status codes |
+| 8 | Data Integrity | Multi-write transactions, check-then-act, locking |
+| 9 | Performance | N+1, full-table loads, `Http::` timeout |
+| 10 | Error Handling | Swallowed exceptions, missing HTTP error handling |
+| 11 | Migrations | Non-null without default (table lock risk), Model refs, empty `down()` |
+| 12 | Vue / JavaScript | `:key`, Vuex mutation, `v-html` XSS, event listener leaks |
+| 13 | Testing | Stray HTTP, reflection, `withoutExceptionHandling()`, missing assertions |
+| 14 | API Design | Status codes, pagination, Resource field exposure |
+
+## Severity
+
+| | Severity | Merge policy |
+|---|---|---|
+| 🔴 | **Critical** | Blocks merge immediately |
+| 🟠 | **Major** | Must fix before merge |
+| 🟡 | **Minor** | Should fix, doesn't block |
+| 🔵 | **Suggestion** | Consider |
+
+Each finding includes the offending code, an explanation of why it's a problem, and a corrected example.
 
 ## Requirements
 
 - Node.js 16+
-- PHP project using [PestPHP](https://pestphp.com/), [Laravel Pint](https://laravel.com/docs/pint), and [ESLint](https://eslint.org/)
+- Laravel project with [PestPHP](https://pestphp.com/) and [Laravel Pint](https://laravel.com/docs/pint)
 - [Claude Code](https://claude.ai/code) CLI
 - A Bitbucket repository with an open PR for the branch being reviewed
 
 ## Installation
 
-Run this inside any Laravel project:
+**Option A — npx (recommended):**
 
 ```bash
 npx github:seangalabin/laravel-code-reviewer
@@ -33,11 +64,15 @@ To install into a specific directory:
 npx github:seangalabin/laravel-code-reviewer /path/to/project
 ```
 
-This copies the skill files into `.claude/skills/code-reviewer/` in the target project.
+**Option B — `.skill` file:**
+
+Download `code-reviewer.skill` from this repo and install it via the Claude Code skill manager.
+
+Both options copy the skill files into `.claude/skills/code-reviewer/` in the target project.
 
 ## Setup
 
-After installing, add your Bitbucket credentials to `.claude/settings.local.json` in the project root (this file is gitignored — each developer does this once):
+After installing, add your Bitbucket credentials to `.claude/settings.local.json` in the project root (gitignored — each developer does this once):
 
 ```json
 {
@@ -51,7 +86,7 @@ After installing, add your Bitbucket credentials to `.claude/settings.local.json
 Create a Bitbucket API token with **Pull requests: write** scope at:
 https://bitbucket.org/account/settings/personal-access-tokens/
 
-Then restart Claude Code to pick up the new environment variables.
+Restart Claude Code to pick up the new environment variables.
 
 ## Usage
 
@@ -61,22 +96,11 @@ Open Claude Code in your Laravel project and run:
 /code-reviewer
 ```
 
-That's it. The skill auto-detects the current branch, finds the open PR, runs all gates, and posts findings.
-
-## How findings are posted
-
-| Finding type | Posted as |
-|---|---|
-| MUST FIX / WARN with a file + line | Inline comment on that line in the PR |
-| Compliance summary | Top-level PR comment |
-
-**MUST FIX** — blocks merge (direct Eloquent in controller, missing types, N+1 queries, security issues, failing gates).
-
-**WARN** — should be addressed but doesn't block (style drift, dead code, minor perf).
+The skill auto-detects the current branch, finds the open PR, and posts findings.
 
 ## Updating
 
-When the skill is updated in this repo, re-run the install command in your project to get the latest version:
+Re-run the install command in your project to get the latest version:
 
 ```bash
 npx github:seangalabin/laravel-code-reviewer
