@@ -1,6 +1,6 @@
 # Code Review Checklist
 
-Rules from `.coderabbit.yaml` take precedence over everything here.
+If the project has a `.coderabbit.yaml` or `CLAUDE.md`, those rules take precedence over this checklist.
 See `laravel_review_guide.md` for Laravel / PHP patterns.
 See `vue_review_guide.md` for Vue / Vuex / JS patterns.
 

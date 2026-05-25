@@ -6,12 +6,13 @@ A [Claude Code](https://claude.ai/code) skill that reviews pull requests on Lara
 
 Run `/code-reviewer` in Claude Code and it will:
 
-1. Read `.coderabbit.yaml` and `CLAUDE.md` — project rules take precedence over all defaults
-2. Diff the current branch against `develop`
-3. Run a mechanical pre-pass (`scan_diff.py`) over the changed lines to surface red flags
-4. Apply a 14-dimension review lens to every hunk (see below)
-5. Post each finding as an **inline comment** on the Bitbucket PR, anchored to the exact file and line
-6. Post a scorecard (Architecture, PSR-12, Security, Testability) and merge verdict as a summary comment
+1. Diff the current branch against `develop`
+2. Run a mechanical pre-pass (`scan_diff.py`) over the changed lines to surface red flags
+3. Apply a 14-dimension review lens to every hunk (see below)
+4. Post each finding as an **inline comment** on the Bitbucket PR, anchored to the exact file and line
+5. Post a scorecard (Architecture, PSR-12, Security, Testability) and merge verdict as a summary comment
+
+If the project has a `.coderabbit.yaml` or `CLAUDE.md`, those rules are read first and take precedence over the skill's defaults. Neither file is required — the skill works standalone with sensible Laravel defaults.
 
 ## Review dimensions
 

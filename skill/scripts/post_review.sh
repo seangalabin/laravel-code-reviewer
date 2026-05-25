@@ -12,7 +12,7 @@
 #     → posted as a top-level PR comment (use for the compliance summary)
 #
 # Required env vars:
-#   BITBUCKET_EMAIL     — your Bitbucket account email (e.g. sean@redhq.com.au)
+#   BITBUCKET_EMAIL     — your Bitbucket account email
 #   BITBUCKET_API_TOKEN — API token with "Pull requests: write" scope
 #                         Create one at: https://bitbucket.org/account/settings/personal-access-tokens/
 

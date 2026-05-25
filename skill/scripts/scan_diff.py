@@ -2,9 +2,9 @@
 """
 scan_diff.py — pattern scanner for the current branch's diff.
 
-Scans `git diff origin/develop...HEAD` for known red-flag patterns from
-.coderabbit.yaml and CLAUDE.md, scoped by the layer of the file being
-touched (Controller / Service / Repository / Model / Vue / Blade).
+Scans `git diff origin/develop...HEAD` for known Laravel red-flag patterns,
+scoped by the layer of the file being touched (Controller / Service /
+Repository / Model / Resource / Command / Migration / Test / Vue / Blade).
 
 This is a *pre-pass* for the code-reviewer skill — it gives the agent
 a structured starting point of mechanical pattern matches. The agent
@@ -430,7 +430,7 @@ def render(findings, show_snippets: bool):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Scan branch diff for .coderabbit.yaml red flags."
+        description="Scan branch diff for Laravel layering, security, and quality red flags."
     )
     parser.add_argument("--base", default="origin/develop",
                         help="Base ref to diff against (default: origin/develop)")

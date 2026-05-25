@@ -1,6 +1,6 @@
 # Laravel Review Guide
 
-Patterns, anti-patterns, and correctness traps specific to this Laravel 10 / PHP 8.3 monolith. Rules in `.coderabbit.yaml` take precedence over everything here — read that file first if it exists.
+Patterns, anti-patterns, and correctness traps for Laravel 10+ / PHP 8.x projects. If the project has a `.coderabbit.yaml` or `CLAUDE.md`, those rules take precedence over this guide.
 
 ---
 

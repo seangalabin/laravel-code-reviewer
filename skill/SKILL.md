@@ -9,18 +9,15 @@ Reviews the **current branch's changes** against the base branch (`develop` for 
 
 ---
 
-## Step 0 — Load project rules (ALWAYS do this first)
+## Step 0 — Check for project-specific overrides (optional)
 
-Before reviewing a single line of code:
+If the project happens to have any of these files in the root, read them first and let them override the defaults in this skill:
 
-1. Check for `.coderabbit.yaml` in the project root:
-   ```bash
-   cat .coderabbit.yaml 2>/dev/null || echo "(no .coderabbit.yaml found)"
-   ```
-2. Check for `CLAUDE.md` in the project root and `.claude/` directory.
-3. **Rules in `.coderabbit.yaml` take precedence over every rule in this skill.** Where `.coderabbit.yaml` overrides or extends a rule below, apply the `.coderabbit.yaml` version. Note any overrides in your review output.
+- `CLAUDE.md` — project conventions for Claude Code
+- `.coderabbit.yaml` — CodeRabbit review rules (if present)
+- `.cursorrules` or `.github/copilot-instructions.md` — other agent rules
 
-For the HQ project specifically, the `.coderabbit.yaml` is at `C:\laragon\www\hq\.coderabbit.yaml` (WSL path: `/mnt/c/laragon/www/hq/.coderabbit.yaml`).
+If none exist, skip this step. The skill's built-in rules are reasonable Laravel defaults and work standalone.
 
 ---
 
@@ -84,7 +81,7 @@ FINDINGS
 
 ## Review lens
 
-Work through these dimensions in order. Apply `.coderabbit.yaml` rules first; these dimensions extend them.
+Work through these dimensions in order. If the project has `.coderabbit.yaml` or `CLAUDE.md` rules, apply those first — these dimensions extend them.
 
 ---
 
@@ -92,7 +89,7 @@ Work through these dimensions in order. Apply `.coderabbit.yaml` rules first; th
 
 The repo enforces a **Controller → Service → Repository → Model** call graph.
 
-**Permitted shortcuts (per `.coderabbit.yaml`):**
+**Permitted shortcuts:**
 - Controller → Repository is acceptable for **read-only** lookups.
 - Controller → Repository for **write** operations is 🟠 Major — writes must go through a Service to keep transactions and side-effects in one place.
 
@@ -201,7 +198,7 @@ namespace App\Http\Controllers;
 
 #### 2b. Type declarations — MUST FIX (🟠 Major)
 
-Per `.coderabbit.yaml`: **every method signature must declare types for every parameter AND a return type.** This applies to public, protected, and private methods on classes, traits, and abstract classes alike. Both missing parameter types and missing return types are 🟠 Major.
+**Every method signature must declare types for every parameter AND a return type.** This applies to public, protected, and private methods on classes, traits, and abstract classes alike. Both missing parameter types and missing return types are 🟠 Major.
 
 - `void` — no return value
 - `never` — always throws or exits
@@ -210,7 +207,7 @@ Per `.coderabbit.yaml`: **every method signature must declare types for every pa
 - `mixed` — acceptable as a deliberate choice, not a placeholder
 - Eloquent relation types: `BelongsTo`, `HasMany`, `MorphMany`, etc. on Model relationship methods
 
-**Exemptions (per `.coderabbit.yaml`):**
+**Exemptions:**
 - Closures passed to Pest's `it()`, `test()`, `describe()`, `beforeEach()` do not need return types.
 - Magic methods (`__get`, `__set`, `__call`) follow PHP's required signature.
 
@@ -265,7 +262,7 @@ Every `FormRequest::authorize()` that unconditionally returns `true` without a c
 
 #### 3b. Mass assignment
 
-🟠 Major (downgraded from Critical per `.coderabbit.yaml` — `$guarded = []` without `$fillable` is a WARN):
+🟠 Major:
 
 ```php
 // BAD
@@ -306,7 +303,7 @@ $order = auth()->user()->orders()->findOrFail($request->order_id);
 
 #### 3e. File upload security
 
-🟠 Major — a FormRequest that accepts file uploads without **both** a type allow-list and a size cap. Per `.coderabbit.yaml`, either `mimes:` or `mimetypes:` is acceptable (both sniff actual file contents):
+🟠 Major — a FormRequest that accepts file uploads without **both** a type allow-list and a size cap. Either `mimes:` or `mimetypes:` is acceptable (both sniff actual file contents):
 
 ```php
 // BAD
@@ -337,7 +334,6 @@ $key = config('services.stripe.secret');
 
 #### 3h. Global forbidden patterns (🟠 Major in all files)
 
-Per `.coderabbit.yaml`:
 - `dd()`, `dump()`, `die()` — forbidden in committed code.
 - `error_log()`, `var_dump()`, `print_r()`, `echo` used for logging — use `Log::info()` / `Log::error()` / `Log::debug()`.
 - `$_SERVER`, `$_ENV`, `$_GET`, `$_POST`, `$_REQUEST` — use Laravel helpers (`request()`, `config()`).
@@ -415,7 +411,7 @@ event(new UserRegistered($user));
 
 #### 4g. `DB::transaction()` for multi-write paths
 
-Any code path that issues two or more write queries must be wrapped in `DB::transaction()`. A missing transaction on a Service multi-write path is 🟡 Minor (WARN per `.coderabbit.yaml`):
+Any code path that issues two or more write queries must be wrapped in `DB::transaction()`. A missing transaction on a Service multi-write path is 🟡 Minor:
 
 ```php
 // GOOD
@@ -456,7 +452,7 @@ Business logic beyond label, color, or helper methods on the enum itself is 🟠
 
 ### 8. Data Integrity
 
-- Multiple Eloquent writes without `DB::transaction()` — 🟡 Minor (WARN per `.coderabbit.yaml`).
+- Multiple Eloquent writes without `DB::transaction()` — 🟡 Minor.
 - Check-then-act race conditions: `->exists()` + `->create()` → use `firstOrCreate()`.
 - Missing `->lockForUpdate()` on rows read-then-modified concurrently.
 
@@ -466,7 +462,7 @@ Business logic beyond label, color, or helper methods on the enum itself is 🟠
 
 - **N+1** — §4b. Always 🟠 Major.
 - **`->get()` then `->isEmpty()`** — use `->exists()` or `->count()` on the query builder.
-- **`Http::` without `->timeout(N)`** — 🟡 Minor (WARN per `.coderabbit.yaml`). Suggest `->timeout(30)`.
+- **`Http::` without `->timeout(N)`** — 🟡 Minor. Suggest `->timeout(30)`.
 - **Full-table loads** — `Model::all()` on unbounded tables; use `->chunk()` or `->cursor()`.
 - **Unnecessary re-fetch** — re-querying something already in scope.
 
@@ -522,9 +518,9 @@ $table->string('phone')->nullable()->after('email');
 - `auth()`, `request()`, `session()` inside Services — 🟠 Major (§1b).
 - `$this->withoutExceptionHandling()` committed — 🟠 Major (debugging aid must not be merged).
 
-#### Test quality (per `.coderabbit.yaml`)
+#### Test quality
 
-- **Outbound HTTP in a test without `Http::fake()` or `fakeHttpResponse()`** — 🟠 Major. `preventStrayRequests()` is enabled globally for `tests/Feature/Http/Controllers`, `tests/Feature/Mail`, and `tests/Feature/View/Components` via `tests/Pest.php`.
+- **Outbound HTTP in a test without `Http::fake()` or `fakeHttpResponse()`** — 🟠 Major. Stray requests make tests flaky and environment-dependent.
 - **Testing a private/protected method via reflection** — 🟠 Major (test observable behaviour through the public API).
 - **Test with no assertions** — 🟡 Minor (passes vacuously).
 - **`assertStatus(200)` with no body assertion** — 🟡 Minor.
@@ -613,7 +609,7 @@ Grade each area A–F: **A** = no issues, **B** = Minor/Suggestion only, **C** =
 
 - Don't open untouched files to look for new issues.
 - Don't grade the whole architecture from a small change.
-- Don't restate `.coderabbit.yaml` rules verbatim — CodeRabbit already does that on the PR.
+- Don't restate `.coderabbit.yaml` rules verbatim if the project uses CodeRabbit — it already does that on the PR.
 - Don't flag issues caught by Pint or the Pest ArchitectureTest.
 - Don't invent issues to fill buckets. An empty 🔴/🟠 list is a valid and welcome outcome.
 - Don't run Pint, Pest, or ESLint — CI runs these before the card moves to code review.
