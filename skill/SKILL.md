@@ -44,6 +44,18 @@ When a pre-existing issue is in a touched hunk, label it `(pre-existing, but tou
 
 **Do not flag issues already caught by Pint (formatting/style) or the Pest ArchitectureTest (suffix rules, base-class rules, enum rules).** Those run in CI before the card reaches code review.
 
+### Honor inline suppression markers
+
+Developers can suppress a finding by placing a marker on the 1–2 lines immediately above the offending line. A non-empty reason is required.
+
+| Language | Marker |
+|---|---|
+| PHP / JS / Vue `<script>` | `// ai-review:ignore <reason>` |
+| Blade | `{{-- ai-review:ignore <reason> --}}` |
+| Vue `<template>` / HTML | `<!-- ai-review:ignore <reason> -->` |
+
+When you encounter one of these markers above a line you would otherwise flag, **skip the finding**. The scan_diff.py pre-pass already honors these — apply the same rule to anything you would flag yourself. Empty reasons do not count as a valid suppression — flag those as a 🔵 Suggestion ("ignore marker missing reason").
+
 ---
 
 ## Scoping the review
@@ -54,10 +66,12 @@ Check whether `--since-last-review` was passed when the skill was invoked:
 
 **If `--since-last-review` was passed:**
 ```bash
-cat .ai-review/last-reviewed-sha 2>/dev/null
+CHECKPOINT_SHA=$(.claude/skills/code-reviewer/scripts/get_checkpoint.sh)
 ```
-- File **exists** → use that SHA as `BASE_REF`. Print: `Reviewing commits since {short_sha} (last review checkpoint).`
-- File **missing** → set `BASE_REF=origin/develop` and print: `No checkpoint found — running full review against develop.`
+The script reads a hidden checkpoint comment on the PR (shared across machines and teammates) and prints the SHA — or nothing if no checkpoint exists yet.
+
+- Output **non-empty** → use as `BASE_REF`. Print: `Reviewing commits since {short_sha} (last review checkpoint).`
+- Output **empty** → set `BASE_REF=origin/develop` and print: `No checkpoint found — running full review against develop.`
 
 **Otherwise:** `BASE_REF=origin/develop`
 
@@ -108,6 +122,20 @@ Print a summary before continuing:
 
 ---
 
+## Step 0.6 — Refresh dismissal memory
+
+Pull any dismissed findings from the PR so we don't re-flag what a human has already said is acceptable:
+
+```bash
+.claude/skills/code-reviewer/scripts/check_dismissals.py
+```
+
+This writes `.ai-review/dismissals.json`. Each entry records `path`, `line`, `dim`, `severity`, `sig`, and a `reason` the developer provided when running `ai-review dismiss`.
+
+If `--ignore-dismissals` was passed when invoking the skill, **still run the refresh** but ignore the file's contents in Step 1. The flag is a one-time re-evaluation, not a memory wipe.
+
+---
+
 ## Workflow
 
 ### Step 1 — Analyze
@@ -117,29 +145,23 @@ Print a summary before continuing:
 3. **Diff first.** Run the scoping scripts and read every hunk. Do not start by reading whole files.
 4. **Read for context, not findings.** When a hunk references a Repository, Service, or Vuex store not in the diff, read the relevant part to understand intent — findings on those files are out of scope unless changed.
 5. **Apply the full review lens** (all sections below) to everything in the diff.
-6. **Compile all findings** grouped by severity (🔴 Critical → 🟡 Warning → 🔵 Suggestion). Do not post or modify any files yet.
+6. **Filter dismissals.** For every candidate finding, read `.ai-review/dismissals.json` and skip the finding if any entry matches:
+   - same `path`, AND
+   - same `dim` (from the dismissal `dim` field), AND
+   - candidate line is within ±5 of the dismissal `line`
 
-### Step 2 — Ask which mode
+   Skip this filter entirely if `--ignore-dismissals` was passed.
+7. **Compile remaining findings** grouped by severity (🔴 Critical → 🟡 Warning → 🔵 Suggestion). Do not post or modify any files yet.
 
-Count findings and print this exact prompt, substituting the real counts:
+### Step 2 — Post the review
 
-> I found **{N} issues** ({X} critical, {Y} warnings, {Z} suggestions).
->
-> How would you like to proceed?
->
-> **1. Post as review** — Publish all findings as inline comments on the Bitbucket PR. Use this if you're reviewing someone else's code.
->
-> **2. Fix locally** — Apply the suggested fixes directly to the files in this branch. Use this if you're the developer cleaning up your own code before pushing.
->
-> **3. Show me first** — Print the full review to the terminal so I can decide per-issue. Nothing is posted or changed.
->
-> Reply with `1`, `2`, or `3`.
+Print a brief summary first, substituting the real counts:
 
-Wait for the response. There is no default — do not proceed until the user replies.
+> Found **{N} issues** ({X} critical, {Y} warnings, {Z} suggestions). Posting to PR…
 
-### Step 3 — Execute
+Then post all findings as inline Bitbucket PR comments. See **Posting the review** in the Output format section below.
 
-Execute the chosen mode. See **Mode 1**, **Mode 2**, and **Mode 3** in the Output format section below.
+If you want to fix issues locally instead of posting to the PR, exit and use the companion skill `/code-fixer`.
 
 ---
 
@@ -664,8 +686,8 @@ If a diff doesn't fit (e.g. new file), show the full replacement code block with
 #### 4. Why this fix
 Two or three sentences. Explain *why* this fix works, not just *what* it does. Connect it to a concrete consequence (performance, security, readability, layering rule).
 
-#### 5. Auto-fix command (Mode 1 only — omit in Modes 2 and 3)
-At the end of every Mode 1 comment, include this exact line so the developer can apply the fix later:
+#### 5. Auto-fix command
+At the end of every comment, include this exact line so the developer can apply the fix later:
 
 ```bash
 .claude/skills/code-reviewer/bin/ai-review fix --comment-id={COMMENT_ID}
@@ -682,11 +704,15 @@ Prefix each comment's title with one of:
 
 ---
 
-### Mode 1 — Post as review
+### Posting the review
 
 1. Post the required AI disclaimer header as the first top-level PR comment (see Required header above).
-2. Compile all findings into a JSON array with `path`, `line`, and `body` fields. The `body` is the full five-section comment including the auto-fix command with `{COMMENT_ID}` as a placeholder.
-3. Post via `post_review.sh` (which resolves `{COMMENT_ID}` after posting):
+2. Compile all findings into a JSON array. Each entry needs:
+   - `path`, `line` — where the issue lives
+   - `body` — the full five-section comment including the auto-fix command with `{COMMENT_ID}` as a placeholder
+   - `dim` — the dimension code from the Review lens (e.g. `"3a"`, `"4b"`, `"12"`). Used for telemetry.
+   - `severity` — `"critical"`, `"warning"`, or `"suggestion"` (lowercase). Used for telemetry.
+3. Post via `post_review.sh` (which resolves `{COMMENT_ID}` and embeds the telemetry marker after posting):
 
 ```bash
 .claude/skills/code-reviewer/scripts/post_review.sh <<'FINDINGS'
@@ -694,7 +720,9 @@ Prefix each comment's title with one of:
   {
     "path": "app/Http/Controllers/UserController.php",
     "line": 22,
-    "body": "🔴 **Critical** — ...\n\n### 1. The problem\n..."
+    "body": "🔴 **Critical** — ...\n\n### 1. The problem\n...",
+    "dim": "3b",
+    "severity": "critical"
   }
 ]
 FINDINGS
@@ -705,69 +733,13 @@ FINDINGS
    ```bash
    .claude/skills/code-reviewer/scripts/save_reviewed_sha.sh
    ```
-6. End with: `Posted {N} comments to PR #{ID}. Review them at {URL}.`
-
----
-
-### Mode 2 — Fix locally
-
-**Pre-flight checks (run before touching any file):**
-
-1. Refuse if branch is `main`, `master`, or `develop` (already caught in Step 1).
-2. Run `git status --short`. If the working tree has uncommitted changes, ask:
-   > Working tree has uncommitted changes. Apply fixes anyway? [y/N]
-   Default is **no** — stop unless the user explicitly types `y`.
-3. Count files affected by the planned fixes. If more than 20 and `--force` was not passed, list the files and stop:
-   > {N} files would be modified, which exceeds the 20-file limit per run. Narrow the scope or re-run with `--force`.
-
-**Per-issue fix loop** (work through Critical → Warning → Suggestion order):
-
-For each issue:
-1. Print the full five-section issue (without the auto-fix command — that's Mode 1 only).
-2. Ask:
-   > Apply this fix? [y/n/s/q]
-   - `y` — apply the diff to the file, confirm with `✓ Fixed {file}:{line}`
-   - `n` — skip this issue
-   - `s` — skip all remaining issues of this severity level
-   - `q` — quit the loop now, keep all fixes already applied
-
-3. When `y` is chosen, append to `.ai-review/applied-{timestamp}.log`:
-   ```
-   File: {path}:{line}
-   Prompt:
-   {ai-fix-prompt text}
-
-   Diff applied:
-   {diff}
-   ```
-
-**End of loop — save checkpoint and print summary:**
-
-```bash
-.claude/skills/code-reviewer/scripts/save_reviewed_sha.sh
-```
-
-```
-Applied {N} fix(es), skipped {M}.
-Modified files:
-  - {file1}
-  - {file2}
-Run your tests before pushing.
-```
-
----
-
-### Mode 3 — Show me first
-
-Print all findings to the terminal in the five-section format, grouped by severity (Critical first, then Warning, then Suggestion). Nothing is posted to Bitbucket and no files are modified. Omit the auto-fix command from each finding.
-
-After printing all findings:
-1. Save the review checkpoint:
+6. Print the telemetry digest (resolved/open/stale across PR history):
    ```bash
-   .claude/skills/code-reviewer/scripts/save_reviewed_sha.sh
+   .claude/skills/code-reviewer/scripts/aggregate_stats.py
    ```
-2. Ask:
-   > That's the full review. Would you like to go back and post (1) or fix locally (2)? [1/2/n]
+7. End with: `Posted {N} comments to PR #{ID}. Review them at {URL}.`
+
+If developers want to fix issues locally instead, they should use the `/code-fixer` skill (separate from `/code-reviewer`).
 
 ---
 

@@ -5,12 +5,16 @@ ai-review — code review helper for the code-reviewer Claude Code skill.
 Installed at: .claude/skills/code-reviewer/bin/ai-review
 
 Usage:
-    ai-review fix --comment-id=<ID>    Apply a suggested fix from a posted PR comment
-    ai-review --help                   Show this help
+    ai-review fix     --comment-id=<ID>                  Apply a suggested fix
+    ai-review dismiss --comment-id=<ID> --reason=<TEXT>  Mark finding as won't-fix
+    ai-review --help                                     Show this help
 
-The fix subcommand fetches a Bitbucket comment by ID, extracts the diff from
-the "Suggested fix (code)" section, applies it to the local file, and logs the
-action to .ai-review/applied-{timestamp}.log.
+`fix` fetches a Bitbucket comment, extracts the diff from the "Suggested fix"
+section, applies it to the local file, and logs to .ai-review/applied-*.log.
+
+`dismiss` updates the comment with a ❌ banner and a dismissal marker. The next
+`/code-reviewer` run reads these and skips matching findings, so the same
+non-issue won't be flagged again.
 
 Required env vars (set in .claude/settings.local.json):
     BITBUCKET_EMAIL       Your Bitbucket account email
@@ -21,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -124,6 +129,39 @@ def write_log(file_path: str, line: int | None, prompt: str, diff: str) -> Path:
     return log_file
 
 
+# ── Shared parsers / signatures ──────────────────────────────────────────────
+
+def extract_meta(body: str) -> dict:
+    """Extract the dim/severity meta marker, if present."""
+    m = re.search(r'<!--\s*ai-review:meta\s+(\{[^}]+\})\s*-->', body)
+    if not m:
+        return {}
+    try:
+        return json.loads(m.group(1))
+    except json.JSONDecodeError:
+        return {}
+
+
+def line_signature(file_path: str, line: int | None) -> str:
+    """SHA1 (12 hex chars) of 3 trimmed lines centred on `line` (1-indexed).
+    Stored on a dismissal so future runs can detect when a dismissed block
+    has moved or changed substantially."""
+    if not line or line < 1:
+        return ''
+    try:
+        with open(file_path) as f:
+            lines = f.readlines()
+    except (OSError, UnicodeDecodeError):
+        return ''
+    if not lines:
+        return ''
+    idx   = line - 1
+    start = max(0, idx - 1)
+    end   = min(len(lines), idx + 2)
+    block = '\n'.join(ln.strip() for ln in lines[start:end])
+    return hashlib.sha1(block.encode('utf-8')).hexdigest()[:12]
+
+
 # ── fix subcommand ────────────────────────────────────────────────────────────
 
 def cmd_fix(args: argparse.Namespace) -> None:
@@ -165,6 +203,66 @@ def cmd_fix(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+# ── dismiss subcommand ──────────────────────────────────────────────────────
+
+def cmd_dismiss(args: argparse.Namespace) -> None:
+    reason = args.reason.strip()
+    if not reason:
+        die('--reason cannot be empty. Give a short explanation of why this is not a real issue.')
+
+    auth = get_creds()
+    workspace, repo_slug = get_repo_info()
+    branch = get_branch()
+    api_base = f'https://api.bitbucket.org/2.0/repositories/{workspace}/{repo_slug}'
+
+    pr_id   = find_pr_id(api_base, auth, branch)
+    comment_url = f'{api_base}/pullrequests/{pr_id}/comments/{args.comment_id}'
+    comment = curl_get(comment_url, auth)
+
+    body     = comment.get('content', {}).get('raw', '')
+    inline   = comment.get('inline', {})
+    filepath = inline.get('path', '')
+    line_num = inline.get('to')
+
+    if not filepath:
+        die('Comment has no inline code location — cannot dismiss without a path.')
+
+    meta = extract_meta(body)
+    sig  = line_signature(filepath, line_num)
+
+    dismiss_meta = {k: v for k, v in {
+        'path':     filepath,
+        'line':     line_num,
+        'sig':      sig,
+        'dim':      meta.get('dim'),
+        'severity': meta.get('severity'),
+        'reason':   reason,
+    }.items() if v not in (None, '')}
+
+    # Strip the open marker — the dismissed marker takes its place.
+    cleaned = re.sub(r'\s*<!--\s*ai-review:open:[a-f0-9]+\s*-->', '', body).rstrip()
+    cleaned = re.sub(r'\s*<!--\s*ai-review:meta\s+\{[^}]+\}\s*-->', '', cleaned).rstrip()
+
+    meta_json = json.dumps(dismiss_meta, separators=(',', ':'))
+    updated_body = (
+        f'❌ **Dismissed** — {reason}\n\n'
+        f'<!-- ai-review:dismissed {meta_json} -->\n\n'
+        f'---\n\n'
+        f'*(Original review)*\n\n'
+        f'{cleaned}'
+    )
+
+    r = run(['curl', '-sSf', '-u', f'{auth[0]}:{auth[1]}',
+             '-X', 'PUT',
+             '-H', 'Content-Type: application/json',
+             '-d', json.dumps({'content': {'raw': updated_body}}),
+             comment_url])
+    if r.returncode != 0:
+        die(f'PUT failed: {r.stderr.strip() or r.stdout.strip()}')
+    print(f'  ❌ comment #{args.comment_id} dismissed ({filepath}:{line_num or "?"})')
+    print(f'  Reason: {reason}')
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -173,7 +271,8 @@ def main() -> None:
         description=(
             'Code review helper.\n\n'
             'Subcommands:\n'
-            '  fix   Apply a suggested fix from a posted Bitbucket PR comment.'
+            '  fix      Apply a suggested fix from a posted Bitbucket PR comment.\n'
+            '  dismiss  Mark a finding as wont-fix so future runs skip it.'
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -185,10 +284,22 @@ def main() -> None:
         help='Bitbucket comment ID printed in the auto-fix command at the bottom of the PR comment',
     )
 
+    dismiss_p = sub.add_parser('dismiss', help='Dismiss a finding as wont-fix')
+    dismiss_p.add_argument(
+        '--comment-id', required=True, type=int,
+        help='Bitbucket comment ID of the finding to dismiss',
+    )
+    dismiss_p.add_argument(
+        '--reason', required=True,
+        help='Short explanation of why this is not a real issue (recorded on the comment)',
+    )
+
     args = parser.parse_args()
 
     if args.command == 'fix':
         cmd_fix(args)
+    elif args.command == 'dismiss':
+        cmd_dismiss(args)
     else:
         parser.print_help()
 

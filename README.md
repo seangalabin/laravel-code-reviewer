@@ -1,32 +1,19 @@
 # laravel-code-reviewer
 
-A [Claude Code](https://claude.ai/code) skill that reviews pull requests on Laravel / Bitbucket projects. It serves two audiences:
+A [Claude Code](https://claude.ai/code) skill that reviews pull requests on Laravel / Bitbucket projects and posts inline comments directly to the PR.
 
-- **Reviewers** — analyze a PR and post inline comments to Bitbucket
-- **Developers** — analyze their own branch and apply suggested fixes locally before pushing
-
-Same skill, chosen mode after the analysis runs.
+For developers who want to fix issues on their own branch before pushing (instead of posting to a PR), use the companion skill [`code-fixer`](#code-fixer-developer-skill).
 
 ## What it does
 
 Run `/code-reviewer` in Claude Code and it will:
 
 1. Refuse to run on `main`, `master`, or `develop` (feature branches only)
-2. Diff the current branch against `develop`
-3. Run a mechanical pre-pass (`scan_diff.py`) over the changed lines to surface red flags
-4. Apply a 14-dimension review lens to every hunk
-5. Count issues by severity and **ask you which mode to run**
-
-### The three modes
-
-**Mode 1 — Post as review**
-Publish all findings as inline Bitbucket PR comments. Use this when you're reviewing someone else's code. Posts a disclaimer header first, then one comment per issue with a copy-pasteable fix prompt and an auto-apply command.
-
-**Mode 2 — Fix locally**
-Walk through each issue interactively and apply suggested fixes directly to the files in the branch. Use this when you're the developer cleaning up your own code before pushing. Never commits anything — just edits files.
-
-**Mode 3 — Show me first**
-Print the full review to the terminal so you can read it before deciding. Nothing is posted or changed.
+2. Check previously posted comments and mark any that have been addressed
+3. Diff the current branch against `develop`
+4. Run a mechanical pre-pass (`scan_diff.py`) over the changed lines to surface red flags
+5. Apply a 14-dimension review lens to every hunk
+6. Post each finding as an inline Bitbucket PR comment with a copy-pasteable fix prompt and an auto-apply command
 
 ## Review dimensions
 
@@ -51,7 +38,7 @@ Print the full review to the terminal so you can read it before deciding. Nothin
 
 | | Severity | When |
 |---|---|---|
-| 🔴 | **Critical** | Bug, security issue, data loss risk. Creates a blocking task in Mode 1. |
+| 🔴 | **Critical** | Bug, security issue, data loss risk. Creates a blocking task on the PR. |
 | 🟡 | **Warning** | Likely problem, performance, maintainability. |
 | 🔵 | **Suggestion** | Style, readability, minor improvement. |
 
@@ -62,7 +49,7 @@ Each finding contains: what's wrong in plain language, a copy-pasteable Claude C
 - Node.js 16+
 - Laravel project with [PestPHP](https://pestphp.com/) and [Laravel Pint](https://laravel.com/docs/pint)
 - [Claude Code](https://claude.ai/code) CLI
-- A Bitbucket repository (Mode 1 also requires an open PR)
+- A Bitbucket repository with an open PR on the current branch
 
 ## Installation
 
@@ -110,15 +97,11 @@ Open Claude Code in your Laravel project and run:
 /code-reviewer
 ```
 
-The skill auto-detects the current branch, diffs it, runs the analysis, then asks which mode to use.
-
-### Mode 1 — Reviewing someone else's code
+The skill auto-detects the current branch, finds the open PR, runs the analysis, and posts findings:
 
 ```
 /code-reviewer
-> I found 5 issues (1 critical, 3 warnings, 1 suggestion).
-> Reply with 1, 2, or 3.
-1
+> Found 5 issues (1 critical, 3 warnings, 1 suggestion). Posting to PR…
 > Posted 5 comments to PR #42. Review them at https://bitbucket.org/...
 ```
 
@@ -128,40 +111,47 @@ Each comment ends with an auto-apply command the developer can run:
 .claude/skills/code-reviewer/bin/ai-review fix --comment-id=1234
 ```
 
-### Mode 2 — Cleaning up your own branch
+### Inline suppression
 
-```
-/code-reviewer
-> I found 5 issues (1 critical, 3 warnings, 1 suggestion).
-> Reply with 1, 2, or 3.
-2
-> Working tree is clean. Proceeding.
->
-> 🔴 Critical — app/Http/Controllers/OrderController.php:34
-> [full five-section issue...]
-> Apply this fix? [y/n/s/q]
-y
-> ✓ Fixed app/Http/Controllers/OrderController.php:34
-```
+Add a marker above a line to silence a specific finding. A non-empty reason is required:
 
-Applied fixes are logged to `.ai-review/applied-{timestamp}.log`. The skill never commits.
+| Language | Marker |
+|---|---|
+| PHP / JS / Vue `<script>` | `// ai-review:ignore Internal CLI, no HTTP exposure` |
+| Blade | `{{-- ai-review:ignore Trusted internal value --}}` |
+| Vue `<template>` / HTML | `<!-- ai-review:ignore Markdown rendered from CMS --> ` |
 
-### Mode 3 — Read before deciding
+The skill skips findings within 2 lines below a marker.
 
-```
-/code-reviewer
-> I found 5 issues (1 critical, 3 warnings, 1 suggestion).
-> Reply with 1, 2, or 3.
-3
-> [prints full review to terminal]
-> Would you like to go back and post (1) or fix locally (2)? [1/2/n]
+### Dismissing a posted finding
+
+If a posted comment is a false positive, mark it won't-fix:
+
+```bash
+.claude/skills/code-reviewer/bin/ai-review dismiss \
+  --comment-id=1234 \
+  --reason="Internal-only endpoint, auth handled by middleware"
 ```
 
-### CLI flags
+The comment is updated with a ❌ banner and a hidden marker. The **next** `/code-reviewer` run reads dismissals from the PR and skips matching findings (same file, same dimension, line within ±5). To re-evaluate everything, pass `--ignore-dismissals`.
 
-| Flag | Mode | Effect |
-|---|---|---|
-| `--force` | 2 | Bypass the 20-file-per-run cap |
+### Incremental review
+
+On re-runs, pass `--since-last-review` to only analyse commits added since the previous run:
+
+```
+/code-reviewer --since-last-review
+```
+
+The checkpoint is stored as a hidden PR comment — shared across machines, CI, and teammates.
+
+### Telemetry
+
+Each run prints a digest of how many findings were resolved, are still open, or have gone stale (>14 days). A snapshot is saved to `.ai-review/stats.json` so you can track signal-vs-noise per dimension over time.
+
+### Want to fix locally instead?
+
+If you're the developer cleaning up your own branch (rather than reviewing someone else's PR), use the `code-fixer` skill instead — see [below](#code-fixer-developer-skill).
 
 ## Updating
 

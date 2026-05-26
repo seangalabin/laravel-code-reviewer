@@ -44,6 +44,18 @@ When a pre-existing issue is in a touched hunk, label it `(pre-existing, but tou
 
 **Do not flag issues already caught by Pint (formatting/style) or the Pest ArchitectureTest (suffix rules, base-class rules, enum rules).** Those run in CI before the card reaches code review.
 
+### Honor inline suppression markers
+
+Developers can suppress a finding by placing a marker on the 1–2 lines immediately above the offending line. A non-empty reason is required.
+
+| Language | Marker |
+|---|---|
+| PHP / JS / Vue `<script>` | `// ai-review:ignore <reason>` |
+| Blade | `{{-- ai-review:ignore <reason> --}}` |
+| Vue `<template>` / HTML | `<!-- ai-review:ignore <reason> -->` |
+
+When you encounter one of these markers above a line you would otherwise flag, **skip the finding**. The scan_diff.py pre-pass already honors these — apply the same rule to anything you would flag yourself. Empty reasons do not count as a valid suppression — flag those as a 🔵 Suggestion ("ignore marker missing reason").
+
 ---
 
 ## Scoping the review

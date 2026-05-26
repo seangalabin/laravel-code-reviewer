@@ -28,6 +28,49 @@ import sys
 from dataclasses import dataclass
 
 
+# ─── Inline rule suppression ────────────────────────────────────────────────
+#
+# Developers can suppress a finding by placing one of these markers on the
+# 1–2 lines immediately above the flagged line. The reason is required.
+#
+#   PHP / JS / Vue <script>:  // ai-review:ignore <reason>
+#   Blade:                    {{-- ai-review:ignore <reason> --}}
+#   Vue <template> / HTML:    <!-- ai-review:ignore <reason> -->
+
+IGNORE_MARKER_RE = re.compile(
+    r"(?://|\{\{--|<!--)\s*ai-review:ignore\s+(.+?)(?:\s*--\}\}|\s*-->|$)"
+)
+IGNORE_LOOKBACK = 2
+
+# Cache file contents per scan so we don't re-read for every finding.
+_FILE_CACHE: dict[str, list[str] | None] = {}
+
+
+def _get_file_lines(path: str) -> list[str] | None:
+    if path not in _FILE_CACHE:
+        try:
+            with open(path) as f:
+                _FILE_CACHE[path] = f.readlines()
+        except (OSError, UnicodeDecodeError):
+            _FILE_CACHE[path] = None
+    return _FILE_CACHE[path]
+
+
+def has_ignore_marker_above(path: str, line: int) -> bool:
+    """True if a valid ai-review:ignore marker with a non-empty reason
+    appears on any of the IGNORE_LOOKBACK lines immediately above `line`."""
+    lines = _get_file_lines(path)
+    if lines is None:
+        return False
+    start = max(0, line - 1 - IGNORE_LOOKBACK)
+    end   = max(0, line - 1)
+    for i in range(start, end):
+        m = IGNORE_MARKER_RE.search(lines[i])
+        if m and m.group(1).strip():
+            return True
+    return False
+
+
 # Capitalised tokens that look like Models in static-call form but aren't.
 NON_MODEL_PREFIXES = {
     "Arr", "Artisan", "Auth", "Blade", "Bus", "Cache", "Carbon", "Config",
@@ -390,6 +433,8 @@ def scan(base_ref: str):
     findings: list[Finding] = []
     for path, lineno, content in parse_diff(diff):
         if any(s in path for s in ("vendor/", "storage/", "node_modules/")):
+            continue
+        if has_ignore_marker_above(path, lineno):
             continue
         for severity, rule_id, pattern, message, predicate in select_rules(path):
             m = pattern.search(content)
