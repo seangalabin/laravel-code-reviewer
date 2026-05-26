@@ -1,0 +1,197 @@
+#!/usr/bin/env python3
+"""
+ai-review — code review helper for the code-reviewer Claude Code skill.
+
+Installed at: .claude/skills/code-reviewer/bin/ai-review
+
+Usage:
+    ai-review fix --comment-id=<ID>    Apply a suggested fix from a posted PR comment
+    ai-review --help                   Show this help
+
+The fix subcommand fetches a Bitbucket comment by ID, extracts the diff from
+the "Suggested fix (code)" section, applies it to the local file, and logs the
+action to .ai-review/applied-{timestamp}.log.
+
+Required env vars (set in .claude/settings.local.json):
+    BITBUCKET_EMAIL       Your Bitbucket account email
+    BITBUCKET_API_TOKEN   API token with Pull requests: write scope
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime
+import json
+import os
+import re
+import subprocess
+import sys
+import urllib.parse
+from pathlib import Path
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def die(msg: str) -> None:
+    print(f'ERROR: {msg}', file=sys.stderr)
+    sys.exit(1)
+
+
+def run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, capture_output=True, text=True, **kwargs)
+
+
+def get_creds() -> tuple[str, str]:
+    email = os.environ.get('BITBUCKET_EMAIL', '')
+    token = os.environ.get('BITBUCKET_API_TOKEN', '')
+    if not email or not token:
+        die('BITBUCKET_EMAIL and BITBUCKET_API_TOKEN must be set.\n'
+            '  Add them to .claude/settings.local.json under "env".')
+    return email, token
+
+
+def get_repo_info() -> tuple[str, str]:
+    r = run(['git', 'remote', 'get-url', 'origin'])
+    if r.returncode != 0:
+        die('no git remote "origin" found.')
+    m = re.search(r'bitbucket\.org[:/]([^/]+)/([^/]+?)(\.git)?$', r.stdout.strip())
+    if not m:
+        die(f'remote URL is not a Bitbucket URL: {r.stdout.strip()}')
+    return m.group(1), m.group(2)
+
+
+def get_branch() -> str:
+    r = run(['git', 'branch', '--show-current'])
+    return r.stdout.strip()
+
+
+def curl_get(url: str, auth: tuple[str, str]) -> dict:
+    r = run(['curl', '-sSf', '-u', f'{auth[0]}:{auth[1]}', url])
+    if r.returncode != 0:
+        die(f'Bitbucket API request failed:\n  {r.stderr.strip() or r.stdout.strip()}')
+    return json.loads(r.stdout)
+
+
+def find_pr_id(api_base: str, auth: tuple[str, str], branch: str) -> str:
+    q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"')
+    data = curl_get(f'{api_base}/pullrequests?q={q}&fields=values.id,values.title', auth)
+    prs = data.get('values', [])
+    if not prs:
+        die(f'no open PR found for branch "{branch}".\n  Push the branch and open a PR first.')
+    pr = prs[0]
+    print(f'Found PR #{pr["id"]}')
+    return str(pr['id'])
+
+
+# ── Diff extraction and application ──────────────────────────────────────────
+
+def extract_diff(body: str) -> str | None:
+    """Pull the first ```diff...``` block out of a comment body."""
+    m = re.search(r'```diff\s*\n(.*?)\n```', body, re.DOTALL)
+    return m.group(1).strip() if m else None
+
+
+def extract_prompt(body: str) -> str:
+    """Pull the ```prompt...``` block out of a comment body."""
+    m = re.search(r'```prompt\s*\n(.*?)\n```', body, re.DOTALL)
+    return m.group(1).strip() if m else ''
+
+
+def apply_diff(file_path: str, raw_diff: str) -> bool:
+    """
+    Wrap the raw diff lines in a minimal unified-diff header and apply via
+    git apply. Returns True on success.
+    """
+    patch = f'--- a/{file_path}\n+++ b/{file_path}\n{raw_diff}\n'
+    r = run(['git', 'apply', '--index', '-'], input=patch)
+    if r.returncode == 0:
+        return True
+    # Retry without --index (file may be untracked or not staged)
+    r = run(['git', 'apply', '-'], input=patch)
+    return r.returncode == 0
+
+
+def write_log(file_path: str, line: int | None, prompt: str, diff: str) -> Path:
+    log_dir = Path('.ai-review')
+    log_dir.mkdir(exist_ok=True)
+    ts = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+    log_file = log_dir / f'applied-{ts}.log'
+    log_file.write_text(
+        f'File: {file_path}:{line or "?"}\n\n'
+        f'Prompt:\n{prompt}\n\n'
+        f'Diff applied:\n{diff}\n'
+    )
+    return log_file
+
+
+# ── fix subcommand ────────────────────────────────────────────────────────────
+
+def cmd_fix(args: argparse.Namespace) -> None:
+    branch = get_branch()
+    if branch in ('main', 'master', 'develop'):
+        die(f'Refusing to apply fixes on protected branch "{branch}".')
+
+    auth = get_creds()
+    workspace, repo_slug = get_repo_info()
+    api_base = f'https://api.bitbucket.org/2.0/repositories/{workspace}/{repo_slug}'
+
+    pr_id   = find_pr_id(api_base, auth, branch)
+    comment = curl_get(f'{api_base}/pullrequests/{pr_id}/comments/{args.comment_id}', auth)
+
+    body     = comment.get('content', {}).get('raw', '')
+    inline   = comment.get('inline', {})
+    filepath = inline.get('path', '')
+    line_num = inline.get('to')
+
+    diff = extract_diff(body)
+    if not diff:
+        print('No diff block found in the comment.', file=sys.stderr)
+        print('Apply the fix manually using the prompt in section 2 of the comment.')
+        sys.exit(1)
+
+    if not filepath:
+        die('Comment has no inline file path — cannot determine which file to patch.\n'
+            'Apply the fix manually using the prompt in section 2 of the comment.')
+
+    print(f'Applying fix to {filepath}:{line_num or "?"}...')
+
+    if apply_diff(filepath, diff):
+        print(f'✓ Fixed {filepath}:{line_num or "?"}')
+        log = write_log(filepath, line_num, extract_prompt(body), diff)
+        print(f'  Logged to {log}')
+    else:
+        print('✗ git apply failed — the diff may not apply cleanly.', file=sys.stderr)
+        print('  Apply the fix manually using the prompt in section 2 of the comment.')
+        sys.exit(1)
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog='ai-review',
+        description=(
+            'Code review helper.\n\n'
+            'Subcommands:\n'
+            '  fix   Apply a suggested fix from a posted Bitbucket PR comment.'
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    sub = parser.add_subparsers(dest='command')
+
+    fix_p = sub.add_parser('fix', help='Apply a fix from a posted comment')
+    fix_p.add_argument(
+        '--comment-id', required=True, type=int,
+        help='Bitbucket comment ID printed in the auto-fix command at the bottom of the PR comment',
+    )
+
+    args = parser.parse_args()
+
+    if args.command == 'fix':
+        cmd_fix(args)
+    else:
+        parser.print_help()
+
+
+if __name__ == '__main__':
+    main()

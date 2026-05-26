@@ -170,3 +170,29 @@ Re-run the install command in your project to get the latest version:
 ```bash
 npx github:seangalabin/laravel-code-reviewer
 ```
+
+---
+
+## code-fixer (developer skill)
+
+A companion skill for developers. Same review analysis, no Bitbucket posting — goes straight to an interactive fix loop on your local branch.
+
+### Install
+
+```bash
+npx github:seangalabin/laravel-code-reviewer --skill=fixer
+```
+
+Or using the separate binary:
+
+```bash
+npx @redhq/code-reviewer code-fixer
+```
+
+### Usage
+
+```
+/code-fixer
+```
+
+The skill analyzes the branch, prints a summary, runs pre-flight checks (dirty tree, file cap), then walks through each issue asking `[y/n/s/q]`.
