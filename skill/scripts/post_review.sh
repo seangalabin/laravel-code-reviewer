@@ -91,8 +91,11 @@ print(prs[0]['title'] if prs else '')
 echo "Found PR #$PR_ID: $PR_TITLE"
 echo ""
 
+# ── Capture HEAD SHA for comment tracking ─────────────────────────────────────
+HEAD_SHA=$(git rev-parse HEAD)
+
 # ── Post each finding as an inline (or top-level) comment ────────────────────
-python3 - "$FINDINGS_FILE" "$API_BASE" "$PR_ID" "$BASIC_AUTH" "$WORKSPACE" "$REPO_SLUG" <<'PYEOF'
+python3 - "$FINDINGS_FILE" "$API_BASE" "$PR_ID" "$BASIC_AUTH" "$WORKSPACE" "$REPO_SLUG" "$HEAD_SHA" <<'PYEOF'
 import json, sys, subprocess
 
 findings_file = sys.argv[1]
@@ -101,6 +104,7 @@ pr_id         = sys.argv[3]
 auth          = sys.argv[4]
 workspace     = sys.argv[5]
 repo_slug     = sys.argv[6]
+head_sha      = sys.argv[7]
 
 with open(findings_file) as f:
     findings = json.load(f)
@@ -144,10 +148,11 @@ posted = 0
 failed = 0
 
 for finding in findings:
-    body    = finding['body']
-    payload = {'content': {'raw': body}}
+    body      = finding['body']
+    is_inline = 'path' in finding and 'line' in finding
+    payload   = {'content': {'raw': body}}
 
-    if 'path' in finding and 'line' in finding:
+    if is_inline:
         payload['inline'] = {'path': finding['path'], 'to': int(finding['line'])}
         location = f"{finding['path']}:{finding['line']}"
     else:
@@ -161,10 +166,13 @@ for finding in findings:
         except Exception:
             comment_id = '?'
 
-        # Substitute the real comment ID into the auto-fix command placeholder
-        if '{COMMENT_ID}' in body and comment_id != '?':
-            updated_body = body.replace('{COMMENT_ID}', str(comment_id))
-            update_comment(comment_id, updated_body)
+        if comment_id != '?':
+            # Substitute the real comment ID and, for inline comments, append
+            # the tracking marker so check_resolved.py can find this comment later.
+            final_body = body.replace('{COMMENT_ID}', str(comment_id))
+            if is_inline:
+                final_body += f'\n\n<!-- ai-review:open:{head_sha} -->'
+            update_comment(comment_id, final_body)
 
         print(f'  ✓ comment #{comment_id} → {location}')
         posted += 1

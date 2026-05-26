@@ -65,6 +65,36 @@ git diff origin/develop...HEAD    # source of truth for scope
 
 ---
 
+## Step 0.5 — Check previously posted comments
+
+Run this before the new diff analysis:
+
+```bash
+.claude/skills/code-reviewer/scripts/check_resolved.py
+```
+
+This outputs a JSON array of open AI review comments on the current PR — comments that were posted by a previous run of this skill and haven't been marked resolved yet. If the array is empty, skip to the Workflow.
+
+For each comment in the array:
+
+1. Read the current code at `{path}:{line}` in the working tree.
+2. Read the `problem` field (the plain-English issue from section 1 of the original comment).
+3. **Evaluate: does the current code at that location actually address the stated problem?** Apply judgement — a trivial edit, a rename, or an unrelated change is **not** a fix.
+4. If **resolved**: find the oldest commit after `posted_sha` that touched the file:
+   ```bash
+   git log --oneline {posted_sha}..HEAD -- {path}
+   ```
+   Take the **last line** of that output (earliest commit). Then update the comment:
+   ```bash
+   .claude/skills/code-reviewer/scripts/update_resolved.py --comment-id={id} --fix-sha={fix_sha}
+   ```
+5. If **not resolved**: leave the comment as-is.
+
+Print a summary before continuing:
+> Checked {N} previous comment(s): {X} resolved ✅, {Y} still open.
+
+---
+
 ## Workflow
 
 ### Step 1 — Analyze
