@@ -3,8 +3,7 @@
   "version": "1.0.0",
   "description": "Claude Code review skill for Laravel / Bitbucket projects",
   "bin": {
-    "code-reviewer": "./bin/install.js",
-    "code-fixer": "./bin/install-fixer.js"
+    "code-reviewer": "./bin/install.js"
   },
   "files": [
     "bin/",

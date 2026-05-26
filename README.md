@@ -183,10 +183,10 @@ A companion skill for developers. Same review analysis, no Bitbucket posting —
 npx github:seangalabin/laravel-code-reviewer --skill=fixer
 ```
 
-Or using the separate binary:
+To install into a specific directory:
 
 ```bash
-npx @redhq/code-reviewer code-fixer
+npx github:seangalabin/laravel-code-reviewer --skill=fixer /path/to/project
 ```
 
 ### Usage
