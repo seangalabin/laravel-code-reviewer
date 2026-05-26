@@ -6,13 +6,19 @@
 set -euo pipefail
 
 BASE="${1:-develop}"
-REMOTE_BASE="origin/${BASE}"
 HEAD_BRANCH=$(git branch --show-current)
 
-git fetch origin "${BASE}" 2>/dev/null || true
+# If BASE looks like a commit SHA (7–40 hex chars), use it directly.
+# Otherwise treat it as a branch name and resolve via origin/.
+if [[ "$BASE" =~ ^[0-9a-f]{7,40}$ ]]; then
+    REMOTE_BASE="$BASE"
+else
+    REMOTE_BASE="origin/${BASE}"
+    git fetch origin "${BASE}" 2>/dev/null || true
+fi
 
 if ! git rev-parse --verify "${REMOTE_BASE}" >/dev/null 2>&1; then
-  echo "error: ${REMOTE_BASE} not found. Try: git fetch origin ${BASE}"
+  echo "error: ${REMOTE_BASE} not found."
   exit 1
 fi
 
@@ -20,7 +26,7 @@ COMMITS_AHEAD=$(git rev-list --count "${REMOTE_BASE}..HEAD")
 FILES_CHANGED=$(git diff --name-only "${REMOTE_BASE}...HEAD" | wc -l | tr -d ' ')
 UNTRACKED=$(git ls-files --others --exclude-standard | wc -l | tr -d ' ')
 
-echo "Base:           ${BASE} @ ${REMOTE_BASE}"
+echo "Base:           ${REMOTE_BASE}"
 echo "Branch:         ${HEAD_BRANCH}"
 echo "Commits ahead:  ${COMMITS_AHEAD}"
 echo "Files changed:  ${FILES_CHANGED}"

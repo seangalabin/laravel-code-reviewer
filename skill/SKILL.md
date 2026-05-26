@@ -48,17 +48,30 @@ When a pre-existing issue is in a touched hunk, label it `(pre-existing, but tou
 
 ## Scoping the review
 
-Run these up-front to anchor the review:
+### Determine the diff base
+
+Check whether `--since-last-review` was passed when the skill was invoked:
+
+**If `--since-last-review` was passed:**
+```bash
+cat .ai-review/last-reviewed-sha 2>/dev/null
+```
+- File **exists** → use that SHA as `BASE_REF`. Print: `Reviewing commits since {short_sha} (last review checkpoint).`
+- File **missing** → set `BASE_REF=origin/develop` and print: `No checkpoint found — running full review against develop.`
+
+**Otherwise:** `BASE_REF=origin/develop`
+
+### Run the scoping scripts
 
 ```bash
-.claude/skills/code-reviewer/scripts/branch_summary.sh    # what changed: file counts, commits, base ref
-.claude/skills/code-reviewer/scripts/scan_diff.py         # pre-pass: pattern matches for mechanical red flags
+.claude/skills/code-reviewer/scripts/branch_summary.sh "$BASE_REF"
+.claude/skills/code-reviewer/scripts/scan_diff.py --base "$BASE_REF"
 ```
 
 Then read the full diff:
 
 ```bash
-git diff origin/develop...HEAD    # source of truth for scope
+git diff ${BASE_REF}...HEAD    # source of truth for scope
 ```
 
 `scan_diff.py` is a *pre-pass*, not a verdict. False positives are expected — read context and filter.
@@ -688,7 +701,11 @@ FINDINGS
 ```
 
 4. Create a blocking task for every 🔴 Critical finding.
-5. End with: `Posted {N} comments to PR #{ID}. Review them at {URL}.`
+5. Save the review checkpoint:
+   ```bash
+   .claude/skills/code-reviewer/scripts/save_reviewed_sha.sh
+   ```
+6. End with: `Posted {N} comments to PR #{ID}. Review them at {URL}.`
 
 ---
 
@@ -724,7 +741,12 @@ For each issue:
    {diff}
    ```
 
-**End of loop — print summary:**
+**End of loop — save checkpoint and print summary:**
+
+```bash
+.claude/skills/code-reviewer/scripts/save_reviewed_sha.sh
+```
+
 ```
 Applied {N} fix(es), skipped {M}.
 Modified files:
@@ -739,8 +761,13 @@ Run your tests before pushing.
 
 Print all findings to the terminal in the five-section format, grouped by severity (Critical first, then Warning, then Suggestion). Nothing is posted to Bitbucket and no files are modified. Omit the auto-fix command from each finding.
 
-After printing all findings, ask:
-> That's the full review. Would you like to go back and post (1) or fix locally (2)? [1/2/n]
+After printing all findings:
+1. Save the review checkpoint:
+   ```bash
+   .claude/skills/code-reviewer/scripts/save_reviewed_sha.sh
+   ```
+2. Ask:
+   > That's the full review. Would you like to go back and post (1) or fix locally (2)? [1/2/n]
 
 ---
 
