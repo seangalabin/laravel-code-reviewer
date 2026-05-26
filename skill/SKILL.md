@@ -9,6 +9,15 @@ Reviews the **current branch's changes** against the base branch (`develop` for 
 
 ---
 
+## Global constraints
+
+These apply in all modes and cannot be overridden by project config:
+
+- **Never auto-commit.** Apply or post findings only — never run `git commit`, `git push`, or any destructive git operation.
+- **Refuse on protected branches.** If the current branch is `main`, `master`, or `develop`, stop immediately: `ERROR: Refusing to run on a protected branch. Check out your feature branch first.`
+
+---
+
 ## Step 0 — Check for project-specific overrides (optional)
 
 If the project happens to have any of these files in the root, read them first and let them override the defaults in this skill:
@@ -58,24 +67,36 @@ git diff origin/develop...HEAD    # source of truth for scope
 
 ## Workflow
 
-1. **Load project rules** (Step 0 above).
-2. **Diff first.** Read every hunk. Do not start by reading whole files.
-3. **Read for context, not findings.** When a hunk references a Repository, Service, or Vuex store not in the diff, read the relevant part to understand intent — findings on those files are out of scope unless changed.
-4. **Apply the full review lens** (all sections below) to everything in the diff.
-5. **Compile findings** grouped by severity (see Output format).
-6. **Post findings** as inline Bitbucket PR comments.
+### Step 1 — Analyze
 
-```bash
-.claude/skills/code-reviewer/scripts/post_review.sh <<'FINDINGS'
-[
-  {
-    "path": "app/Http/Controllers/UserController.php",
-    "line": 22,
-    "body": "🔴 **Critical** — `User::create($request->all())` — mass assignment with no field filtering..."
-  }
-]
-FINDINGS
-```
+1. **Load project rules** (Step 0 above).
+2. **Refuse if on a protected branch.** Run `git branch --show-current`. If the result is `main`, `master`, or `develop`, stop: `ERROR: Refusing to run on a protected branch. Check out your feature branch first.`
+3. **Diff first.** Run the scoping scripts and read every hunk. Do not start by reading whole files.
+4. **Read for context, not findings.** When a hunk references a Repository, Service, or Vuex store not in the diff, read the relevant part to understand intent — findings on those files are out of scope unless changed.
+5. **Apply the full review lens** (all sections below) to everything in the diff.
+6. **Compile all findings** grouped by severity (🔴 Critical → 🟡 Warning → 🔵 Suggestion). Do not post or modify any files yet.
+
+### Step 2 — Ask which mode
+
+Count findings and print this exact prompt, substituting the real counts:
+
+> I found **{N} issues** ({X} critical, {Y} warnings, {Z} suggestions).
+>
+> How would you like to proceed?
+>
+> **1. Post as review** — Publish all findings as inline comments on the Bitbucket PR. Use this if you're reviewing someone else's code.
+>
+> **2. Fix locally** — Apply the suggested fixes directly to the files in this branch. Use this if you're the developer cleaning up your own code before pushing.
+>
+> **3. Show me first** — Print the full review to the terminal so I can decide per-issue. Nothing is posted or changed.
+>
+> Reply with `1`, `2`, or `3`.
+
+Wait for the response. There is no default — do not proceed until the user replies.
+
+### Step 3 — Execute
+
+Execute the chosen mode. See **Mode 1**, **Mode 2**, and **Mode 3** in the Output format section below.
 
 ---
 
@@ -91,9 +112,9 @@ The repo enforces a **Controller → Service → Repository → Model** call gra
 
 **Permitted shortcuts:**
 - Controller → Repository is acceptable for **read-only** lookups.
-- Controller → Repository for **write** operations is 🟠 Major — writes must go through a Service to keep transactions and side-effects in one place.
+- Controller → Repository for **write** operations is 🟡 Warning — writes must go through a Service to keep transactions and side-effects in one place.
 
-Every violation of the layering rules below is at minimum 🟠 Major.
+Every violation of the layering rules below is at minimum 🟡 Warning.
 
 #### 1a. Controller responsibilities
 
@@ -104,11 +125,11 @@ Controllers are HTTP adapters only. They must:
 
 Controllers must NOT:
 - Contain business logic (conditionals, calculations, multi-step workflows)
-- Issue Eloquent queries or call Model static methods directly — 🟠 Major
-- Call `$request->validate(...)` inline — use a `FormRequest` — 🟠 Major
-- Contain `if ($user->role === ...)` or any manual authorization — use Policies/Gates — 🟠 Major
-- Return `$model->toArray()`, `response()->json($model)`, or a raw array — use an API Resource — 🟠 Major
-- Have a constructor injecting more than 5 dependencies — 🟡 Minor (God controller smell)
+- Issue Eloquent queries or call Model static methods directly — 🟡 Warning
+- Call `$request->validate(...)` inline — use a `FormRequest` — 🟡 Warning
+- Contain `if ($user->role === ...)` or any manual authorization — use Policies/Gates — 🟡 Warning
+- Return `$model->toArray()`, `response()->json($model)`, or a raw array — use an API Resource — 🟡 Warning
+- Have a constructor injecting more than 5 dependencies — 🔵 Suggestion (God controller smell)
 
 ```php
 // BAD — everything wrong at once
@@ -129,29 +150,29 @@ class UserController extends Controller {
 }
 ```
 
-Controller method length: flag at **40+ lines** as 🟡 Minor (suggest extracting to Service).
+Controller method length: flag at **40+ lines** as 🔵 Suggestion (suggest extracting to Service).
 
 #### 1b. Service responsibilities
 
 Services own all business logic. They must:
-- Accept plain values or typed DTOs — never a `Request` object — 🟠 Major
-- Delegate all Eloquent/query work to a Repository — 🟠 Major
-- Be HTTP-agnostic: no `auth()`, `Auth::`, `redirect()`, `response()`, `session()` — 🟠 Major
-- Be injectable via the service container — `new ServiceClass()` inside another Service is 🟡 Minor
+- Accept plain values or typed DTOs — never a `Request` object — 🟡 Warning
+- Delegate all Eloquent/query work to a Repository — 🟡 Warning
+- Be HTTP-agnostic: no `auth()`, `Auth::`, `redirect()`, `response()`, `session()` — 🟡 Warning
+- Be injectable via the service container — `new ServiceClass()` inside another Service is 🔵 Suggestion
 
-Service method length: flag at **30+ lines** as 🟡 Minor.
+Service method length: flag at **30+ lines** as 🔵 Suggestion.
 
 #### 1c. Repository responsibilities
 
 Repositories own all Eloquent/query logic. They must:
-- Return typed objects (`Model`, `Collection`, `?Model`) — returning a plain `array` is 🟡 Minor
-- Contain no business logic, no HTTP concerns — 🟠 Major
+- Return typed objects (`Model`, `Collection`, `?Model`) — returning a plain `array` is 🔵 Suggestion
+- Contain no business logic, no HTTP concerns — 🟡 Warning
 - Use Eloquent scopes for reusable filter chains — a very long query chain where a named scope would help readability is 🔵 Suggestion
 - Avoid eager-loading constraints inside relationship methods — those belong in the Repository query, not on the Model
 
 #### 1d. DTOs for cross-layer data
 
-Data passing **into** or **out of** a Service must use a typed DTO class, not a raw `array`. Flag any Service method signature that accepts `array $data` as 🟡 Minor.
+Data passing **into** or **out of** a Service must use a typed DTO class, not a raw `array`. Flag any Service method signature that accepts `array $data` as 🔵 Suggestion.
 
 ```php
 // BAD — raw array crossing layer boundary
@@ -174,11 +195,11 @@ DTOs live under `app/Data/`. They must be pure value containers — no DB writes
 
 #### 1e. Form Request classes for all validation
 
-Every Controller method that accepts user input must type-hint a dedicated `FormRequest` subclass. Inline `$request->validate([...])` in a Controller or Service is 🟠 Major. A `FormRequest` with an empty `rules()` method is also 🟠 Major.
+Every Controller method that accepts user input must type-hint a dedicated `FormRequest` subclass. Inline `$request->validate([...])` in a Controller or Service is 🟡 Warning. A `FormRequest` with an empty `rules()` method is also 🟡 Warning.
 
 #### 1f. Console Commands
 
-`handle()` in a Console Command is a thin CLI adapter — it must delegate to a Service or Repository. Direct Eloquent queries or business logic inside `handle()` is 🟠 Major. Use `$this->info()` / `$this->error()` for output (not `echo`) — 🟡 Minor.
+`handle()` in a Console Command is a thin CLI adapter — it must delegate to a Service or Repository. Direct Eloquent queries or business logic inside `handle()` is 🟡 Warning. Use `$this->info()` / `$this->error()` for output (not `echo`) — 🔵 Suggestion.
 
 ---
 
@@ -186,7 +207,7 @@ Every Controller method that accepts user input must type-hint a dedicated `Form
 
 #### 2a. `declare(strict_types=1)`
 
-All new PHP files under `app/` must open with `declare(strict_types=1)` as the first statement after `<?php`. Flag as 🟡 Minor.
+All new PHP files under `app/` must open with `declare(strict_types=1)` as the first statement after `<?php`. Flag as 🔵 Suggestion.
 
 ```php
 <?php
@@ -196,9 +217,9 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 ```
 
-#### 2b. Type declarations — MUST FIX (🟠 Major)
+#### 2b. Type declarations — MUST FIX (🟡 Warning)
 
-**Every method signature must declare types for every parameter AND a return type.** This applies to public, protected, and private methods on classes, traits, and abstract classes alike. Both missing parameter types and missing return types are 🟠 Major.
+**Every method signature must declare types for every parameter AND a return type.** This applies to public, protected, and private methods on classes, traits, and abstract classes alike. Both missing parameter types and missing return types are 🟡 Warning.
 
 - `void` — no return value
 - `never` — always throws or exits
@@ -213,7 +234,7 @@ namespace App\Http\Controllers;
 
 #### 2c. Property type declarations
 
-Class properties under `app/` must be typed. 🟡 Minor.
+Class properties under `app/` must be typed. 🔵 Suggestion.
 
 **Exempt** (Eloquent framework-magic arrays): `$fillable`, `$casts`, `$guarded`, `$with`, `$appends`, `$hidden`, `$dates`.
 
@@ -246,7 +267,7 @@ class UserService {
 
 #### 3a. Authorization — Policies and Gates
 
-Manual role/permission checks in Controllers or Services are 🟠 Major:
+Manual role/permission checks in Controllers or Services are 🟡 Warning:
 
 ```php
 // BAD
@@ -258,11 +279,11 @@ $this->authorize('update', $user);
 Gate::authorize('update-user', $user);
 ```
 
-Every `FormRequest::authorize()` that unconditionally returns `true` without a comment explaining why (e.g., genuinely public endpoint) is 🟡 Minor.
+Every `FormRequest::authorize()` that unconditionally returns `true` without a comment explaining why (e.g., genuinely public endpoint) is 🔵 Suggestion.
 
 #### 3b. Mass assignment
 
-🟠 Major:
+🟡 Warning:
 
 ```php
 // BAD
@@ -274,7 +295,7 @@ $user->fill($request->all())->save();
 $user->update($request->safe()->only(['name', 'email', 'phone']));
 ```
 
-`$guarded = []` without an explicit `$fillable` list: 🟡 Minor — flag, suggest adding `$fillable`.
+`$guarded = []` without an explicit `$fillable` list: 🔵 Suggestion — flag, suggest adding `$fillable`.
 
 #### 3c. SQL injection in raw queries
 
@@ -291,7 +312,7 @@ DB::statement("DELETE FROM users WHERE id = $id")
 
 #### 3d. Insecure direct object reference (IDOR)
 
-🟠 Major — any controller that fetches a resource by ID without scoping to the authenticated user or checking a Policy:
+🟡 Warning — any controller that fetches a resource by ID without scoping to the authenticated user or checking a Policy:
 
 ```php
 // BAD
@@ -303,7 +324,7 @@ $order = auth()->user()->orders()->findOrFail($request->order_id);
 
 #### 3e. File upload security
 
-🟠 Major — a FormRequest that accepts file uploads without **both** a type allow-list and a size cap. Either `mimes:` or `mimetypes:` is acceptable (both sniff actual file contents):
+🟡 Warning — a FormRequest that accepts file uploads without **both** a type allow-list and a size cap. Either `mimes:` or `mimetypes:` is acceptable (both sniff actual file contents):
 
 ```php
 // BAD
@@ -317,12 +338,12 @@ $order = auth()->user()->orders()->findOrFail($request->order_id);
 #### 3f. Sensitive data leaks
 
 - `{!! $var !!}` in Blade or `v-html` in Vue where value could be user-supplied — 🔴 Critical.
-- API Resources that return `password`, `remember_token`, `api_token`, or raw pivot data — 🟠 Major.
-- `Log::info()` / `Log::error()` that logs a full request body, password, or token — 🟠 Major.
+- API Resources that return `password`, `remember_token`, `api_token`, or raw pivot data — 🟡 Warning.
+- `Log::info()` / `Log::error()` that logs a full request body, password, or token — 🟡 Warning.
 
 #### 3g. `env()` outside config files
 
-🟠 Major — returns `null` when config is cached in production:
+🟡 Warning — returns `null` when config is cached in production:
 
 ```php
 // BAD
@@ -332,7 +353,7 @@ $key = env('STRIPE_SECRET');
 $key = config('services.stripe.secret');
 ```
 
-#### 3h. Global forbidden patterns (🟠 Major in all files)
+#### 3h. Global forbidden patterns (🟡 Warning in all files)
 
 - `dd()`, `dump()`, `die()` — forbidden in committed code.
 - `error_log()`, `var_dump()`, `print_r()`, `echo` used for logging — use `Log::info()` / `Log::error()` / `Log::debug()`.
@@ -345,7 +366,7 @@ $key = config('services.stripe.secret');
 
 #### 4a. API Resources — no raw `toArray()` or model-to-JSON
 
-Every JSON response must use a dedicated API Resource. Raw `->toArray()`, `response()->json($model)`, or `$model->toJson()` in a Controller are 🟠 Major:
+Every JSON response must use a dedicated API Resource. Raw `->toArray()`, `response()->json($model)`, or `$model->toJson()` in a Controller are 🟡 Warning:
 
 ```php
 // BAD
@@ -356,13 +377,13 @@ return new UserResource($user);
 return UserResource::collection($users);
 ```
 
-Inside an API Resource's `toArray()`: no DB queries, no Service calls — 🟠 Major (Resources transform already-loaded data only). Use `$this->whenLoaded('relation')` for related models — omitting it causes N+1 queries when the relation was not eager-loaded — 🟡 Minor.
+Inside an API Resource's `toArray()`: no DB queries, no Service calls — 🟡 Warning (Resources transform already-loaded data only). Use `$this->whenLoaded('relation')` for related models — omitting it causes N+1 queries when the relation was not eager-loaded — 🔵 Suggestion.
 
 FormRequest validation: flag raw string rules where a `Rule` object would be safer (e.g. `Rule::unique()`, `Rule::exists()`) — 🔵 Suggestion.
 
 #### 4b. Eloquent N+1 queries
 
-Any Eloquent query or relationship access inside a loop body without prior eager loading is 🟠 Major. `->load()` inside a loop is the same violation — lift it above the loop.
+Any Eloquent query or relationship access inside a loop body without prior eager loading is 🟡 Warning. `->load()` inside a loop is the same violation — lift it above the loop.
 
 ```php
 // BAD — 1 query per user
@@ -383,11 +404,11 @@ Repeated query chains belong in a named local scope. Flag duplicated filter chai
 
 #### 4d. Fillable / guarded hygiene
 
-`$guarded = []` without an explicit `$fillable` — 🟡 Minor (flag, suggest `$fillable`).
+`$guarded = []` without an explicit `$fillable` — 🔵 Suggestion (flag, suggest `$fillable`).
 
 #### 4e. Jobs, Events, Listeners, Observers — when to require them
 
-Flag as 🟠 Major when inline Controller/Service code should be extracted:
+Flag as 🟡 Warning when inline Controller/Service code should be extracted:
 
 **Use a Job when:** work takes >~500ms, needs retry logic, or blocks the web request (email, PDF, external API calls).
 
@@ -407,11 +428,11 @@ event(new UserRegistered($user));
 
 #### 4f. Dependency Injection
 
-`new ClassName()` inside a Controller, Service, or Repository where the class should be injected is 🟡 Minor. This includes `new OtherService()` inside a Service constructor body.
+`new ClassName()` inside a Controller, Service, or Repository where the class should be injected is 🔵 Suggestion. This includes `new OtherService()` inside a Service constructor body.
 
 #### 4g. `DB::transaction()` for multi-write paths
 
-Any code path that issues two or more write queries must be wrapped in `DB::transaction()`. A missing transaction on a Service multi-write path is 🟡 Minor:
+Any code path that issues two or more write queries must be wrapped in `DB::transaction()`. A missing transaction on a Service multi-write path is 🔵 Suggestion:
 
 ```php
 // GOOD
@@ -425,17 +446,17 @@ DB::transaction(function () use ($data, $items) {
 
 ### 5. Models
 
-- Complex business logic or side effects inside a Model method — 🟠 Major.
-- HTTP concerns (`Request`, `response()`, `Auth` facade) inside a Model — 🟠 Major.
-- A method that issues its own Eloquent query instead of defining a scope — 🟡 Minor.
-- Relationship method that contains eager-loading constraints (belongs in the Repository query, not the Model) — 🟡 Minor.
-- `$guarded = []` without `$fillable` — 🟡 Minor.
+- Complex business logic or side effects inside a Model method — 🟡 Warning.
+- HTTP concerns (`Request`, `response()`, `Auth` facade) inside a Model — 🟡 Warning.
+- A method that issues its own Eloquent query instead of defining a scope — 🔵 Suggestion.
+- Relationship method that contains eager-loading constraints (belongs in the Repository query, not the Model) — 🔵 Suggestion.
+- `$guarded = []` without `$fillable` — 🔵 Suggestion.
 
 ---
 
 ### 6. Enums (`app/Enums/`)
 
-Business logic beyond label, color, or helper methods on the enum itself is 🟠 Major. Enums are value descriptors only.
+Business logic beyond label, color, or helper methods on the enum itself is 🟡 Warning. Enums are value descriptors only.
 
 ---
 
@@ -452,7 +473,7 @@ Business logic beyond label, color, or helper methods on the enum itself is 🟠
 
 ### 8. Data Integrity
 
-- Multiple Eloquent writes without `DB::transaction()` — 🟡 Minor.
+- Multiple Eloquent writes without `DB::transaction()` — 🔵 Suggestion.
 - Check-then-act race conditions: `->exists()` + `->create()` → use `firstOrCreate()`.
 - Missing `->lockForUpdate()` on rows read-then-modified concurrently.
 
@@ -460,9 +481,9 @@ Business logic beyond label, color, or helper methods on the enum itself is 🟠
 
 ### 9. Performance
 
-- **N+1** — §4b. Always 🟠 Major.
+- **N+1** — §4b. Always 🟡 Warning.
 - **`->get()` then `->isEmpty()`** — use `->exists()` or `->count()` on the query builder.
-- **`Http::` without `->timeout(N)`** — 🟡 Minor. Suggest `->timeout(30)`.
+- **`Http::` without `->timeout(N)`** — 🔵 Suggestion. Suggest `->timeout(30)`.
 - **Full-table loads** — `Model::all()` on unbounded tables; use `->chunk()` or `->cursor()`.
 - **Unnecessary re-fetch** — re-querying something already in scope.
 
@@ -470,8 +491,8 @@ Business logic beyond label, color, or helper methods on the enum itself is 🟠
 
 ### 10. Error Handling & Resilience
 
-- External HTTP calls with no `$response->successful()` check or try/catch — 🟠 Major.
-- Swallowed exceptions: bare `catch (\Exception $e) {}` — 🟡 Minor.
+- External HTTP calls with no `$response->successful()` check or try/catch — 🟡 Warning.
+- Swallowed exceptions: bare `catch (\Exception $e) {}` — 🔵 Suggestion.
 - Missing fallback when a collection is empty but the next line assumes at least one element.
 
 ---
@@ -479,9 +500,9 @@ Business logic beyond label, color, or helper methods on the enum itself is 🟠
 ### 11. Migrations (`database/migrations/`)
 
 - **Non-null column added to an existing table without a default value or a two-step migration** (add nullable → backfill → make non-null) — 🔴 Critical. This will lock the table on large datasets.
-- **Model class referenced inside a migration** — 🟡 Minor. Prefer `DB::` or raw table names so the migration doesn't break if the Model is later renamed.
-- **No `down()` method, or `down()` is empty** — 🟡 Minor. Rollback must be possible.
-- **Missing index on a foreign key column** — 🟡 Minor.
+- **Model class referenced inside a migration** — 🔵 Suggestion. Prefer `DB::` or raw table names so the migration doesn't break if the Model is later renamed.
+- **No `down()` method, or `down()` is empty** — 🔵 Suggestion. Rollback must be possible.
+- **Missing index on a foreign key column** — 🔵 Suggestion.
 
 ```php
 // BAD — will lock table during deploy on large datasets
@@ -497,16 +518,16 @@ $table->string('phone')->nullable()->after('email');
 
 ### 12. Vue / JavaScript Quality
 
-- **Missing `:key` in `v-for`** — 🟠 Major.
-- **`:key="index"`** in a list that can reorder — 🟡 Minor.
-- **`v-if` + `v-for` on the same element** — 🟡 Minor.
-- **Direct Vuex state mutation** (`this.$store.state.x = y`) — 🟠 Major.
+- **Missing `:key` in `v-for`** — 🟡 Warning.
+- **`:key="index"`** in a list that can reorder — 🔵 Suggestion.
+- **`v-if` + `v-for` on the same element** — 🔵 Suggestion.
+- **Direct Vuex state mutation** (`this.$store.state.x = y`) — 🟡 Warning.
 - **`v-html` with unsanitised input** — 🔴 Critical.
-- **`addEventListener` without `removeEventListener` in `beforeUnmount`** — 🟡 Minor.
-- **Direct DOM manipulation** (`document.querySelector`) — 🟡 Minor; use `this.$refs`.
-- **Axios without error handling** — 🟠 Major.
-- **Missing loading/error state** for async operations — 🟡 Minor.
-- **Unscoped `<style>`** — 🟡 Minor.
+- **`addEventListener` without `removeEventListener` in `beforeUnmount`** — 🔵 Suggestion.
+- **Direct DOM manipulation** (`document.querySelector`) — 🔵 Suggestion; use `this.$refs`.
+- **Axios without error handling** — 🟡 Warning.
+- **Missing loading/error state** for async operations — 🔵 Suggestion.
+- **Unscoped `<style>`** — 🔵 Suggestion.
 
 ---
 
@@ -514,20 +535,20 @@ $table->string('phone')->nullable()->after('email');
 
 #### Untestable patterns (flag on the code, not on missing tests)
 
-- `new ClassName()` inside business logic — 🟡 Minor (prevents mocking).
-- `auth()`, `request()`, `session()` inside Services — 🟠 Major (§1b).
-- `$this->withoutExceptionHandling()` committed — 🟠 Major (debugging aid must not be merged).
+- `new ClassName()` inside business logic — 🔵 Suggestion (prevents mocking).
+- `auth()`, `request()`, `session()` inside Services — 🟡 Warning (§1b).
+- `$this->withoutExceptionHandling()` committed — 🟡 Warning (debugging aid must not be merged).
 
 #### Test quality
 
-- **Outbound HTTP in a test without `Http::fake()` or `fakeHttpResponse()`** — 🟠 Major. Stray requests make tests flaky and environment-dependent.
-- **Testing a private/protected method via reflection** — 🟠 Major (test observable behaviour through the public API).
-- **Test with no assertions** — 🟡 Minor (passes vacuously).
-- **`assertStatus(200)` with no body assertion** — 🟡 Minor.
-- **DB records created without `Tests\RefreshDatabase`** (use the project trait, not Laravel's built-in) — 🟡 Minor (risks test pollution).
-- **`Mockery::mock()` used directly** instead of `mock(ClassName::class)` from `tests/Helpers.php` — 🟡 Minor (plain Mockery doesn't bind into the container).
-- **Controller test that doesn't call `signIn()`** on a protected route — 🟡 Minor.
-- **No unauthenticated path test** for a protected route — 🟡 Minor.
+- **Outbound HTTP in a test without `Http::fake()` or `fakeHttpResponse()`** — 🟡 Warning. Stray requests make tests flaky and environment-dependent.
+- **Testing a private/protected method via reflection** — 🟡 Warning (test observable behaviour through the public API).
+- **Test with no assertions** — 🔵 Suggestion (passes vacuously).
+- **`assertStatus(200)` with no body assertion** — 🔵 Suggestion.
+- **DB records created without `Tests\RefreshDatabase`** (use the project trait, not Laravel's built-in) — 🔵 Suggestion (risks test pollution).
+- **`Mockery::mock()` used directly** instead of `mock(ClassName::class)` from `tests/Helpers.php` — 🔵 Suggestion (plain Mockery doesn't bind into the container).
+- **Controller test that doesn't call `signIn()`** on a protected route — 🔵 Suggestion.
+- **No unauthenticated path test** for a protected route — 🔵 Suggestion.
 
 **Feature test vs Unit test:** Feature tests when the path touches HTTP, database, or external services. Unit tests for pure logic in a Service, DTO, or utility. A test that should be a Feature test written as a Unit test with a mocked repository may mask a real query bug.
 
@@ -535,84 +556,177 @@ $table->string('phone')->nullable()->after('email');
 
 ### 14. API Design
 
-- `POST` creating a resource returning `200` instead of `201` — 🟡 Minor.
-- Collection endpoint with no pagination on an unbounded table — 🟠 Major.
-- API Resource exposing `created_at`, pivot columns, `password`, `remember_token`, or internal IDs — 🟠 Major.
-- Inconsistent response envelope shape — 🟡 Minor.
+- `POST` creating a resource returning `200` instead of `201` — 🔵 Suggestion.
+- Collection endpoint with no pagination on an unbounded table — 🟡 Warning.
+- API Resource exposing `created_at`, pivot columns, `password`, `remember_token`, or internal IDs — 🟡 Warning.
+- Inconsistent response envelope shape — 🔵 Suggestion.
 
 ---
 
 ## Output format
 
-### Severity buckets
+### Global rules
 
-| Emoji | Severity | Merge policy |
-|---|---|---|
-| 🔴 | **Critical** | Blocks merge immediately. Security vuln, data integrity break, auth bypass, exposed credentials, XSS, table-locking migration. |
-| 🟠 | **Major** | Must fix before merge. Architecture violation, N+1, missing API Resource, business logic in Command, broken correctness, stray HTTP in test. |
-| 🟡 | **Minor** | Should fix, doesn't block. PSR-12 drift, missing types, naming, untestable pattern, missing migration down(). |
-| 🔵 | **Suggestion** | Consider. Refactor opportunity, scope extraction, Rule object over raw string, DRY improvement. |
+- **Plain language only.** Explain issues like you're talking to a junior dev on their first week. No jargon unless you immediately define it. Prefer "this runs the database query inside a loop, which is slow" over "N+1 query antipattern detected."
+- **One issue per comment.** Do not bundle multiple problems into a single comment.
+- **Be concrete.** Reference the actual variable, method, or line — not abstract concepts.
 
-### Finding format
+### Required header on every PR review
 
-Each finding must include all three parts:
+Post this as the first comment on every PR, before any inline comments:
 
+> 🤖 **AI Code Review — please verify before acting**
+>
+> This review was generated by an AI assistant. It can miss context, misread intent, or be flat-out wrong. Treat each comment as a suggestion to verify, not a verdict. If something looks off, trust your judgment over mine.
+
+### Per-issue comment structure
+
+Each inline comment must contain these five sections, in this exact order, with these exact headings:
+
+#### 1. The problem (plain English)
+One or two sentences. What's wrong, in the simplest words possible. No "consider refactoring" — say what's actually broken or risky and why it matters.
+
+#### 2. AI fix prompt
+A complete, copy-pasteable prompt the developer can hand to Claude Code (or any AI assistant) to fix this. It MUST include:
+- File path (e.g. `app/Services/OrderService.php`)
+- Line number or method name
+- The exact problem in one sentence
+- Relevant surrounding context (what the method does, what calls it, what the constraint is)
+- Acceptance criteria for the fix
+
+Wrap it in a fenced code block labeled ` ```prompt ` so it's easy to copy.
+
+Example:
+```prompt
+In `app/Services/OrderService.php`, method `calculateTotals()` (around line 47):
+The method queries the database inside a foreach loop, causing one query per order item.
+This service is called on every checkout, so it scales badly under load.
+Refactor it to load all related items in a single query before the loop.
+Keep the existing return type and method signature. Do not change the public API.
+Follow HQ's Controller → DTO → Service → Repository layering — the query belongs in the repository, not the service.
 ```
-🟠 **app/Http/Controllers/UserController.php:14** — Direct Eloquent in Controller
 
-**Offending code:**
-\`\`\`php
-$user = User::where('email', $request->email)->first();
-\`\`\`
+#### 3. Suggested fix (code)
+Show the actual code change. Use a diff-style block when possible:
 
-**Why:** Controllers must not contain Eloquent queries. This couples the HTTP layer
-to the database, prevents mocking in tests, and violates the Controller → Service
-→ Repository contract.
-
-**Fix:**
-\`\`\`php
-// In UserController — inject and delegate
-$user = $this->userService->findByEmail($request->email);
-
-// In UserService
-public function findByEmail(string $email): ?User {
-    return $this->users->findByEmail($email);
-}
-
-// In UserRepository
-public function findByEmail(string $email): ?User {
-    return User::where('email', $email)->first();
-}
-\`\`\`
+```diff
+- foreach ($orders as $order) {
+-     $items = OrderItem::where('order_id', $order->id)->get();
+- }
++ $items = $this->orderItemRepository->findByOrderIds($orders->pluck('id'));
 ```
 
-### Scorecard (always include at end)
+If a diff doesn't fit (e.g. new file), show the full replacement code block with the language tag.
 
-Grade each area A–F: **A** = no issues, **B** = Minor/Suggestion only, **C** = 1–2 Major, **D** = multiple Major or one Critical, **F** = multiple Critical or systemic violation.
+#### 4. Why this fix
+Two or three sentences. Explain *why* this fix works, not just *what* it does. Connect it to a concrete consequence (performance, security, readability, layering rule).
 
-```markdown
-## Scorecard
+#### 5. Auto-fix command (Mode 1 only — omit in Modes 2 and 3)
+At the end of every Mode 1 comment, include this exact line so the developer can apply the fix later:
 
-| Concern | Grade | Summary |
-|---------|-------|---------|
-| Architecture Compliance | ? | |
-| PSR-12 & Code Standards | ? | |
-| Security | ? | |
-| Testability | ? | |
-
-**Verdict:** [safe to merge / not safe to merge as-is — N Critical, M Major]
+```bash
+.claude/skills/code-reviewer/bin/ai-review fix --comment-id={COMMENT_ID}
 ```
+
+`{COMMENT_ID}` will be substituted with the actual Bitbucket comment ID by `post_review.sh` after posting.
+
+### Severity tagging
+
+Prefix each comment's title with one of:
+- 🔴 **Critical** — bug, security issue, data loss risk. Creates a blocking task.
+- 🟡 **Warning** — likely problem, performance, maintainability. Non-blocking.
+- 🔵 **Suggestion** — style, readability, minor improvement. Optional.
+
+---
+
+### Mode 1 — Post as review
+
+1. Post the required AI disclaimer header as the first top-level PR comment (see Required header above).
+2. Compile all findings into a JSON array with `path`, `line`, and `body` fields. The `body` is the full five-section comment including the auto-fix command with `{COMMENT_ID}` as a placeholder.
+3. Post via `post_review.sh` (which resolves `{COMMENT_ID}` after posting):
+
+```bash
+.claude/skills/code-reviewer/scripts/post_review.sh <<'FINDINGS'
+[
+  {
+    "path": "app/Http/Controllers/UserController.php",
+    "line": 22,
+    "body": "🔴 **Critical** — ...\n\n### 1. The problem\n..."
+  }
+]
+FINDINGS
+```
+
+4. Create a blocking task for every 🔴 Critical finding.
+5. End with: `Posted {N} comments to PR #{ID}. Review them at {URL}.`
+
+---
+
+### Mode 2 — Fix locally
+
+**Pre-flight checks (run before touching any file):**
+
+1. Refuse if branch is `main`, `master`, or `develop` (already caught in Step 1).
+2. Run `git status --short`. If the working tree has uncommitted changes, ask:
+   > Working tree has uncommitted changes. Apply fixes anyway? [y/N]
+   Default is **no** — stop unless the user explicitly types `y`.
+3. Count files affected by the planned fixes. If more than 20 and `--force` was not passed, list the files and stop:
+   > {N} files would be modified, which exceeds the 20-file limit per run. Narrow the scope or re-run with `--force`.
+
+**Per-issue fix loop** (work through Critical → Warning → Suggestion order):
+
+For each issue:
+1. Print the full five-section issue (without the auto-fix command — that's Mode 1 only).
+2. Ask:
+   > Apply this fix? [y/n/s/q]
+   - `y` — apply the diff to the file, confirm with `✓ Fixed {file}:{line}`
+   - `n` — skip this issue
+   - `s` — skip all remaining issues of this severity level
+   - `q` — quit the loop now, keep all fixes already applied
+
+3. When `y` is chosen, append to `.ai-review/applied-{timestamp}.log`:
+   ```
+   File: {path}:{line}
+   Prompt:
+   {ai-fix-prompt text}
+
+   Diff applied:
+   {diff}
+   ```
+
+**End of loop — print summary:**
+```
+Applied {N} fix(es), skipped {M}.
+Modified files:
+  - {file1}
+  - {file2}
+Run your tests before pushing.
+```
+
+---
+
+### Mode 3 — Show me first
+
+Print all findings to the terminal in the five-section format, grouped by severity (Critical first, then Warning, then Suggestion). Nothing is posted to Bitbucket and no files are modified. Omit the auto-fix command from each finding.
+
+After printing all findings, ask:
+> That's the full review. Would you like to go back and post (1) or fix locally (2)? [1/2/n]
 
 ---
 
 ## What not to do
 
+- Don't comment on style issues already caught by the linter (Pint, ESLint).
 - Don't open untouched files to look for new issues.
 - Don't grade the whole architecture from a small change.
 - Don't restate `.coderabbit.yaml` rules verbatim if the project uses CodeRabbit — it already does that on the PR.
 - Don't flag issues caught by Pint or the Pest ArchitectureTest.
-- Don't invent issues to fill buckets. An empty 🔴/🟠 list is a valid and welcome outcome.
+- Don't invent issues to fill buckets. An empty 🔴/🟡 list is a valid and welcome outcome.
 - Don't run Pint, Pest, or ESLint — CI runs these before the card moves to code review.
+- Don't suggest rewrites of working code unless there's a concrete reason.
+- Don't say "consider" or "you might want to" — be direct: "this will fail when X" or "this is fine, but Y is faster."
+- Don't repeat the same issue across multiple lines. Comment once on the first occurrence and mention "same pattern appears at lines X, Y, Z."
+- Don't reference the original codebase author or assign blame.
 
 ---
 

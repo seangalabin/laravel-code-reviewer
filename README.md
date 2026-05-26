@@ -1,18 +1,32 @@
 # laravel-code-reviewer
 
-A [Claude Code](https://claude.ai/code) skill that reviews pull requests on Laravel / Bitbucket projects and posts inline comments directly to the PR.
+A [Claude Code](https://claude.ai/code) skill that reviews pull requests on Laravel / Bitbucket projects. It serves two audiences:
+
+- **Reviewers** — analyze a PR and post inline comments to Bitbucket
+- **Developers** — analyze their own branch and apply suggested fixes locally before pushing
+
+Same skill, chosen mode after the analysis runs.
 
 ## What it does
 
 Run `/code-reviewer` in Claude Code and it will:
 
-1. Diff the current branch against `develop`
-2. Run a mechanical pre-pass (`scan_diff.py`) over the changed lines to surface red flags
-3. Apply a 14-dimension review lens to every hunk (see below)
-4. Post each finding as an **inline comment** on the Bitbucket PR, anchored to the exact file and line
-5. Post a scorecard (Architecture, PSR-12, Security, Testability) and merge verdict as a summary comment
+1. Refuse to run on `main`, `master`, or `develop` (feature branches only)
+2. Diff the current branch against `develop`
+3. Run a mechanical pre-pass (`scan_diff.py`) over the changed lines to surface red flags
+4. Apply a 14-dimension review lens to every hunk
+5. Count issues by severity and **ask you which mode to run**
 
-If the project has a `.coderabbit.yaml` or `CLAUDE.md`, those rules are read first and take precedence over the skill's defaults. Neither file is required — the skill works standalone with sensible Laravel defaults.
+### The three modes
+
+**Mode 1 — Post as review**
+Publish all findings as inline Bitbucket PR comments. Use this when you're reviewing someone else's code. Posts a disclaimer header first, then one comment per issue with a copy-pasteable fix prompt and an auto-apply command.
+
+**Mode 2 — Fix locally**
+Walk through each issue interactively and apply suggested fixes directly to the files in the branch. Use this when you're the developer cleaning up your own code before pushing. Never commits anything — just edits files.
+
+**Mode 3 — Show me first**
+Print the full review to the terminal so you can read it before deciding. Nothing is posted or changed.
 
 ## Review dimensions
 
@@ -35,21 +49,20 @@ If the project has a `.coderabbit.yaml` or `CLAUDE.md`, those rules are read fir
 
 ## Severity
 
-| | Severity | Merge policy |
+| | Severity | When |
 |---|---|---|
-| 🔴 | **Critical** | Blocks merge immediately |
-| 🟠 | **Major** | Must fix before merge |
-| 🟡 | **Minor** | Should fix, doesn't block |
-| 🔵 | **Suggestion** | Consider |
+| 🔴 | **Critical** | Bug, security issue, data loss risk. Creates a blocking task in Mode 1. |
+| 🟡 | **Warning** | Likely problem, performance, maintainability. |
+| 🔵 | **Suggestion** | Style, readability, minor improvement. |
 
-Each finding includes the offending code, an explanation of why it's a problem, and a corrected example.
+Each finding contains: what's wrong in plain language, a copy-pasteable Claude Code prompt to fix it, a suggested diff, and an explanation of why the fix works.
 
 ## Requirements
 
 - Node.js 16+
 - Laravel project with [PestPHP](https://pestphp.com/) and [Laravel Pint](https://laravel.com/docs/pint)
 - [Claude Code](https://claude.ai/code) CLI
-- A Bitbucket repository with an open PR for the branch being reviewed
+- A Bitbucket repository (Mode 1 also requires an open PR)
 
 ## Installation
 
@@ -97,7 +110,58 @@ Open Claude Code in your Laravel project and run:
 /code-reviewer
 ```
 
-The skill auto-detects the current branch, finds the open PR, and posts findings.
+The skill auto-detects the current branch, diffs it, runs the analysis, then asks which mode to use.
+
+### Mode 1 — Reviewing someone else's code
+
+```
+/code-reviewer
+> I found 5 issues (1 critical, 3 warnings, 1 suggestion).
+> Reply with 1, 2, or 3.
+1
+> Posted 5 comments to PR #42. Review them at https://bitbucket.org/...
+```
+
+Each comment ends with an auto-apply command the developer can run:
+
+```bash
+.claude/skills/code-reviewer/bin/ai-review fix --comment-id=1234
+```
+
+### Mode 2 — Cleaning up your own branch
+
+```
+/code-reviewer
+> I found 5 issues (1 critical, 3 warnings, 1 suggestion).
+> Reply with 1, 2, or 3.
+2
+> Working tree is clean. Proceeding.
+>
+> 🔴 Critical — app/Http/Controllers/OrderController.php:34
+> [full five-section issue...]
+> Apply this fix? [y/n/s/q]
+y
+> ✓ Fixed app/Http/Controllers/OrderController.php:34
+```
+
+Applied fixes are logged to `.ai-review/applied-{timestamp}.log`. The skill never commits.
+
+### Mode 3 — Read before deciding
+
+```
+/code-reviewer
+> I found 5 issues (1 critical, 3 warnings, 1 suggestion).
+> Reply with 1, 2, or 3.
+3
+> [prints full review to terminal]
+> Would you like to go back and post (1) or fix locally (2)? [1/2/n]
+```
+
+### CLI flags
+
+| Flag | Mode | Effect |
+|---|---|---|
+| `--force` | 2 | Bypass the 20-file-per-run cap |
 
 ## Updating
 
