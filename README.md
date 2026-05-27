@@ -148,10 +148,12 @@ Use `--pr=<N>` when you only know the PR number. The skill resolves the branch n
 
 ### Incremental review
 
-On re-runs, pass `--since-last-review` to only analyse commits added since the previous run:
+Re-runs are incremental by default. Once a checkpoint exists, the skill automatically reviews only commits added since the last run — no flag needed.
+
+To force a full re-review of the entire branch against `develop`:
 
 ```
-/code-reviewer --since-last-review
+/code-reviewer --full-review
 ```
 
 The checkpoint is stored as a hidden PR comment — shared across machines, CI, and teammates.

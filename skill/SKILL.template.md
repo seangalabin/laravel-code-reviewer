@@ -106,18 +106,20 @@ When you encounter one of these markers above a line you would otherwise flag, *
 
 ### Determine the diff base
 
-Check whether `--since-last-review` was passed when the skill was invoked:
+**Unless `--full-review` was passed**, always try the checkpoint first:
 
-**If `--since-last-review` was passed:**
 ```bash
 CHECKPOINT_SHA=$(.claude/skills/code-reviewer/scripts/get_checkpoint.sh)
 ```
-The script reads a hidden checkpoint comment on the PR (shared across machines and teammates) and prints the SHA — or nothing if no checkpoint exists yet.
 
-- Output **non-empty** → use as `BASE_REF`. Print: `Reviewing commits since {short_sha} (last review checkpoint).`
-- Output **empty** → set `BASE_REF=origin/develop` and print: `No checkpoint found — running full review against develop.`
+The script reads a hidden checkpoint comment on the PR and prints the SHA — or nothing if no checkpoint exists yet.
 
-**Otherwise:** `BASE_REF=origin/develop`
+- Output **non-empty** → `BASE_REF=$CHECKPOINT_SHA`. Print: `Reviewing commits since {short_sha} (last review checkpoint). Pass --full-review to review the full branch.`
+- Output **empty** → `BASE_REF=origin/develop`. Print: `No checkpoint found — running full review against develop.`
+
+**If `--full-review` was passed:** skip `get_checkpoint.sh` and set `BASE_REF=origin/develop` directly. Print: `Full review against develop.`
+
+> `--since-last-review` is accepted as an alias for the default behaviour (no-op).
 
 ### Run the scoping scripts
 
