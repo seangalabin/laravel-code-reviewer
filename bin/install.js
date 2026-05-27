@@ -66,6 +66,47 @@ function copyDir(from, to) {
 console.log(`Installing ${skillName} skill into ${dest} ...`);
 copyDir(src, dest);
 
+// ── Write / merge allowedTools permissions ───────────────────────────────────
+// These let the review scripts run without per-command confirmation prompts.
+const allowedTools = isFixer
+    ? [
+        'Bash(.claude/skills/code-fixer/scripts/*)',
+        'Bash(.claude/skills/code-fixer/bin/*)',
+        'Bash(bash .claude/skills/code-fixer/scripts/*)',
+        'Bash(git diff*)',
+        'Bash(git log*)',
+        'Bash(git branch*)',
+        'Bash(git fetch*)',
+        'Bash(git rev-parse*)',
+      ]
+    : [
+        'Bash(.claude/skills/code-reviewer/scripts/*)',
+        'Bash(.claude/skills/code-reviewer/bin/*)',
+        'Bash(bash .claude/skills/code-reviewer/scripts/*)',
+        'Bash(git diff*)',
+        'Bash(git log*)',
+        'Bash(git branch*)',
+        'Bash(git fetch*)',
+        'Bash(git rev-parse*)',
+        'Bash(git worktree*)',
+        'Bash(git -C*)',
+      ];
+
+const settingsPath = path.join(target, '.claude', 'settings.json');
+let settings = {};
+if (fs.existsSync(settingsPath)) {
+    try { settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); } catch (_) {}
+}
+settings.permissions               = settings.permissions               || {};
+settings.permissions.allow         = settings.permissions.allow         || [];
+for (const entry of allowedTools) {
+    if (!settings.permissions.allow.includes(entry)) {
+        settings.permissions.allow.push(entry);
+    }
+}
+fs.mkdirSync(path.join(target, '.claude'), { recursive: true });
+fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
+
 if (isFixer) {
     console.log(`
 ✓ Installed to ${dest}

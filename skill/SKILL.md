@@ -193,13 +193,15 @@ If `--ignore-dismissals` was passed when invoking the skill, **still run the ref
 
 ### Step 2 — Post the review
 
-Print a brief summary first, substituting the real counts:
+1. Print a summary and ask for confirmation (**this is the only interactive prompt in the run**):
 
-> Found **{N} issues** ({X} critical, {Y} warnings, {Z} suggestions). Posting to PR…
+   > Found **{N} issues** ({X} critical, {Y} warnings, {Z} suggestions) on branch `{branch}`.
+   > Post to PR #{ID}? [y/n]
 
-Then post all findings as inline Bitbucket PR comments. See **Posting the review** in the Output format section below.
+2. **y** → post all findings as inline Bitbucket PR comments (see **Posting the review** below).
+3. **n** → end here. Print: `Skipped. Run /code-reviewer again to post, or use /code-fixer to fix locally.`
 
-If you want to fix issues locally instead of posting to the PR, exit and use the companion skill `/code-fixer`.
+Do not run any Bitbucket posting scripts until the user confirms **y**.
 
 ---
 
