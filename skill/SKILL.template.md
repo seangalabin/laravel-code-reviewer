@@ -85,7 +85,13 @@ These apply in all modes and cannot be overridden by project config:
 
 ## Step 0.1 — Check for project-specific overrides (optional)
 
-If the project happens to have any of these files in the root, read them first and let them override the defaults in this skill:
+**Company review rules.** If `.claude/code-review-rules.md` exists, read it and apply its rules **in addition to** the built-in lens below. These are first-class:
+
+- A company rule takes **precedence** over a built-in rule when they conflict.
+- A company rule may **disable** a built-in dimension (e.g. "Disable dimension 6") — honour that and skip the built-in check.
+- Apply company rules with the same weight as the lens — flag violations at the severity the rule states.
+
+If the project also has any of these files in the root, read them first and let them override the defaults in this skill:
 
 - `CLAUDE.md` — project conventions for Claude Code
 - `.coderabbit.yaml` — CodeRabbit review rules (if present)

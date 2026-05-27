@@ -110,6 +110,17 @@ for (const entry of allowedTools) {
 fs.mkdirSync(path.join(target, '.claude'), { recursive: true });
 fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
 
+// ── Scaffold company review rules (only if absent — never overwrite) ─────────
+// Read in addition to the built-in lens by both /code-reviewer and /code-fixer.
+const rulesPath = path.join(target, '.claude', 'code-review-rules.md');
+if (!fs.existsSync(rulesPath)) {
+    const rulesTemplate = path.join(__dirname, '..', 'assets', 'code-review-rules.md');
+    if (fs.existsSync(rulesTemplate)) {
+        fs.copyFileSync(rulesTemplate, rulesPath);
+        console.log(`✓ Created starter company rules at .claude/code-review-rules.md`);
+    }
+}
+
 if (isFixer) {
     console.log(`
 ✓ Installed to ${dest}

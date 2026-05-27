@@ -41,7 +41,13 @@ These apply in all modes and cannot be overridden by project config:
 
 ## Step 0 — Check for project-specific overrides (optional)
 
-If the project happens to have any of these files in the root, read them first and let them override the defaults in this skill:
+**Company review rules.** If `.claude/code-review-rules.md` exists, read it and apply its rules **in addition to** the built-in lens below. These are first-class:
+
+- A company rule takes **precedence** over a built-in rule when they conflict.
+- A company rule may **disable** a built-in dimension (e.g. "Disable dimension 6") — honour that and skip the built-in check.
+- Apply company rules with the same weight as the lens — flag violations at the severity the rule states.
+
+If the project also has any of these files in the root, read them first and let them override the defaults in this skill:
 
 - `CLAUDE.md` — project conventions for Claude Code
 - `.coderabbit.yaml` — CodeRabbit review rules (if present)
@@ -581,37 +587,6 @@ Business logic beyond label, color, or helper methods on the enum itself is 🟡
 - External HTTP calls with no `$response->successful()` check or try/catch — 🟡 Warning.
 - Swallowed exceptions: bare `catch (\Exception $e) {}` — 🔵 Suggestion.
 - Missing fallback when a collection is empty but the next line assumes at least one element.
-
-#### 10a. Report exceptions to the logging platform
-
-Exceptions that are caught and handled (not rethrown), or that wrap-and-throw, must be sent to the logging platform via the project's `report()` helper. `report()` is the single path to the configured logging channel, so the error stays visible in monitoring instead of vanishing.
-
-- A `catch` block that handles an exception locally without calling `report($e)` — 🟡 Warning. The error disappears from monitoring.
-- An exception sent through the `Log` facade (`Log::error($e)`, `Log::warning($e)`, …) instead of `report($e)` — 🔵 Suggestion. The `Log` facade is avoided here because those entries are hard to trace; use `report()` so it reaches the configured channel.
-- Before throwing a new/wrapped exception that swallows the original cause, `report()` the original — 🔵 Suggestion.
-
-```php
-// BAD — caught and silently dropped; monitoring never sees it
-try {
-    $this->gateway->charge($order);
-} catch (PaymentException $e) {
-    return false;
-}
-
-// BAD — Log facade entry is hard to trace and skips the configured channel
-} catch (PaymentException $e) {
-    Log::error($e->getMessage());
-    return false;
-}
-
-// GOOD — reported to the configured channel, then handled
-} catch (PaymentException $e) {
-    report($e);
-    return false;
-}
-```
-
-Rethrowing untouched (`throw $e;`) or letting it bubble to the global handler is fine — the handler reports it. The rule targets exceptions that are **caught and not rethrown**.
 
 ---
 
