@@ -81,6 +81,19 @@ When you encounter one of these markers above a line you would otherwise flag, *
 
 ## Scoping the review
 
+### Refresh the base branch first
+
+The review is diffed against `origin/develop`. A stale remote-tracking ref means the diff base is wrong, so update it before anything else:
+
+```bash
+git fetch origin develop
+```
+
+- Success → continue.
+- Failure (offline, no remote, etc.) → print `⚠️  Couldn't refresh develop — reviewing against your local copy.` and continue. A missing fetch is not fatal; the local `origin/develop` is still usable.
+
+### Run the scoping scripts
+
 Run these up-front to anchor the review:
 
 ```bash
