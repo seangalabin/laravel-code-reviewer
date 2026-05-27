@@ -142,7 +142,7 @@ Run these before touching any file:
 Work through findings in Critical → Warning → Suggestion order.
 
 For each issue:
-1. Print the four-section issue (see Per-issue comment structure below).
+1. Print the issue (see Per-issue comment structure below).
 2. Ask:
    > Apply this fix? [y/n/s/q]
    - `y` — apply the diff to the file, confirm with `✓ Fixed {file}:{line}`
@@ -160,6 +160,20 @@ For each issue:
    {diff}
    ```
 
+4. **Verify the fix before moving on.** Right after each applied fix, run the checks scoped to the changed files:
+   ```bash
+   .claude/skills/code-fixer/scripts/pint_changed.sh    # PHP formatting (check only)
+   .claude/skills/code-fixer/scripts/pest_for_changed.sh   # tests mapped to changed files
+   ```
+   If the fix touched a `.js`, `.ts`, or `.vue` file **and** the project's `package.json` defines a `lint` script, also run:
+   ```bash
+   npm run lint
+   ```
+   - All pass → print `✓ Verified — pint, pest, lint clean.` and continue to the next issue.
+   - Any fail → print the failing output and warn: `⚠️  Verification failed after this fix. Review before continuing (press q to stop and inspect).` Do **not** auto-stage or auto-commit anything to silence a failure.
+
+   Skip a check cleanly when it doesn't apply — the scoped scripts already print "No PHP changes" and exit 0; skip `npm run lint` entirely when no JS/Vue/TS changed or no `lint` script exists.
+
 **End of loop — print summary:**
 
 ```
@@ -167,7 +181,8 @@ Applied {N} fix(es), skipped {M}.
 Modified files:
   - {file1}
   - {file2}
-Run your tests before pushing.
+Verification: {pint/pest/lint status of the last run}
+Run the full suite before pushing.
 ```
 
 ---
@@ -649,7 +664,7 @@ $table->string('phone')->nullable()->after('email');
 
 ### Per-issue comment structure
 
-Each issue must contain these four sections, in this exact order, with these exact headings:
+Each issue must contain sections 1–4 below, in this exact order, with these exact headings. Section 5 (the Pest test) is **conditional** — include it only when the fix changes behaviour.
 
 #### 1. The problem (plain English)
 One or two sentences. What's wrong, in the simplest words possible. No "consider refactoring" — say what's actually broken or risky and why it matters.
@@ -689,6 +704,26 @@ If a diff doesn't fit (e.g. new file), show the full replacement code block with
 #### 4. Why this fix
 Two or three sentences. Explain *why* this fix works, not just *what* it does. Connect it to a concrete consequence (performance, security, readability, layering rule).
 
+#### 5. Suggested Pest test (conditional)
+Include this section **only when the fix changes behaviour** — a bug fix, a security/authorization change, new business logic, a data-integrity guard, or an API contract change. Provide a Pest test that would fail before the fix and pass after it.
+
+**Skip this section entirely** for pure-style fixes (formatting, naming, readability, type hints, missing `strict_types`) — they don't change behaviour, so a test adds noise.
+
+- Place the test at the path the project's convention implies (e.g. `app/Services/OrderService.php` → `tests/Feature/Services/OrderServiceTest.php`).
+- If a matching test file already exists, show the new `it()`/`test()` block to add rather than a whole new file.
+- Wrap it in a ` ```php ` block.
+
+```php
+it('loads order items in a single query', function () {
+    $order = Order::factory()->has(OrderItem::factory()->count(3))->create();
+
+    DB::enableQueryLog();
+    app(OrderService::class)->calculateTotals(collect([$order]));
+
+    expect(DB::getQueryLog())->toHaveCount(1);
+});
+```
+
 ### Severity tagging
 
 Prefix each comment's title with one of:
@@ -704,9 +739,8 @@ Prefix each comment's title with one of:
 - Don't open untouched files to look for new issues.
 - Don't grade the whole architecture from a small change.
 - Don't restate `.coderabbit.yaml` rules verbatim if the project uses CodeRabbit — it already does that on the PR.
-- Don't flag issues caught by Pint or the Pest ArchitectureTest.
+- Don't flag issues caught by Pint or the Pest ArchitectureTest as *findings* — they're CI's job. (You still **run** Pint/Pest/lint to verify each applied fix, per Step 3.4 — that's verification, not a finding.)
 - Don't invent issues to fill buckets. An empty 🔴/🟡 list is a valid and welcome outcome.
-- Don't run Pint, Pest, or ESLint — CI runs these before the card moves to code review.
 - Don't suggest rewrites of working code unless there's a concrete reason.
 - Don't say "consider" or "you might want to" — be direct: "this will fail when X" or "this is fine, but Y is faster."
 - Don't repeat the same issue across multiple lines. Comment once on the first occurrence and mention "same pattern appears at lines X, Y, Z."
@@ -718,6 +752,8 @@ Prefix each comment's title with one of:
 
 - **`branch_summary.sh [base]`** — one-glance overview of what changed vs `origin/develop`.
 - **`scan_diff.py [--base REF] [--no-snippets]`** — pre-pass pattern scanner. Only scans `+` lines. False positives filtered by the agent.
+- **`pint_changed.sh [--fix]`** — run Pint against changed PHP files. Check-only by default; the fixer uses check-only (never auto-stages).
+- **`pest_for_changed.sh [pest args]`** — run only the Pest tests that map to changed files (`app/Foo/Bar.php` → `tests/Feature/Foo/BarTest.php`).
 
 ---
 

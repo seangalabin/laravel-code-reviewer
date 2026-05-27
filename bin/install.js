@@ -78,6 +78,9 @@ const allowedTools = isFixer
         'Bash(git branch*)',
         'Bash(git fetch*)',
         'Bash(git rev-parse*)',
+        'Bash(npm run lint*)',
+        'Bash(vendor/bin/pint*)',
+        'Bash(vendor/bin/pest*)',
       ]
     : [
         'Bash(.claude/skills/code-reviewer/scripts/*)',

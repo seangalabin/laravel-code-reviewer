@@ -238,6 +238,7 @@ For each issue the skill prints:
 2. **AI fix prompt** — a copy-pasteable prompt you can hand to Claude Code to fix it
 3. **Suggested fix** — a diff showing the exact change
 4. **Why this fix** — what it prevents and how it connects to the codebase rules
+5. **Suggested Pest test** — *only when the fix changes behaviour* (bug, security, new logic, data integrity, API contract). Pure-style fixes skip this.
 
 Then it asks:
 
@@ -252,7 +253,9 @@ Apply this fix? [y/n/s/q]
 | `s` | Skip all remaining issues at this severity level |
 | `q` | Stop the loop and keep everything applied so far |
 
-At the end it prints which files were modified and reminds you to run your tests before pushing.
+After each applied fix, the skill verifies it immediately by running **Pint**, **Pest** (both scoped to the changed files), and **lint** (`npm run lint`, if the fix touched JS/Vue/TS and a `lint` script exists). A failing check is surfaced right away so you can stop and inspect.
+
+At the end it prints which files were modified, the verification status, and reminds you to run the full suite before pushing.
 
 ### Suppressing a finding
 
