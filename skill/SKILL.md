@@ -18,7 +18,45 @@ These apply in all modes and cannot be overridden by project config:
 
 ---
 
-## Step 0 — Check for project-specific overrides (optional)
+## Step 0 — Set up review target (only when `--branch` or `--pr` is passed)
+
+**If neither flag was passed, skip to Step 0.1.** The review targets the currently checked-out branch.
+
+**If `--branch=<name>` or `--pr=<N>` was supplied:**
+
+1. Guard — refuse if the target is a protected branch (`main`, `master`, `develop`). `setup_target.sh` enforces this too, but catch it here first:
+
+   > `ERROR: Refusing to review protected branch '<name>'. Check out your feature branch first.`
+
+2. Store the skills root (absolute path so it survives a `cd`):
+   ```bash
+   SKILLS_ROOT=$PWD/.claude/skills/code-reviewer
+   ```
+
+3. Run the setup script and capture the worktree path:
+   ```bash
+   WORKTREE=$(bash "$SKILLS_ROOT/scripts/setup_target.sh" [--branch=<name>|--pr=<N>])
+   ```
+   The script fetches the branch, creates a detached `git worktree` at a temp path (e.g. `/tmp/ai-review-abc123`), writes `.ai-review/target.json` inside it, and prints the path.
+
+4. **For the remainder of this run, apply these three rules to every command:**
+
+   | Command type | Normal mode | Target mode |
+   |---|---|---|
+   | Run a script | `.claude/skills/code-reviewer/scripts/foo.sh` | `cd "$WORKTREE" && "$SKILLS_ROOT/scripts/foo.sh"` |
+   | Run a git command | `git diff ...` | `git -C "$WORKTREE" diff ...` |
+   | Read a file | `Read app/Foo.php` | `Read $WORKTREE/app/Foo.php` |
+
+   All `.ai-review/` state (dismissals, stats, target.json) lives inside `$WORKTREE`. All Bitbucket scripts auto-detect `target.json` and use its `branch` / `pr_id` instead of the current git state — no extra arguments needed.
+
+5. **At the very end** of this run (after cleanup/checkpoint/telemetry), remove the worktree:
+   ```bash
+   bash "$SKILLS_ROOT/scripts/cleanup_target.sh" "$WORKTREE"
+   ```
+
+---
+
+## Step 0.1 — Check for project-specific overrides (optional)
 
 If the project happens to have any of these files in the root, read them first and let them override the defaults in this skill:
 
@@ -140,8 +178,8 @@ If `--ignore-dismissals` was passed when invoking the skill, **still run the ref
 
 ### Step 1 — Analyze
 
-1. **Load project rules** (Step 0 above).
-2. **Refuse if on a protected branch.** Run `git branch --show-current`. If the result is `main`, `master`, or `develop`, stop: `ERROR: Refusing to run on a protected branch. Check out your feature branch first.`
+1. **Load project rules** (Step 0.1 above).
+2. **Refuse if on a protected branch.** In normal mode, run `git branch --show-current` (or `git -C "$WORKTREE" branch --show-current` in target mode — it returns empty for detached HEAD, which is safe). If the resolved branch is `main`, `master`, or `develop`, stop: `ERROR: Refusing to run on a protected branch. Check out your feature branch first.`
 3. **Diff first.** Run the scoping scripts and read every hunk. Do not start by reading whole files.
 4. **Read for context, not findings.** When a hunk references a Repository, Service, or Vuex store not in the diff, read the relevant part to understand intent — findings on those files are out of scope unless changed.
 5. **Apply the full review lens** (all sections below) to everything in the diff.
@@ -738,6 +776,11 @@ FINDINGS
    .claude/skills/code-reviewer/scripts/aggregate_stats.py
    ```
 7. End with: `Posted {N} comments to PR #{ID}. Review them at {URL}.`
+8. **Target mode only** — remove the worktree:
+   ```bash
+   bash "$SKILLS_ROOT/scripts/cleanup_target.sh" "$WORKTREE"
+   ```
+   Print: `Worktree cleaned up.`
 
 If developers want to fix issues locally instead, they should use the `/code-fixer` skill (separate from `/code-reviewer`).
 
@@ -764,6 +807,8 @@ If developers want to fix issues locally instead, they should use the `/code-fix
 - **`branch_summary.sh [base]`** — one-glance overview of what changed vs `origin/develop`.
 - **`scan_diff.py [--base REF] [--no-snippets]`** — pre-pass pattern scanner. Only scans `+` lines. False positives filtered by the agent.
 - **`post_review.sh`** — posts the compiled review as inline Bitbucket PR comments. Reads JSON from stdin. Requires `BITBUCKET_EMAIL` and `BITBUCKET_API_TOKEN` env vars.
+- **`setup_target.sh --branch=<name>|--pr=<N>`** — fetches a branch and creates a detached git worktree for reviewing without checkout. Writes `.ai-review/target.json` inside the worktree. Prints the worktree path to stdout.
+- **`cleanup_target.sh <worktree-path>`** — removes a worktree created by `setup_target.sh`.
 
 ---
 

@@ -30,6 +30,17 @@ import urllib.parse
 from pathlib import Path
 
 
+def load_target() -> dict | None:
+    """Read .ai-review/target.json when setup_target.sh created a worktree."""
+    p = Path('.ai-review/target.json')
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
 def soft_exit(empty: bool = True) -> None:
     if empty:
         Path('.ai-review').mkdir(exist_ok=True)
@@ -107,18 +118,22 @@ def parse_dismissal(body: str) -> dict | None:
 
 
 def main() -> None:
+    target = load_target()
     auth = get_creds()
     if auth is None:
         soft_exit()
     repo = get_repo_info()
     if repo is None:
         soft_exit()
-    branch = get_branch()
-    if branch in ('main', 'master', 'develop'):
+    branch = target['branch'] if target else get_branch()
+    if not branch or branch in ('main', 'master', 'develop'):
         soft_exit()
 
     api_base = f'https://api.bitbucket.org/2.0/repositories/{repo[0]}/{repo[1]}'
-    pr_id = find_pr_id(api_base, auth, branch)
+    if target and target.get('pr_id'):
+        pr_id = str(target['pr_id'])
+    else:
+        pr_id = find_pr_id(api_base, auth, branch)
     if pr_id is None:
         soft_exit()
 

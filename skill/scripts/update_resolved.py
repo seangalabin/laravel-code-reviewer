@@ -23,11 +23,23 @@ import re
 import subprocess
 import sys
 import urllib.parse
+from pathlib import Path
 
 
 def die(msg: str) -> None:
     print(f'ERROR: {msg}', file=sys.stderr)
     sys.exit(1)
+
+
+def load_target() -> dict | None:
+    """Read .ai-review/target.json when setup_target.sh created a worktree."""
+    p = Path('.ai-review/target.json')
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
 
 
 def get_creds() -> tuple[str, str]:
@@ -120,11 +132,12 @@ def main() -> None:
     parser.add_argument('--fix-sha',    required=True)
     args = parser.parse_args()
 
-    auth = get_creds()
+    target   = load_target()
+    auth     = get_creds()
     workspace, repo_slug = get_repo_info()
-    branch   = get_branch()
+    branch   = target['branch'] if target else get_branch()
     api_base = f'https://api.bitbucket.org/2.0/repositories/{workspace}/{repo_slug}'
-    pr_id    = find_pr_id(api_base, auth, branch)
+    pr_id    = str(target['pr_id']) if target and target.get('pr_id') else find_pr_id(api_base, auth, branch)
 
     comment_url  = f'{api_base}/pullrequests/{pr_id}/comments/{args.comment_id}'
     comment      = curl_get(comment_url, auth)

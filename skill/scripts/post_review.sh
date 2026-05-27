@@ -40,7 +40,6 @@ else
     exit 1
 fi
 
-BRANCH=$(git rev-parse --abbrev-ref HEAD)
 API_BASE="https://api.bitbucket.org/2.0/repositories/$WORKSPACE/$REPO_SLUG"
 BASIC_AUTH="$BITBUCKET_EMAIL:$BITBUCKET_API_TOKEN"
 
@@ -59,22 +58,41 @@ if not isinstance(data, list):
     sys.exit(1)
 " "$FINDINGS_FILE" || exit 1
 
-# ── Find open PR for this branch ──────────────────────────────────────────────
-ENCODED_BRANCH=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1]))" "$BRANCH")
-QUERY="source.branch.name%3D%22${ENCODED_BRANCH}%22%20AND%20state%3D%22OPEN%22"
+# ── Resolve branch and PR (target.json wins if present) ───────────────────────
+TARGET_JSON=".ai-review/target.json"
+if [[ -f "$TARGET_JSON" ]]; then
+    BRANCH=$(python3 -c "import json; print(json.load(open('$TARGET_JSON'))['branch'])")
+    PR_ID=$(python3 -c "import json; d=json.load(open('$TARGET_JSON')); print(d.get('pr_id') or '')")
+else
+    BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    PR_ID=""
+fi
 
-PR_JSON=$(curl -sSf -u "$BASIC_AUTH" \
-    "$API_BASE/pullrequests?q=$QUERY&fields=values.id,values.title" 2>&1) || {
-    echo "ERROR: Bitbucket API request failed. Check your credentials and network access." >&2
-    echo "Response: $PR_JSON" >&2
-    exit 1
-}
+if [[ -z "$PR_ID" ]]; then
+    ENCODED_BRANCH=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1]))" "$BRANCH")
+    QUERY="source.branch.name%3D%22${ENCODED_BRANCH}%22%20AND%20state%3D%22OPEN%22"
 
-PR_ID=$(python3 -c "
+    PR_JSON=$(curl -sSf -u "$BASIC_AUTH" \
+        "$API_BASE/pullrequests?q=$QUERY&fields=values.id,values.title" 2>&1) || {
+        echo "ERROR: Bitbucket API request failed. Check your credentials and network access." >&2
+        echo "Response: $PR_JSON" >&2
+        exit 1
+    }
+
+    PR_ID=$(python3 -c "
 import sys, json
 prs = json.load(sys.stdin).get('values', [])
 print(prs[0]['id'] if prs else '')
 " <<< "$PR_JSON")
+
+    PR_TITLE=$(python3 -c "
+import sys, json
+prs = json.load(sys.stdin).get('values', [])
+print(prs[0]['title'] if prs else '')
+" <<< "$PR_JSON")
+else
+    PR_TITLE=""
+fi
 
 if [[ -z "$PR_ID" ]]; then
     echo "ERROR: no open PR found for branch '$BRANCH' in $WORKSPACE/$REPO_SLUG." >&2
@@ -82,13 +100,7 @@ if [[ -z "$PR_ID" ]]; then
     exit 1
 fi
 
-PR_TITLE=$(python3 -c "
-import sys, json
-prs = json.load(sys.stdin).get('values', [])
-print(prs[0]['title'] if prs else '')
-" <<< "$PR_JSON")
-
-echo "Found PR #$PR_ID: $PR_TITLE"
+echo "Found PR #$PR_ID${PR_TITLE:+: $PR_TITLE}"
 echo ""
 
 # ── Capture HEAD SHA for comment tracking ─────────────────────────────────────

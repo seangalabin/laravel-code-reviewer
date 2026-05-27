@@ -23,14 +23,23 @@ fi
 
 WORKSPACE="${BASH_REMATCH[1]}"
 REPO_SLUG="${BASH_REMATCH[2]}"
-BRANCH=$(git rev-parse --abbrev-ref HEAD)
 API_BASE="https://api.bitbucket.org/2.0/repositories/$WORKSPACE/$REPO_SLUG"
 AUTH="$BITBUCKET_EMAIL:$BITBUCKET_API_TOKEN"
 
-python3 - "$API_BASE" "$AUTH" "$BRANCH" 2>/dev/null <<'PYEOF' || true
+# Branch and optional pre-resolved PR ID (target.json wins if present)
+TARGET_JSON=".ai-review/target.json"
+if [[ -f "$TARGET_JSON" ]]; then
+    BRANCH=$(python3 -c "import json; print(json.load(open('$TARGET_JSON'))['branch'])" 2>/dev/null) || exit 0
+    TARGET_PR_ID=$(python3 -c "import json; d=json.load(open('$TARGET_JSON')); print(d.get('pr_id') or '')" 2>/dev/null) || TARGET_PR_ID=""
+else
+    BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    TARGET_PR_ID=""
+fi
+
+python3 - "$API_BASE" "$AUTH" "$BRANCH" "${TARGET_PR_ID:-}" 2>/dev/null <<'PYEOF' || true
 import json, sys, subprocess, urllib.parse, re
 
-api_base, auth, branch = sys.argv[1:4]
+api_base, auth, branch, target_pr_id = sys.argv[1:5]
 
 
 def curl(url):
@@ -38,14 +47,17 @@ def curl(url):
                           capture_output=True, text=True)
 
 
-q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"')
-r = curl(f'{api_base}/pullrequests?q={q}&fields=values.id')
-if r.returncode != 0:
-    sys.exit(0)
-prs = json.loads(r.stdout).get('values', [])
-if not prs:
-    sys.exit(0)
-pr_id = prs[0]['id']
+if target_pr_id:
+    pr_id = int(target_pr_id)
+else:
+    q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"')
+    r = curl(f'{api_base}/pullrequests?q={q}&fields=values.id')
+    if r.returncode != 0:
+        sys.exit(0)
+    prs = json.loads(r.stdout).get('values', [])
+    if not prs:
+        sys.exit(0)
+    pr_id = prs[0]['id']
 
 url = f'{api_base}/pullrequests/{pr_id}/comments?pagelen=50'
 while url:

@@ -135,6 +135,19 @@ If a posted comment is a false positive, mark it won't-fix:
 
 The comment is updated with a ❌ banner and a hidden marker. The **next** `/code-reviewer` run reads dismissals from the PR and skips matching findings (same file, same dimension, line within ±5). To re-evaluate everything, pass `--ignore-dismissals`.
 
+### Review a branch without checking it out
+
+Pass `--branch=<name>` or `--pr=<N>` to review a different branch (or PR) without touching your local checkout:
+
+```
+/code-reviewer --branch=feature/payments
+/code-reviewer --pr=42
+```
+
+The skill fetches the branch, spins up a `git worktree` in a temp directory, runs the full review inside it, posts findings to the PR, then removes the worktree. Your current checkout is untouched throughout.
+
+Use `--pr=<N>` when you only know the PR number. The skill resolves the branch name from Bitbucket automatically (requires credentials).
+
 ### Incremental review
 
 On re-runs, pass `--since-last-review` to only analyse commits added since the previous run:

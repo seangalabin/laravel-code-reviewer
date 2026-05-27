@@ -36,6 +36,17 @@ from pathlib import Path
 STALE_DAYS = 14
 
 
+def load_target() -> dict | None:
+    """Read .ai-review/target.json when setup_target.sh created a worktree."""
+    p = Path('.ai-review/target.json')
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
 def soft_exit(msg: str = '') -> None:
     if msg:
         print(msg, file=sys.stderr)
@@ -181,18 +192,22 @@ def print_digest(stats: dict, pr_id: str) -> None:
 
 
 def main() -> None:
+    target = load_target()
     auth = get_creds()
     if auth is None:
         soft_exit('  Skipping telemetry — Bitbucket credentials not set.')
     repo = get_repo_info()
     if repo is None:
         soft_exit('  Skipping telemetry — not a Bitbucket remote.')
-    branch = get_branch()
-    if branch in ('main', 'master', 'develop'):
+    branch = target['branch'] if target else get_branch()
+    if not branch or branch in ('main', 'master', 'develop'):
         soft_exit()
 
     api_base = f'https://api.bitbucket.org/2.0/repositories/{repo[0]}/{repo[1]}'
-    pr_id = find_pr_id(api_base, auth, branch)
+    if target and target.get('pr_id'):
+        pr_id = str(target['pr_id'])
+    else:
+        pr_id = find_pr_id(api_base, auth, branch)
     if pr_id is None:
         soft_exit('  Skipping telemetry — no open PR for current branch.')
 
