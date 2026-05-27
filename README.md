@@ -10,10 +10,12 @@ Run `/code-reviewer` in Claude Code and it will:
 
 1. Refuse to run on `main`, `master`, or `develop` (feature branches only)
 2. Check previously posted comments and mark any that have been addressed
-3. Diff the current branch against `develop`
-4. Run a mechanical pre-pass (`scan_diff.py`) over the changed lines to surface red flags
-5. Apply a 14-dimension review lens to every hunk
-6. Post each finding as an inline Bitbucket PR comment with a copy-pasteable fix prompt and an auto-apply command
+3. Refresh dismissal memory — skip findings a developer has already marked won't-fix
+4. Diff the current branch against `develop`
+5. Run a mechanical pre-pass (`scan_diff.py`) over the changed lines to surface red flags
+6. Apply a 14-dimension review lens to every hunk
+7. Ask: **Post {N} findings to PR #{ID}? [y/n]** — the only interactive prompt
+8. Post each finding as an inline Bitbucket PR comment with a copy-pasteable fix prompt and an auto-apply command
 
 ## Review dimensions
 
@@ -53,8 +55,6 @@ Each finding contains: what's wrong in plain language, a copy-pasteable Claude C
 
 ## Installation
 
-**Option A — npx (recommended):**
-
 ```bash
 npx github:seangalabin/laravel-code-reviewer
 ```
@@ -65,11 +65,7 @@ To install into a specific directory:
 npx github:seangalabin/laravel-code-reviewer /path/to/project
 ```
 
-**Option B — `.skill` file:**
-
-Download `code-reviewer.skill` from this repo and install it via the Claude Code skill manager.
-
-Both options copy the skill files into `.claude/skills/code-reviewer/` in the target project.
+The installer copies the skill files into `.claude/skills/code-reviewer/` and writes `allowedTools` entries to `.claude/settings.json` so the review scripts run without per-command confirmation prompts.
 
 ## Setup
 
@@ -97,11 +93,13 @@ Open Claude Code in your Laravel project and run:
 /code-reviewer
 ```
 
-The skill auto-detects the current branch, finds the open PR, runs the analysis, and posts findings:
+The skill auto-detects the current branch, finds the open PR, runs the analysis, then asks before posting:
 
 ```
 /code-reviewer
-> Found 5 issues (1 critical, 3 warnings, 1 suggestion). Posting to PR…
+> Found 5 issues (1 critical, 3 warnings, 1 suggestion) on branch feature/payments.
+> Post to PR #42? [y/n]
+y
 > Posted 5 comments to PR #42. Review them at https://bitbucket.org/...
 ```
 
@@ -199,3 +197,23 @@ npx github:seangalabin/laravel-code-reviewer --skill=fixer /path/to/project
 ```
 
 The skill analyzes the branch, prints a summary, runs pre-flight checks (dirty tree, file cap), then walks through each issue asking `[y/n/s/q]`.
+
+---
+
+## Development
+
+### Editing the review lens
+
+The 14-dimension review lens lives in `src/review-lens.md` and is shared between both skills. After editing it, regenerate both `SKILL.md` files:
+
+```bash
+python3 build.py
+```
+
+Commit `src/review-lens.md`, `skill/SKILL.md`, and `skill-fixer/SKILL.md` together.
+
+### Running tests
+
+```bash
+python3 -m unittest discover tests
+```
