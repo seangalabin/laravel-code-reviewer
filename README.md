@@ -168,20 +168,19 @@ If you're the developer cleaning up your own branch (rather than reviewing someo
 
 ## Updating
 
-Each time you run `/code-reviewer` or `/code-fixer`, the skill checks its installed version against the latest on GitHub. If it's out of date, it stops and tells you to update before continuing:
+Each time you run `/code-reviewer` or `/code-fixer`, the skill checks its installed version against the latest on GitHub. If it's out of date, it asks before continuing:
 
 ```
 ⚠️  code-reviewer is out of date (installed: 1.0.0, latest: 1.1.0).
    Update before continuing:
 
      npx github:seangalabin/laravel-code-reviewer
+
+Update now? [y/n]
 ```
 
-To update manually, re-run the install command in your project:
-
-```bash
-npx github:seangalabin/laravel-code-reviewer
-```
+- **y** — runs the update then continues the review
+- **n** — stops; run `/code-reviewer` again after updating manually
 
 The check is skipped silently if GitHub is unreachable.
 

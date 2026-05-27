@@ -16,7 +16,16 @@ Reviews the **current branch's changes** against the base branch (`develop` for 
 ```
 
 - Exit **0** → continue normally.
-- Exit **1** → stop immediately. Print the script's output as-is and do not proceed. The developer must update before running the skill.
+- Exit **1** → print the script's output, then ask:
+
+  > Update now? [y/n]
+
+  **y** → run the update, then continue the review:
+  ```bash
+  npx github:seangalabin/laravel-code-reviewer
+  ```
+
+  **n** → stop. Print: `Skipped. Run /code-reviewer again after updating.`
 
 ---
 
