@@ -30,7 +30,7 @@ Run `/code-reviewer` in Claude Code and it will:
 | 7 | Correctness | Null dereferences, race conditions, wrong status codes |
 | 8 | Data Integrity | Multi-write transactions, check-then-act, locking |
 | 9 | Performance | N+1, full-table loads, `Http::` timeout |
-| 10 | Error Handling | Swallowed exceptions, missing HTTP error handling |
+| 10 | Error Handling | Swallowed exceptions, missing HTTP error handling, `report()` for caught exceptions |
 | 11 | Migrations | Non-null without default (table lock risk), Model refs, empty `down()` |
 | 12 | Vue / JavaScript | `:key`, Vuex mutation, `v-html` XSS, event listener leaks |
 | 13 | Testing | Stray HTTP, reflection, `withoutExceptionHandling()`, missing assertions |
@@ -286,6 +286,16 @@ python3 build.py
 ```
 
 Commit `src/review-lens.md`, `skill/SKILL.md`, and `skill-fixer/SKILL.md` together.
+
+### Versioning
+
+Bump `skill/VERSION` and `skill-fixer/VERSION` on **every** change that ships to users — the running skill compares its version against these files and forces an update when they differ. Size the bump to the change (semver):
+
+- **Patch** (`1.0.0` → `1.0.1`) — wording tweaks, small fixes, doc-only changes to a skill.
+- **Minor** (`1.0.0` → `1.1.0`) — a new review rule, flag, or capability (backwards-compatible).
+- **Major** (`1.0.0` → `2.0.0`) — breaking changes to how the skill is invoked or installed.
+
+Both files move together since the review lens is shared.
 
 ### Running tests
 

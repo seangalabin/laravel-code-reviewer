@@ -629,6 +629,37 @@ Business logic beyond label, color, or helper methods on the enum itself is 🟡
 - Swallowed exceptions: bare `catch (\Exception $e) {}` — 🔵 Suggestion.
 - Missing fallback when a collection is empty but the next line assumes at least one element.
 
+#### 10a. Report exceptions to the logging platform
+
+Exceptions that are caught and handled (not rethrown) must be sent to the third-party logging platform via Laravel's `report()` helper. `report()` routes through the exception handler to the configured channels (Sentry, Bugsnag, etc.), so the error stays visible in monitoring instead of vanishing.
+
+- A `catch` block that handles an exception locally without calling `report($e)` — 🟡 Warning. The error disappears from monitoring.
+- An exception logged with `Log::error($e)` instead of `report($e)` — 🔵 Suggestion. `report()` is the single path that reaches every configured channel.
+- Before throwing a new/wrapped exception that swallows the original cause, `report()` the original — 🔵 Suggestion.
+
+```php
+// BAD — caught and silently dropped; monitoring never sees it
+try {
+    $this->gateway->charge($order);
+} catch (PaymentException $e) {
+    return false;
+}
+
+// BAD — only hits the local log channel, not the monitoring platform
+} catch (PaymentException $e) {
+    Log::error($e->getMessage());
+    return false;
+}
+
+// GOOD — reported to the logging platform, then handled
+} catch (PaymentException $e) {
+    report($e);
+    return false;
+}
+```
+
+Rethrowing untouched (`throw $e;`) or letting it bubble to the global handler is fine — the handler reports it. The rule targets exceptions that are **caught and not rethrown**.
+
 ---
 
 ### 11. Migrations (`database/migrations/`)
