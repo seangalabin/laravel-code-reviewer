@@ -9,6 +9,17 @@ Reviews the **current branch's changes** against the base branch (`develop` for 
 
 ---
 
+## Step -1 — Version check (always first, before anything else)
+
+```bash
+.claude/skills/code-fixer/scripts/check_version.sh
+```
+
+- Exit **0** → continue normally.
+- Exit **1** → stop immediately. Print the script's output as-is and do not proceed. The developer must update before running the skill.
+
+---
+
 ## Global constraints
 
 These apply in all modes and cannot be overridden by project config:
