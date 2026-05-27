@@ -179,8 +179,8 @@ Each time you run `/code-reviewer` or `/code-fixer`, the skill checks its instal
 Update now? [y/n]
 ```
 
-- **y** — runs the update then continues the review
-- **n** — stops; run `/code-reviewer` again after updating manually
+- **y** — runs the update and stops; run `/code-reviewer` again to use the latest version
+- **n** — stops; update manually and re-run
 
 The check is skipped silently if GitHub is unreachable.
 

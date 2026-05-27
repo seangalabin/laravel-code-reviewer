@@ -20,10 +20,11 @@ Reviews the **current branch's changes** against the base branch (`develop` for 
 
   > Update now? [y/n]
 
-  **y** → run the update, then continue the review:
+  **y** → run the update:
   ```bash
   npx github:seangalabin/laravel-code-reviewer
   ```
+  Then stop. Print: `Updated. Run /code-reviewer again to use the latest version.`
 
   **n** → stop. Print: `Skipped. Run /code-reviewer again after updating.`
 
