@@ -395,10 +395,10 @@ Business logic beyond label, color, or helper methods on the enum itself is 🟡
 
 #### 10a. Report exceptions to the logging platform
 
-Exceptions that are caught and handled (not rethrown) must be sent to the third-party logging platform via Laravel's `report()` helper. `report()` routes through the exception handler to the configured channels (Sentry, Bugsnag, etc.), so the error stays visible in monitoring instead of vanishing.
+Exceptions that are caught and handled (not rethrown), or that wrap-and-throw, must be sent to the logging platform via the project's `report()` helper. `report()` is the single path to the configured logging channel, so the error stays visible in monitoring instead of vanishing.
 
 - A `catch` block that handles an exception locally without calling `report($e)` — 🟡 Warning. The error disappears from monitoring.
-- An exception logged with `Log::error($e)` instead of `report($e)` — 🔵 Suggestion. `report()` is the single path that reaches every configured channel.
+- An exception sent through the `Log` facade (`Log::error($e)`, `Log::warning($e)`, …) instead of `report($e)` — 🔵 Suggestion. The `Log` facade is avoided here because those entries are hard to trace; use `report()` so it reaches the configured channel.
 - Before throwing a new/wrapped exception that swallows the original cause, `report()` the original — 🔵 Suggestion.
 
 ```php
@@ -409,13 +409,13 @@ try {
     return false;
 }
 
-// BAD — only hits the local log channel, not the monitoring platform
+// BAD — Log facade entry is hard to trace and skips the configured channel
 } catch (PaymentException $e) {
     Log::error($e->getMessage());
     return false;
 }
 
-// GOOD — reported to the logging platform, then handled
+// GOOD — reported to the configured channel, then handled
 } catch (PaymentException $e) {
     report($e);
     return false;
