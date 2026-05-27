@@ -188,9 +188,18 @@ The check is skipped silently if GitHub is unreachable.
 
 ## code-fixer (developer skill)
 
-A companion skill for developers. Same review analysis, no Bitbucket posting — goes straight to an interactive fix loop on your local branch.
+Use `code-fixer` when you want to clean up your **own** branch before pushing — it runs the same 14-dimension analysis as `code-reviewer` but instead of posting comments to Bitbucket, it walks you through applying fixes interactively on your local machine. No credentials needed.
+
+### When to use it
+
+| Scenario | Use |
+|---|---|
+| Reviewing someone else's PR and posting feedback | `/code-reviewer` |
+| Cleaning up your own branch before pushing | `/code-fixer` |
 
 ### Install
+
+Run this once in your Laravel project root:
 
 ```bash
 npx github:seangalabin/laravel-code-reviewer --skill=fixer
@@ -202,13 +211,64 @@ To install into a specific directory:
 npx github:seangalabin/laravel-code-reviewer --skill=fixer /path/to/project
 ```
 
-### Usage
+No credentials or `.env` changes needed — `code-fixer` never contacts Bitbucket.
+
+### First run
+
+Make sure you're on your feature branch (not `main`, `master`, or `develop`), then open Claude Code and run:
 
 ```
 /code-fixer
 ```
 
-The skill analyzes the branch, prints a summary, runs pre-flight checks (dirty tree, file cap), then walks through each issue asking `[y/n/s/q]`.
+The skill will:
+
+1. Check its version is up to date
+2. Diff your branch against `develop`
+3. Scan for issues across all 14 review dimensions
+4. Print a summary: `Found 5 issues (1 critical, 3 warnings, 1 suggestion). Starting fix loop.`
+5. Check for uncommitted changes — if any exist, ask whether to proceed
+6. Walk through each issue one at a time, Critical → Warning → Suggestion
+
+### The fix loop
+
+For each issue the skill prints:
+
+1. **The problem** — plain English, what's wrong and why it matters
+2. **AI fix prompt** — a copy-pasteable prompt you can hand to Claude Code to fix it
+3. **Suggested fix** — a diff showing the exact change
+4. **Why this fix** — what it prevents and how it connects to the codebase rules
+
+Then it asks:
+
+```
+Apply this fix? [y/n/s/q]
+```
+
+| Key | Action |
+|---|---|
+| `y` | Apply the diff to the file immediately |
+| `n` | Skip this issue |
+| `s` | Skip all remaining issues at this severity level |
+| `q` | Stop the loop and keep everything applied so far |
+
+At the end it prints which files were modified and reminds you to run your tests before pushing.
+
+### Suppressing a finding
+
+If a finding is a false positive, add an ignore marker on the line above the flagged code:
+
+| Language | Marker |
+|---|---|
+| PHP / JS / Vue `<script>` | `// ai-review:ignore <reason>` |
+| Blade | `{{-- ai-review:ignore <reason> --}}` |
+| Vue `<template>` / HTML | `<!-- ai-review:ignore <reason> -->` |
+
+A non-empty reason is required — bare markers without a reason are flagged as a suggestion.
+
+### Applied fixes log
+
+Every fix you accept is logged to `.ai-review/applied-{timestamp}.log` so you can review or revert what was changed.
 
 ---
 
