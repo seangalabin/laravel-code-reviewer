@@ -24,21 +24,14 @@ import datetime
 import json
 import os
 import re
-import subprocess
 import sys
-import urllib.parse
 from pathlib import Path
 
-
-def load_target() -> dict | None:
-    """Read .ai-review/target.json when setup_target.sh created a worktree."""
-    p = Path('.ai-review/target.json')
-    if not p.exists():
-        return None
-    try:
-        return json.loads(p.read_text())
-    except (json.JSONDecodeError, OSError):
-        return None
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _bitbucket import (
+    fetch_all_comments, find_pr_id, get_branch, get_creds,
+    get_repo_info, load_target, repo_api_base,
+)
 
 
 def soft_exit(empty: bool = True) -> None:
@@ -50,61 +43,6 @@ def soft_exit(empty: bool = True) -> None:
             'dismissals':   [],
         }, indent=2))
     sys.exit(0)
-
-
-def get_creds() -> tuple[str, str] | None:
-    email = os.environ.get('BITBUCKET_EMAIL', '')
-    token = os.environ.get('BITBUCKET_API_TOKEN', '')
-    return (email, token) if email and token else None
-
-
-def get_repo_info() -> tuple[str, str] | None:
-    r = subprocess.run(['git', 'remote', 'get-url', 'origin'],
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        return None
-    m = re.search(r'bitbucket\.org[:/]([^/]+)/([^/]+?)(\.git)?$', r.stdout.strip())
-    return (m.group(1), m.group(2)) if m else None
-
-
-def get_branch() -> str:
-    r = subprocess.run(['git', 'branch', '--show-current'],
-                       capture_output=True, text=True)
-    return r.stdout.strip()
-
-
-def curl(url: str, auth: tuple[str, str]) -> dict | None:
-    r = subprocess.run(
-        ['curl', '-sSf', '-u', f'{auth[0]}:{auth[1]}', url],
-        capture_output=True, text=True,
-    )
-    if r.returncode != 0:
-        return None
-    try:
-        return json.loads(r.stdout)
-    except json.JSONDecodeError:
-        return None
-
-
-def find_pr_id(api_base: str, auth: tuple[str, str], branch: str) -> str | None:
-    q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"')
-    data = curl(f'{api_base}/pullrequests?q={q}&fields=values.id', auth)
-    if not data:
-        return None
-    prs = data.get('values', [])
-    return str(prs[0]['id']) if prs else None
-
-
-def fetch_all_comments(api_base: str, pr_id: str, auth: tuple[str, str]) -> list[dict]:
-    out: list[dict] = []
-    url: str | None = f'{api_base}/pullrequests/{pr_id}/comments?pagelen=50'
-    while url:
-        page = curl(url, auth)
-        if page is None:
-            break
-        out.extend(page.get('values', []))
-        url = page.get('next')
-    return out
 
 
 def parse_dismissal(body: str) -> dict | None:
@@ -119,26 +57,23 @@ def parse_dismissal(body: str) -> dict | None:
 
 def main() -> None:
     target = load_target()
-    auth = get_creds()
+    auth   = get_creds()
     if auth is None:
         soft_exit()
     repo = get_repo_info()
     if repo is None:
         soft_exit()
-    branch = target['branch'] if target else get_branch()
+
+    branch = get_branch(target)
     if not branch or branch in ('main', 'master', 'develop'):
         soft_exit()
 
-    api_base = f'https://api.bitbucket.org/2.0/repositories/{repo[0]}/{repo[1]}'
-    if target and target.get('pr_id'):
-        pr_id = str(target['pr_id'])
-    else:
-        pr_id = find_pr_id(api_base, auth, branch)
+    api_base = repo_api_base(repo)
+    pr_id    = find_pr_id(api_base, auth, branch, target)
     if pr_id is None:
         soft_exit()
 
-    comments = fetch_all_comments(api_base, pr_id, auth)
-
+    comments   = fetch_all_comments(api_base, pr_id, auth)
     dismissals = []
     for c in comments:
         body = c.get('content', {}).get('raw', '')
