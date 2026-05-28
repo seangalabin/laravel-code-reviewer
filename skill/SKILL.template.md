@@ -131,6 +131,22 @@ When you encounter one of these markers above a line you would otherwise flag, *
 
 ## Scoping the review
 
+### Refresh from the remote first
+
+In normal mode, the review compares against `origin/develop` and the current branch on Bitbucket. Stale remote-tracking refs — or a local HEAD that lags the remote — will hide new commits from the checkpoint comparison and produce a false "no new commits" result. Refresh before resolving the diff base:
+
+```bash
+.claude/skills/code-reviewer/scripts/refresh_branch.sh
+```
+
+The script fetches `origin/develop` and `origin/<branch>`, then aligns the local branch:
+
+- Behind only → fast-forwards local to match the remote.
+- Diverged or has unpushed commits → leaves HEAD alone and warns; the review proceeds against the local view.
+- Fetch fails (offline, no remote) → warns and continues.
+
+**Skip this step in target mode (`--branch`/`--pr`)** — `setup_target.sh` already fetched the branch and the worktree is detached at the fresh `origin/<branch>`. The script no-ops if it detects target mode.
+
 ### Determine the diff base
 
 **Unless `--full-review` was passed**, always try the checkpoint first:
