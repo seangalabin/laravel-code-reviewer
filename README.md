@@ -46,23 +46,6 @@ Run `/code-reviewer` in Claude Code and it will:
 
 Each finding contains: what's wrong in plain language, a copy-pasteable Claude Code prompt to fix it, a suggested diff, and an explanation of why the fix works.
 
-## Company review rules
-
-The built-in lens covers general Laravel/Vue quality. To add **your own** conventions — naming rules, a required logging helper, an architecture constraint specific to your codebase — drop them in `.claude/code-review-rules.md`.
-
-The installer scaffolds this file with a worked example (using a `report()` logging helper) the first time you install, and never overwrites it afterward. It's committed and shared with your team. Both `/code-reviewer` and `/code-fixer` read it on every run.
-
-```markdown
-## Exception logging — use report()
-
-Caught-and-handled exceptions must be sent to the logging platform via `report()`.
-
-- A catch block that handles an exception without calling `report($e)` — 🟡 Warning.
-- Logging an exception via the `Log` facade instead of `report($e)` — 🔵 Suggestion.
-```
-
-Rules here take **precedence** over the built-in lens when they conflict, and can **disable** a built-in dimension (e.g. "Disable dimension 6 (Enums)"). Use the same 🔴/🟡/🔵 severity markers so findings slot in naturally.
-
 ## Requirements
 
 - Node.js 16+
