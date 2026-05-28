@@ -153,12 +153,17 @@ The script fetches `origin/develop` and `origin/<branch>`, then aligns the local
 
 ```bash
 CHECKPOINT_SHA=$(.claude/skills/code-reviewer/scripts/get_checkpoint.sh)
+HEAD_SHA=$(git rev-parse HEAD)
 ```
 
 The script reads a hidden checkpoint comment on the PR and prints the SHA — or nothing if no checkpoint exists yet.
 
-- Output **non-empty** → `BASE_REF=$CHECKPOINT_SHA`. Print: `Reviewing commits since {short_sha} (last review checkpoint). Pass --full-review to review the full branch.`
-- Output **empty** → `BASE_REF=origin/develop`. Print: `No checkpoint found — running full review against develop.`
+- `CHECKPOINT_SHA` **non-empty AND equals `HEAD_SHA`** → the PR has already been reviewed at the current tip. Print exactly this, then **stop the run** (do not run scoping, analysis, or posting):
+
+  > `PR #{ID} was last reviewed at {short_sha}, which is still the current tip. 0 new commits to review since the last run. Pass --full-review to re-review the whole branch against develop.`
+
+- `CHECKPOINT_SHA` **non-empty AND differs from `HEAD_SHA`** → `BASE_REF=$CHECKPOINT_SHA`. Print: `Reviewing commits since {short_sha} (last review checkpoint). Pass --full-review to review the full branch.`
+- `CHECKPOINT_SHA` **empty** → `BASE_REF=origin/develop`. Print: `No checkpoint found — running full review against develop.`
 
 **If `--full-review` was passed:** skip `get_checkpoint.sh` and set `BASE_REF=origin/develop` directly. Print: `Full review against develop.`
 
