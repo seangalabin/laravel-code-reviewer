@@ -110,6 +110,28 @@ for (const entry of allowedTools) {
 fs.mkdirSync(path.join(target, '.claude'), { recursive: true });
 fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
 
+// ── Ensure credentials never get committed ───────────────────────────────────
+// .claude/settings.local.json holds the Bitbucket API token. A stock Laravel
+// .gitignore does NOT cover it, so protect it here (idempotently).
+const gitignorePath = path.join(target, '.gitignore');
+const ignoreEntry   = '.claude/settings.local.json';
+let gitignore = '';
+if (fs.existsSync(gitignorePath)) {
+    gitignore = fs.readFileSync(gitignorePath, 'utf8');
+}
+const alreadyIgnored = gitignore
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .some(l => l === ignoreEntry || l === '.claude/' || l === '.claude');
+if (!alreadyIgnored) {
+    const prefix = gitignore && !gitignore.endsWith('\n') ? '\n' : '';
+    fs.appendFileSync(
+        gitignorePath,
+        `${prefix}\n# Claude Code — local secrets (Bitbucket token); never commit\n${ignoreEntry}\n`,
+    );
+    console.log(`✓ Added ${ignoreEntry} to .gitignore`);
+}
+
 // ── Scaffold company review rules (only if absent — never overwrite) ─────────
 // Read in addition to the built-in lens by both /code-reviewer and /code-fixer.
 const rulesPath = path.join(target, '.claude', 'code-review-rules.md');

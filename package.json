@@ -1,7 +1,7 @@
 {
   "name": "@redhq/code-reviewer",
-  "version": "1.0.0",
-  "description": "Claude Code review skill for Laravel / Bitbucket projects",
+  "version": "1.1.0",
+  "description": "Installer for the code-reviewer and code-fixer Claude Code skills (Laravel / Bitbucket). Bundle version only — each skill versions independently via skill/VERSION and skill-fixer/VERSION.",
   "bin": {
     "code-reviewer": "./bin/install.js"
   },

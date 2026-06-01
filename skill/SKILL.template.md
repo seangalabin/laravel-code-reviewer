@@ -9,6 +9,24 @@ Reviews the **current branch's changes** against the base branch (`develop` for 
 
 ---
 
+## OS detection (once, before Step -1)
+
+`code-reviewer` runs its scripts through **bash** (Linux, macOS, WSL, or Git Bash on Windows). It has no native PowerShell variant. Confirm a bash shell is available before doing anything else:
+
+**Step A.** Run `uname -s`.
+- Returns `Linux` → bash is available (Linux / WSL). Continue.
+- Returns `Darwin` → bash is available (macOS). Continue.
+- Returns a value starting with `MINGW` or `CYGWIN` → bash is available (Git Bash on Windows). Continue.
+- Errors or returns anything else → go to Step B.
+
+**Step B.** No bash shell (native Windows PowerShell/cmd). **Stop immediately** and print:
+
+> ❌ `code-reviewer` needs a bash shell. On Windows, install **Git Bash** or **WSL** and re-run from there — or use `/code-fixer`, which has native Windows support.
+
+Do not attempt to run the `.sh` scripts without bash — they will fail.
+
+---
+
 ## Step -1 — Version check (always first, before anything else)
 
 ```bash

@@ -52,6 +52,7 @@ Each finding contains: what's wrong in plain language, a copy-pasteable Claude C
 - Laravel project with [PestPHP](https://pestphp.com/) and [Laravel Pint](https://laravel.com/docs/pint)
 - [Claude Code](https://claude.ai/code) CLI
 - A Bitbucket repository with an open PR on the current branch
+- A **bash shell** for `code-reviewer` — Linux, macOS, WSL, or Git Bash on Windows. Native Windows PowerShell is not supported by `code-reviewer`; use WSL/Git Bash, or use `code-fixer` (which has native Windows `.ps1` support).
 
 ## Installation
 
@@ -277,25 +278,41 @@ Every fix you accept is logged to `.ai-review/applied-{timestamp}.log` so you ca
 
 ## Development
 
-### Editing the review lens
+### Editing the skills — source of truth
 
-The 14-dimension review lens lives in `src/review-lens.md` and is shared between both skills. After editing it, regenerate both `SKILL.md` files:
+**`skill/SKILL.md` and `skill-fixer/SKILL.md` are generated. Never edit them by hand.** Edit the inputs and rebuild:
+
+- The 14-dimension review lens (shared by both skills) lives in `src/review-lens.md`.
+- Everything else lives in the per-skill templates: `skill/SKILL.template.md` and `skill-fixer/SKILL.template.md` (each pulls in the lens via `<!-- include:src/review-lens.md -->`).
+
+After editing a template or the lens, regenerate:
 
 ```bash
 python3 build.py
 ```
 
-Commit `src/review-lens.md`, `skill/SKILL.md`, and `skill-fixer/SKILL.md` together.
+Commit the template(s), `src/review-lens.md`, and the regenerated `SKILL.md` files together.
+
+> A hand-edit to a generated `SKILL.md` is silently destroyed by the next `python3 build.py`. The `TestBuildIdempotency` test guards against this — it fails if any committed `SKILL.md` differs from `expand(template)`. Run the tests before committing.
+
+### Shared scripts and references
+
+Three scripts (`scan_diff.py`, `pint_changed.sh`, `pest_for_changed.sh`) and all five `references/*.md` files are duplicated verbatim in both `skill/` and `skill-fixer/` and **must stay byte-identical** — edit one, copy it to the other. `TestSharedFilesNoDrift` fails if they diverge. (`check_version.sh` and `branch_summary.sh` are intentionally per-skill — don't sync those.)
 
 ### Versioning
 
-Bump `skill/VERSION` and `skill-fixer/VERSION` on **every** change that ships to users — the running skill compares its version against these files and forces an update when they differ. Size the bump to the change (semver):
+The two skills version **independently**. `skill/VERSION` and `skill-fixer/VERSION` are each compared against their own copy on GitHub by the running skill, which forces an update when they differ. Bump the VERSION of every skill a change actually ships to:
 
-- **Patch** (`1.0.0` → `1.0.1`) — wording tweaks, small fixes, doc-only changes to a skill.
-- **Minor** (`1.0.0` → `1.1.0`) — a new review rule, flag, or capability (backwards-compatible).
-- **Major** (`1.0.0` → `2.0.0`) — breaking changes to how the skill is invoked or installed.
+- A change to the **shared lens** (`src/review-lens.md`) affects both skills → bump **both** VERSION files.
+- A change to **one skill only** (e.g. a reviewer-only flag, or fixer-only Windows support) → bump **only that skill's** VERSION.
 
-Both files move together since the review lens is shared.
+Size the bump to the change (semver):
+
+- **Patch** (`1.2.0` → `1.2.1`) — wording tweaks, small fixes, doc-only changes to a skill.
+- **Minor** (`1.2.0` → `1.3.0`) — a new review rule, flag, or capability (backwards-compatible).
+- **Major** (`1.2.0` → `2.0.0`) — breaking changes to how the skill is invoked or installed.
+
+> `package.json`'s `version` tracks the **installer bundle** (this npm package), not the skills. It is independent of the two `VERSION` files, which are the authoritative source for the in-skill update check.
 
 ### Running tests
 

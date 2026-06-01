@@ -9,10 +9,54 @@ Reviews the **current branch's changes** against the base branch (`develop` for 
 
 ---
 
+## OS detection (once, before Step -1)
+
+Follow these steps in order — stop as soon as one succeeds:
+
+**Step A.** Run `uname -s`.
+- Returns `Linux` → use `.sh` scripts (Linux / WSL).
+- Returns `Darwin` → use `.sh` scripts (macOS).
+- Returns a value starting with `MINGW` or `CYGWIN` → use `.sh` scripts (Git Bash on Windows; bash is available).
+- Errors or returns anything else → go to Step B.
+
+**Step B.** Run `python3 -c "import platform; print(platform.system())"` (or `python` if `python3` is unavailable).
+- Returns `Linux` or `Darwin` → use `.sh` scripts.
+- Returns `Windows` → use `.ps1` scripts.
+- Errors → go to Step C.
+
+**Step C.** Assume Windows. Use `.ps1` scripts and print:
+> ⚠️ OS could not be detected — assuming Windows and using `.ps1` scripts.
+
+**PowerShell version fallback (Windows only):** try `pwsh` (PowerShell Core 7+) first. If `pwsh` is not found, fall back to `powershell` (Windows PowerShell 5.1).
+
+## Requirements check (once, after OS detection)
+
+Check for soft dependencies and note what gets skipped if any are absent. Missing tools are **not fatal** — the skill continues with reduced capability.
+
+| Tool | Unix/Mac check | Windows check | If missing |
+|---|---|---|---|
+| Python | `python3 --version 2>/dev/null \|\| python --version 2>/dev/null` | `python --version 2>/dev/null` | Skip `scan_diff.py` pre-pass |
+| PHP | `php --version 2>/dev/null` | `php --version 2>/dev/null` | Skip pint and pest in the fix loop |
+| `vendor/bin/pint` | `test -f vendor/bin/pint` | `Test-Path vendor/bin/pint` | Skip pint check in the fix loop |
+| `vendor/bin/pest` | `test -f vendor/bin/pest` | `Test-Path vendor/bin/pest` | Skip pest check in the fix loop |
+
+Print one warning per missing tool before proceeding:
+
+> ⚠️ `<tool>` not found — `<what will be skipped>` will be skipped.
+
+Then carry the results forward — every affected step re-checks this before running rather than failing mid-loop.
+
+---
+
 ## Step -1 — Version check (always first, before anything else)
 
+**Unix/Mac:**
 ```bash
 .claude/skills/code-fixer/scripts/check_version.sh
+```
+**Windows:**
+```powershell
+pwsh .claude/skills/code-fixer/scripts/check_version.ps1
 ```
 
 - Exit **0** → continue normally.
@@ -102,10 +146,19 @@ git fetch origin develop
 
 Run these up-front to anchor the review:
 
+**Unix/Mac:**
 ```bash
 .claude/skills/code-fixer/scripts/branch_summary.sh    # what changed: file counts, commits, base ref
-.claude/skills/code-fixer/scripts/scan_diff.py         # pre-pass: pattern matches for mechanical red flags
+python3 .claude/skills/code-fixer/scripts/scan_diff.py # pre-pass: pattern matches for mechanical red flags
 ```
+**Windows:**
+```powershell
+pwsh .claude/skills/code-fixer/scripts/branch_summary.ps1
+python .claude/skills/code-fixer/scripts/scan_diff.py
+```
+
+If Python was not found in the requirements check, skip `scan_diff.py` entirely and print:
+> ⚠️ `scan_diff.py` skipped — Python not available. Proceeding with manual review only.
 
 Then read the full diff:
 
@@ -140,8 +193,9 @@ Run these before touching any file:
 2. Run `git status --short`. If the working tree has uncommitted changes, ask:
    > Working tree has uncommitted changes. Apply fixes anyway? [y/N]
    Default is **no** — stop unless the user explicitly types `y`.
-3. Count files affected by the planned fixes. If more than 20 and `--force` was not passed, list the files and stop:
-   > {N} files would be modified, which exceeds the 20-file limit per run. Narrow the scope or re-run with `--force`.
+3. Count files affected by the planned fixes. If more than 20, list the files and ask:
+   > {N} files would be modified. This is above the 20-file safety limit. Proceed anyway? [y/N]
+   Default is **no** — stop unless the user explicitly confirms.
 
 ### Step 3 — Fix loop
 
@@ -167,9 +221,16 @@ For each issue:
    ```
 
 4. **Verify the fix before moving on.** Right after each applied fix, run the checks scoped to the changed files:
+
+   **Unix/Mac:**
    ```bash
-   .claude/skills/code-fixer/scripts/pint_changed.sh    # PHP formatting (check only)
+   .claude/skills/code-fixer/scripts/pint_changed.sh       # PHP formatting (check only)
    .claude/skills/code-fixer/scripts/pest_for_changed.sh   # tests mapped to changed files
+   ```
+   **Windows:**
+   ```powershell
+   pwsh .claude/skills/code-fixer/scripts/pint_changed.ps1
+   pwsh .claude/skills/code-fixer/scripts/pest_for_changed.ps1
    ```
    If the fix touched a `.js`, `.ts`, or `.vue` file **and** the project's `package.json` defines a `lint` script, also run:
    ```bash
@@ -178,7 +239,11 @@ For each issue:
    - All pass → print `✓ Verified — pint, pest, lint clean.` and continue to the next issue.
    - Any fail → print the failing output and warn: `⚠️  Verification failed after this fix. Review before continuing (press q to stop and inspect).` Do **not** auto-stage or auto-commit anything to silence a failure.
 
-   Skip a check cleanly when it doesn't apply — the scoped scripts already print "No PHP changes" and exit 0; skip `npm run lint` entirely when no JS/Vue/TS changed or no `lint` script exists.
+   Skip a check cleanly when it doesn't apply:
+   - The scoped scripts already print "No PHP changes" and exit 0 when nothing matches.
+   - Skip `pint_changed` if PHP or `vendor/bin/pint` was not found in the requirements check — print `⚠️ pint skipped (not available).`
+   - Skip `pest_for_changed` if PHP or `vendor/bin/pest` was not found — print `⚠️ pest skipped (not available).`
+   - Skip `npm run lint` entirely when no JS/Vue/TS changed, no `lint` script exists in `package.json`, or `node_modules/` is absent.
 
 **End of loop — print summary:**
 
@@ -294,10 +359,21 @@ Prefix each comment's title with one of:
 
 ## Scripts
 
-- **`branch_summary.sh [base]`** — one-glance overview of what changed vs `origin/develop`.
-- **`scan_diff.py [--base REF] [--no-snippets]`** — pre-pass pattern scanner. Only scans `+` lines. False positives filtered by the agent.
-- **`pint_changed.sh [--fix]`** — run Pint against changed PHP files. Check-only by default; the fixer uses check-only (never auto-stages).
-- **`pest_for_changed.sh [pest args]`** — run only the Pest tests that map to changed files (`app/Foo/Bar.php` → `tests/Feature/Foo/BarTest.php`).
+Each script has a Unix (`.sh`) and Windows (`.ps1`) variant. Use whichever matches the OS detected at startup.
+
+| Script | Unix/Mac | Windows |
+|---|---|---|
+| Branch summary | `branch_summary.sh [base]` | `branch_summary.ps1 [base]` |
+| Pattern scanner | `python3 scan_diff.py [--base REF] [--no-snippets]` | `python scan_diff.py [--base REF] [--no-snippets]` |
+| Pint (check) | `pint_changed.sh` | `pint_changed.ps1` |
+| Pint (fix+stage) | `pint_changed.sh --fix` | `pint_changed.ps1 -Fix` |
+| Pest (scoped) | `pest_for_changed.sh [pest args]` | `pest_for_changed.ps1 [pest args]` |
+| Version check | `check_version.sh` | `check_version.ps1` |
+
+- **`branch_summary`** — one-glance overview of what changed vs `origin/develop`.
+- **`scan_diff.py`** — pre-pass pattern scanner. Only scans `+` lines. False positives filtered by the agent.
+- **`pint_changed`** — run Pint against changed PHP files. Check-only by default; the fixer uses check-only (never auto-stages).
+- **`pest_for_changed`** — run only the Pest tests that map to changed files (`app/Foo/Bar.php` → `tests/Feature/Foo/BarTest.php`).
 
 ---
 

@@ -32,11 +32,14 @@ def load_module(path: Path, name: str):
     return mod
 
 
+REPO_ROOT = Path(__file__).parent.parent
+
 bb              = load_module(SCRIPTS / '_bitbucket.py',      '_bitbucket')
 check_resolved  = load_module(SCRIPTS / 'check_resolved.py',  'check_resolved')
 check_dismissals= load_module(SCRIPTS / 'check_dismissals.py','check_dismissals')
 ai_review       = load_module(BIN / 'ai-review',              'ai_review')
 scan_diff       = load_module(SCRIPTS / 'scan_diff.py',        'scan_diff')
+build           = load_module(REPO_ROOT / 'build.py',         'build')
 
 
 # ── _bitbucket helpers ─────────────────────────────────────────────────────────
@@ -232,6 +235,68 @@ class TestScanDiffIgnoreMarkers(unittest.TestCase):
             self.assertTrue(scan_diff.has_ignore_marker_above(name, 2))
         finally:
             os.unlink(name)
+
+
+# ── build.py — generated SKILL.md must stay in sync with its template ──────────
+
+class TestBuildIdempotency(unittest.TestCase):
+    """Guards against the single most damaging failure mode in this repo:
+    a generated SKILL.md being hand-edited so it no longer matches its
+    template + shared fragments. When that happens, the next `python3 build.py`
+    silently discards the hand-edits. This test fails the moment the committed
+    SKILL.md drifts from `expand(template)`."""
+
+    def test_generated_skill_md_matches_template(self):
+        for template, output in build.BUILDS:
+            with self.subTest(output=output.name):
+                expected = build.expand(template)
+                actual   = output.read_text()
+                self.assertEqual(
+                    expected, actual,
+                    f'\n{output.relative_to(REPO_ROOT)} is out of sync with '
+                    f'{template.relative_to(REPO_ROOT)}.\n'
+                    f'Edit the TEMPLATE (not the generated file), then run '
+                    f'`python3 build.py` and commit the result.',
+                )
+
+
+# ── Shared files must stay identical across the two skills ────────────────────
+
+class TestSharedFilesNoDrift(unittest.TestCase):
+    """The two skills each ship their own copy of these files. They are meant
+    to be byte-identical — a divergence is almost always an accidental edit to
+    one copy. This guard fails the moment they drift.
+
+    NOT listed here (intentionally per-skill, do not add them):
+      - scripts/check_version.sh   — different update URL + messages
+      - scripts/branch_summary.sh  — reviewer resolves a commit-SHA base for
+                                      the checkpoint feature; fixer does not
+    """
+
+    SHARED = [
+        'scripts/scan_diff.py',
+        'scripts/pint_changed.sh',
+        'scripts/pest_for_changed.sh',
+        'references/laravel_review_guide.md',
+        'references/vue_review_guide.md',
+        'references/coding_standards.md',
+        'references/common_antipatterns.md',
+        'references/code_review_checklist.md',
+    ]
+
+    def test_shared_files_identical(self):
+        for rel in self.SHARED:
+            with self.subTest(file=rel):
+                reviewer = REPO_ROOT / 'skill' / rel
+                fixer    = REPO_ROOT / 'skill-fixer' / rel
+                self.assertTrue(reviewer.exists(), f'missing: {reviewer}')
+                self.assertTrue(fixer.exists(),    f'missing: {fixer}')
+                self.assertEqual(
+                    reviewer.read_text(), fixer.read_text(),
+                    f'\nskill/{rel} and skill-fixer/{rel} have drifted.\n'
+                    f'These must stay byte-identical — sync them (copy the '
+                    f'intended version over the other).',
+                )
 
 
 if __name__ == '__main__':
