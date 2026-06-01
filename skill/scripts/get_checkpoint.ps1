@@ -1,4 +1,4 @@
-# get_checkpoint.ps1 — print the last-reviewed SHA from the PR's checkpoint
+# get_checkpoint.ps1 - print the last-reviewed SHA from the PR's checkpoint
 # comment, or nothing if no checkpoint exists. Windows port of get_checkpoint.sh.
 #
 # Exits silently with no output on any failure (no creds, no PR, API error)

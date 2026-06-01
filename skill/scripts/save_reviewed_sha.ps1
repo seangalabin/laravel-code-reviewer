@@ -1,4 +1,4 @@
-# save_reviewed_sha.ps1 — record the current HEAD SHA as a checkpoint on the PR.
+# save_reviewed_sha.ps1 - record the current HEAD SHA as a checkpoint on the PR.
 # Windows port of save_reviewed_sha.sh.
 #
 # Posts (or updates) a hidden top-level PR comment containing:
@@ -8,7 +8,7 @@
 # Falls back silently if creds are missing or no open PR exists.
 
 if ([string]::IsNullOrEmpty($env:BITBUCKET_EMAIL) -or [string]::IsNullOrEmpty($env:BITBUCKET_API_TOKEN)) {
-    [Console]::Error.WriteLine("  Skipping checkpoint — BITBUCKET_EMAIL / BITBUCKET_API_TOKEN not set.")
+    [Console]::Error.WriteLine("  Skipping checkpoint - BITBUCKET_EMAIL / BITBUCKET_API_TOKEN not set.")
     exit 0
 }
 
@@ -16,7 +16,7 @@ $RemoteUrl = (git remote get-url origin 2>$null)
 if ($LASTEXITCODE -ne 0) { exit 0 }
 $RemoteUrl = "$RemoteUrl".Trim()
 if ($RemoteUrl -notmatch 'bitbucket\.org[:/]([^/]+)/([^/]+?)(\.git)?$') {
-    [Console]::Error.WriteLine("  Skipping checkpoint — not a Bitbucket remote.")
+    [Console]::Error.WriteLine("  Skipping checkpoint - not a Bitbucket remote.")
     exit 0
 }
 
@@ -72,11 +72,11 @@ else:
     q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"')
     r = curl(f'{api_base}/pullrequests?q={q}&fields=values.id')
     if r.returncode != 0:
-        print(f'  Skipping checkpoint — Bitbucket API failed: {r.stderr.strip()}', file=sys.stderr)
+        print(f'  Skipping checkpoint - Bitbucket API failed: {r.stderr.strip()}', file=sys.stderr)
         sys.exit(0)
     prs = json.loads(r.stdout).get('values', [])
     if not prs:
-        print(f'  Skipping checkpoint — no open PR for branch "{branch}".', file=sys.stderr)
+        print(f'  Skipping checkpoint - no open PR for branch "{branch}".', file=sys.stderr)
         sys.exit(0)
     pr_id = prs[0]['id']
 
@@ -84,7 +84,7 @@ comments_url = f'{api_base}/pullrequests/{pr_id}/comments'
 
 body = (
     f'<!-- ai-review:checkpoint:{head_sha} -->\n\n'
-    f'🔖 _Code review checkpoint — last reviewed at `{short}`. '
+    f'\U0001F516 _Code review checkpoint - last reviewed at `{short}`. '
     f'Used by `/code-reviewer --since-last-review` to skip already-reviewed commits._'
 )
 
@@ -112,12 +112,12 @@ payload = json.dumps({'content': {'raw': body}})
 if existing_id:
     r = curl('-X', 'PUT', '-H', 'Content-Type: application/json',
              '-d', payload, f'{comments_url}/{existing_id}')
-    msg = f'  Checkpoint updated → {short}' if r.returncode == 0 \
+    msg = f'  Checkpoint updated -> {short}' if r.returncode == 0 \
           else f'  Failed to update checkpoint: {r.stderr.strip()}'
 else:
     r = curl('-X', 'POST', '-H', 'Content-Type: application/json',
              '-d', payload, comments_url)
-    msg = f'  Checkpoint posted → {short}' if r.returncode == 0 \
+    msg = f'  Checkpoint posted -> {short}' if r.returncode == 0 \
           else f'  Failed to post checkpoint: {r.stderr.strip()}'
 
 print(msg, file=sys.stdout if r.returncode == 0 else sys.stderr)

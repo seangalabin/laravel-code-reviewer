@@ -1,4 +1,4 @@
-# cleanup_target.ps1 — remove the git worktree created by setup_target.ps1.
+# cleanup_target.ps1 - remove the git worktree created by setup_target.ps1.
 # Windows port of cleanup_target.sh.
 #
 # Usage:
@@ -12,7 +12,7 @@ if ([string]::IsNullOrEmpty($WorkTree)) {
 }
 
 if (-not (Test-Path -Path $WorkTree -PathType Container)) {
-    [Console]::Error.WriteLine("  Worktree not found at '$WorkTree' — already removed.")
+    [Console]::Error.WriteLine("  Worktree not found at '$WorkTree' - already removed.")
     exit 0
 }
 

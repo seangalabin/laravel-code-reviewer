@@ -21,7 +21,7 @@ if ([string]::IsNullOrEmpty($RemoteVersion)) { exit 0 }
 if ($LocalVersion -ne $RemoteVersion) {
     $installed = if ($LocalVersion) { $LocalVersion } else { "unknown" }
     Write-Host ""
-    Write-Host "⚠️  code-reviewer is out of date (installed: $installed, latest: $RemoteVersion)."
+    Write-Host "!!  code-reviewer is out of date (installed: $installed, latest: $RemoteVersion)."
     Write-Host "   Update before continuing:"
     Write-Host ""
     Write-Host "     npx github:seangalabin/laravel-code-reviewer"

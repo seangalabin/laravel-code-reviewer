@@ -1,4 +1,4 @@
-# setup_target.ps1 — create a git worktree for reviewing a branch without checkout.
+# setup_target.ps1 - create a git worktree for reviewing a branch without checkout.
 # Windows port of setup_target.sh.
 #
 # Usage:
@@ -147,5 +147,5 @@ with open(os.path.join(worktree, '.ai-review', 'target.json'), 'w') as f:
 $py | python -
 
 $prNote = if ($PrId) { ", PR #$PrId" } else { "" }
-[Console]::Error.WriteLine("  Ready — branch: $Branch$prNote")
+[Console]::Error.WriteLine("  Ready - branch: $Branch$prNote")
 Write-Output $WorkTree
