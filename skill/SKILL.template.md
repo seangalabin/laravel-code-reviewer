@@ -11,19 +11,40 @@ Reviews the **current branch's changes** against the base branch (`develop` for 
 
 ## OS detection (once, before Step -1)
 
-`code-reviewer` runs its scripts through **bash** (Linux, macOS, WSL, or Git Bash on Windows). It has no native PowerShell variant. Confirm a bash shell is available before doing anything else:
+Detect the platform once — the result selects which script variant every later step uses. Stop as soon as a step resolves.
 
 **Step A.** Run `uname -s`.
-- Returns `Linux` → bash is available (Linux / WSL). Continue.
-- Returns `Darwin` → bash is available (macOS). Continue.
-- Returns a value starting with `MINGW` or `CYGWIN` → bash is available (Git Bash on Windows). Continue.
-- Errors or returns anything else → go to Step B.
+- `Linux` → **Unix mode** (`.sh` scripts). [Linux / WSL]
+- `Darwin` → **Unix mode** (`.sh` scripts). [macOS]
+- Starts with `MINGW` or `CYGWIN` → **Unix mode** (`.sh` scripts). [Git Bash on Windows — bash is available]
+- Errors or anything else → go to Step B.
 
-**Step B.** No bash shell (native Windows PowerShell/cmd). **Stop immediately** and print:
+**Step B.** Run `python3 -c "import platform; print(platform.system())"` (or `python` if `python3` is unavailable).
+- `Linux` or `Darwin` → **Unix mode** (`.sh` scripts).
+- `Windows` → **Windows mode** (`.ps1` scripts).
+- Errors → go to Step C.
 
-> ❌ `code-reviewer` needs a bash shell. On Windows, install **Git Bash** or **WSL** and re-run from there — or use `/code-fixer`, which has native Windows support.
+**Step C.** Assume **Windows mode** and print:
+> ⚠️ OS could not be detected — assuming Windows and using `.ps1` scripts.
 
-Do not attempt to run the `.sh` scripts without bash — they will fail.
+**PowerShell launcher (Windows mode):** use `pwsh` (PowerShell 7+) if available; otherwise fall back to `powershell` (Windows PowerShell 5.1).
+
+### Command translation (Windows mode only)
+
+Every command in this document is written in **Unix mode**. In Windows mode, translate each line as you run it:
+
+| Unix mode | Windows mode |
+|---|---|
+| `.claude/skills/code-reviewer/scripts/foo.sh [args]` | `pwsh .claude/skills/code-reviewer/scripts/foo.ps1 [args]` |
+| `.claude/skills/code-reviewer/scripts/foo.py [args]` | `python .claude/skills/code-reviewer/scripts/foo.py [args]` |
+| `bash "$SKILLS_ROOT/scripts/foo.sh" [args]` (target mode) | `pwsh "$SKILLS_ROOT/scripts/foo.ps1" [args]` |
+| `VAR=$(cmd)` … then `$VAR` | `$VAR = (cmd)` … then `$VAR` |
+| `git diff ${BASE_REF}...HEAD` | `git diff "$BASE_REF...HEAD"` |
+| `cd "$WORKTREE" && cmd` (target mode) | `Set-Location $WORKTREE; cmd` |
+
+The `.py` scripts (`scan_diff.py`, `check_resolved.py`, `check_dismissals.py`, `update_resolved.py`, `aggregate_stats.py`) are byte-identical across platforms — only the launcher differs (`python`). Each `.ps1` accepts the same arguments and reads the same `.ai-review/target.json` as its `.sh` counterpart. The one command that doesn't follow the table mechanically is `post_review.sh` (it reads findings on stdin via a heredoc) — its Windows form is shown in **Posting the review**.
+
+Windows PowerShell 5.1 has no `&&` — chain commands with `;`. For `--branch` / `--pr` target mode, prefer `pwsh` (PowerShell 7+).
 
 ---
 
@@ -364,6 +385,7 @@ Prefix each comment's title with one of:
    - `severity` — `"critical"`, `"warning"`, or `"suggestion"` (lowercase). Used for telemetry.
 3. Post via `post_review.sh` (which resolves `{COMMENT_ID}` and embeds the telemetry marker after posting):
 
+**Unix mode:**
 ```bash
 .claude/skills/code-reviewer/scripts/post_review.sh <<'FINDINGS'
 [
@@ -376,6 +398,21 @@ Prefix each comment's title with one of:
   }
 ]
 FINDINGS
+```
+
+**Windows mode** (pipe a here-string into the `.ps1`):
+```powershell
+@'
+[
+  {
+    "path": "app/Http/Controllers/UserController.php",
+    "line": 22,
+    "body": "🔴 **Critical** — ...\n\n### 1. The problem\n...",
+    "dim": "3b",
+    "severity": "critical"
+  }
+]
+'@ | pwsh .claude/skills/code-reviewer/scripts/post_review.ps1
 ```
 
 4. Create a blocking task for every 🔴 Critical finding.
@@ -415,6 +452,8 @@ If developers want to fix issues locally instead, they should use the `/code-fix
 ---
 
 ## Scripts
+
+Each `.sh` script below has a matching `.ps1` Windows variant (same name, same arguments, same `.ai-review/target.json` handling). Use the variant selected by **OS detection** above. The `.py` scripts run on both platforms via `python`/`python3`.
 
 - **`branch_summary.sh [base]`** — one-glance overview of what changed vs `origin/develop`.
 - **`scan_diff.py [--base REF] [--no-snippets]`** — pre-pass pattern scanner. Only scans `+` lines. False positives filtered by the agent.

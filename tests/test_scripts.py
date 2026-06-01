@@ -299,5 +299,31 @@ class TestSharedFilesNoDrift(unittest.TestCase):
                 )
 
 
+# ── Reviewer ships a Windows .ps1 for every cross-platform shell script ───────
+
+class TestReviewerWindowsParity(unittest.TestCase):
+    """code-reviewer supports native Windows: each shell script the skill
+    invokes has a matching PowerShell variant. If you add a new reviewer
+    `.sh` that the skill runs, add its `.ps1` here too.
+
+    (pint_changed / pest_for_changed are deliberately excluded — code-reviewer
+    never runs Pint/Pest; CI does.)
+    """
+
+    PORTED = [
+        'branch_summary', 'check_version', 'cleanup_target', 'get_checkpoint',
+        'post_review', 'refresh_branch', 'save_reviewed_sha', 'setup_target',
+    ]
+
+    def test_each_ported_script_has_both_variants(self):
+        scripts = REPO_ROOT / 'skill' / 'scripts'
+        for name in self.PORTED:
+            with self.subTest(script=name):
+                self.assertTrue((scripts / f'{name}.sh').exists(),
+                                f'missing skill/scripts/{name}.sh')
+                self.assertTrue((scripts / f'{name}.ps1').exists(),
+                                f'missing Windows variant skill/scripts/{name}.ps1')
+
+
 if __name__ == '__main__':
     unittest.main()

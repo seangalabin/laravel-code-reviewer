@@ -86,11 +86,18 @@ const allowedTools = isFixer
         'Bash(.claude/skills/code-reviewer/scripts/*)',
         'Bash(.claude/skills/code-reviewer/bin/*)',
         'Bash(bash .claude/skills/code-reviewer/scripts/*)',
+        // Windows: PowerShell variants + Python launcher
+        'Bash(pwsh .claude/skills/code-reviewer/scripts/*)',
+        'Bash(powershell .claude/skills/code-reviewer/scripts/*)',
+        'Bash(python .claude/skills/code-reviewer/scripts/*)',
+        'Bash(python .claude/skills/code-reviewer/bin/*)',
+        'Bash(uname*)',
         'Bash(git diff*)',
         'Bash(git log*)',
         'Bash(git branch*)',
         'Bash(git fetch*)',
         'Bash(git rev-parse*)',
+        'Bash(git merge --ff-only*)',
         'Bash(git worktree*)',
         'Bash(git -C*)',
       ];

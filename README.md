@@ -52,7 +52,7 @@ Each finding contains: what's wrong in plain language, a copy-pasteable Claude C
 - Laravel project with [PestPHP](https://pestphp.com/) and [Laravel Pint](https://laravel.com/docs/pint)
 - [Claude Code](https://claude.ai/code) CLI
 - A Bitbucket repository with an open PR on the current branch
-- A **bash shell** for `code-reviewer` — Linux, macOS, WSL, or Git Bash on Windows. Native Windows PowerShell is not supported by `code-reviewer`; use WSL/Git Bash, or use `code-fixer` (which has native Windows `.ps1` support).
+- **Shell:** Linux, macOS, or WSL/Git Bash run the `.sh` scripts. On native **Windows**, `code-reviewer` runs PowerShell (`pwsh` 7+, or Windows PowerShell 5.1) variants and additionally needs **Python 3** and **curl** on `PATH` (curl ships with Windows 10 1803+). The skill auto-detects the OS and runs the matching `.sh`/`.ps1` scripts.
 
 ## Installation
 
