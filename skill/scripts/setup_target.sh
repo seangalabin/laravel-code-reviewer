@@ -84,8 +84,21 @@ if [[ "$BRANCH" =~ ^(main|master|develop)$ ]]; then
     exit 1
 fi
 
+# ── Require Bitbucket creds to find the PR for a branch ───────────────────────
+# Without a token we cannot look the PR up; failing loudly here (instead of
+# silently proceeding with pr_id=null) keeps --branch symmetric with --pr above.
+if [[ -z "$PR_ID" && "$IS_BITBUCKET" == "true" ]] \
+   && { [[ -z "${BITBUCKET_EMAIL:-}" ]] || [[ -z "${BITBUCKET_API_TOKEN:-}" ]]; }; then
+    echo "ERROR: --branch needs Bitbucket API credentials to find the PR for '$BRANCH'." >&2
+    echo "       Set BITBUCKET_EMAIL and BITBUCKET_API_TOKEN, then re-run." >&2
+    echo "       In Claude Code, add them to .claude/settings.local.json under \"env\"" >&2
+    echo "       (hot-reloads, no restart needed):" >&2
+    echo '         { "env": { "BITBUCKET_EMAIL": "you@example.com", "BITBUCKET_API_TOKEN": "<token>" } }' >&2
+    exit 1
+fi
+
 # ── Resolve PR ID from branch name when only --branch was given ───────────────
-if [[ -z "$PR_ID" && "$IS_BITBUCKET" == "true" && -n "${BITBUCKET_EMAIL:-}" && -n "${BITBUCKET_API_TOKEN:-}" ]]; then
+if [[ -z "$PR_ID" && "$IS_BITBUCKET" == "true" ]]; then
     PR_ID=$(python3 - "$WORKSPACE" "$REPO_SLUG" "$BRANCH" "$BB_AUTH" <<'PYEOF' || true
 import sys, json, subprocess, urllib.parse
 workspace, repo, branch, auth = sys.argv[1:5]

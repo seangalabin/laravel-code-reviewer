@@ -81,10 +81,21 @@ if ($Branch -match '^(main|master|develop)$') {
     exit 1
 }
 
-# Resolve PR ID from branch name when only --branch was given
+# Require Bitbucket creds to find the PR for a branch.
+# Without a token we cannot look the PR up; fail loudly instead of silently
+# proceeding with pr_id=null, keeping --branch symmetric with --pr above.
 if ([string]::IsNullOrEmpty($PrId) -and $IsBitbucket -and `
-    -not [string]::IsNullOrEmpty($env:BITBUCKET_EMAIL) -and `
-    -not [string]::IsNullOrEmpty($env:BITBUCKET_API_TOKEN)) {
+    ([string]::IsNullOrEmpty($env:BITBUCKET_EMAIL) -or [string]::IsNullOrEmpty($env:BITBUCKET_API_TOKEN))) {
+    [Console]::Error.WriteLine("ERROR: --branch needs Bitbucket API credentials to find the PR for '$Branch'.")
+    [Console]::Error.WriteLine("       Set BITBUCKET_EMAIL and BITBUCKET_API_TOKEN, then re-run.")
+    [Console]::Error.WriteLine('       In Claude Code, add them to .claude/settings.local.json under "env"')
+    [Console]::Error.WriteLine("       (hot-reloads, no restart needed):")
+    [Console]::Error.WriteLine('         { "env": { "BITBUCKET_EMAIL": "you@example.com", "BITBUCKET_API_TOKEN": "<token>" } }')
+    exit 1
+}
+
+# Resolve PR ID from branch name when only --branch was given
+if ([string]::IsNullOrEmpty($PrId) -and $IsBitbucket) {
     $env:AI_REVIEW_WS = $Workspace; $env:AI_REVIEW_REPO = $RepoSlug
     $env:AI_REVIEW_BRANCH = $Branch; $env:AI_REVIEW_AUTH = $Auth
     $py = @'
