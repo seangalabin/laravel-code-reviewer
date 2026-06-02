@@ -16,8 +16,13 @@ import json
 import os
 import re
 import subprocess
+import sys
 import urllib.parse
 from pathlib import Path
+
+# Set once we've warned about rejected credentials, so paginated / repeated
+# calls don't spam the same message.
+_AUTH_WARNED = False
 
 
 def load_target() -> dict | None:
@@ -55,14 +60,30 @@ def get_branch(target: dict | None = None) -> str:
 
 
 def bb_get(url: str, auth: tuple[str, str]) -> dict | None:
+    # Capture the HTTP status (instead of letting `curl -f` collapse every
+    # non-2xx into a bare failure) so a rejected token surfaces loudly rather
+    # than masquerading as "no data" / "no PR".
+    global _AUTH_WARNED
     r = subprocess.run(
-        ['curl', '-sSf', '-u', f'{auth[0]}:{auth[1]}', url],
+        ['curl', '-sS', '-w', '\n__HTTP__%{http_code}', '-u', f'{auth[0]}:{auth[1]}', url],
         capture_output=True, text=True,
     )
-    if r.returncode != 0:
+    body, _, code = r.stdout.rpartition('__HTTP__')
+    code = code.strip()
+    if code in ('401', '403') and not _AUTH_WARNED:
+        _AUTH_WARNED = True
+        print(
+            f"WARNING: Bitbucket rejected the API credentials (HTTP {code}). This is not "
+            "'no PR' — your BITBUCKET_API_TOKEN is invalid, expired, or lacks Bitbucket "
+            "scopes. Regenerate it at "
+            "https://id.atlassian.com/manage-profile/security/api-tokens (Pull requests: "
+            "read+write) and confirm BITBUCKET_EMAIL matches that Atlassian account.",
+            file=sys.stderr,
+        )
+    if r.returncode != 0 or code not in ('200', '201'):
         return None
     try:
-        return json.loads(r.stdout)
+        return json.loads(body)
     except json.JSONDecodeError:
         return None
 

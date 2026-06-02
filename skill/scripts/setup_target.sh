@@ -98,20 +98,45 @@ if [[ -z "$PR_ID" && "$IS_BITBUCKET" == "true" ]] \
 fi
 
 # ── Resolve PR ID from branch name when only --branch was given ───────────────
+# Distinguish three outcomes that used to collapse into a silent empty pr_id:
+#   • HTTP 200, no match → genuinely no open PR for this branch
+#   • HTTP 401/403       → the token is REJECTED (expired/revoked/wrong scopes)
+#   • curl/other failure → couldn't reach Bitbucket
+# Only the first is "no PR"; the other two get a loud stderr warning so the
+# review's final message reflects the real cause instead of "no open PR".
 if [[ -z "$PR_ID" && "$IS_BITBUCKET" == "true" ]]; then
     PR_ID=$(python3 - "$WORKSPACE" "$REPO_SLUG" "$BRANCH" "$BB_AUTH" <<'PYEOF' || true
 import sys, json, subprocess, urllib.parse
 workspace, repo, branch, auth = sys.argv[1:5]
 q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"')
 r = subprocess.run(
-    ['curl', '-sSf', '-u', auth,
+    ['curl', '-sS', '-w', '\n__HTTP__%{http_code}', '-u', auth,
      f'https://api.bitbucket.org/2.0/repositories/{workspace}/{repo}'
      f'/pullrequests?q={q}&fields=values.id'],
     capture_output=True, text=True,
 )
+body, _, code = r.stdout.rpartition('__HTTP__')
+code = code.strip()
 if r.returncode != 0:
+    print(f"WARNING: couldn't reach Bitbucket to find the PR for '{branch}' "
+          f"(curl exit {r.returncode}). The review will run but can't post.", file=sys.stderr)
     sys.exit(0)
-prs = json.loads(r.stdout).get('values', [])
+if code in ('401', '403'):
+    print(f"WARNING: Bitbucket rejected the API credentials (HTTP {code}) while looking up "
+          f"the PR for '{branch}'.", file=sys.stderr)
+    print("         This is NOT 'no PR' — the review will run, but findings can't be posted.", file=sys.stderr)
+    print("         BITBUCKET_API_TOKEN is invalid, expired, or lacks Bitbucket scopes. Regenerate it", file=sys.stderr)
+    print("         at https://id.atlassian.com/manage-profile/security/api-tokens (Pull requests:", file=sys.stderr)
+    print("         read+write) and confirm BITBUCKET_EMAIL matches that Atlassian account.", file=sys.stderr)
+    sys.exit(0)
+if code != '200':
+    print(f"WARNING: Bitbucket returned HTTP {code} while looking up the PR for '{branch}'. "
+          f"The review will run but can't post.", file=sys.stderr)
+    sys.exit(0)
+try:
+    prs = json.loads(body).get('values', [])
+except json.JSONDecodeError:
+    sys.exit(0)
 print(prs[0]['id'] if prs else '')
 PYEOF
     ) || PR_ID=""

@@ -66,10 +66,17 @@ def get_branch() -> str:
 
 
 def curl_get(url: str, auth: tuple[str, str]) -> dict:
-    r = run(['curl', '-sSf', '-u', f'{auth[0]}:{auth[1]}', url])
-    if r.returncode != 0:
-        die(f'Bitbucket API request failed:\n  {r.stderr.strip() or r.stdout.strip()}')
-    return json.loads(r.stdout)
+    r = run(['curl', '-sS', '-w', '\n__HTTP__%{http_code}', '-u', f'{auth[0]}:{auth[1]}', url])
+    body, _, code = r.stdout.rpartition('__HTTP__')
+    code = code.strip()
+    if code in ('401', '403'):
+        die(f'Bitbucket rejected the API credentials (HTTP {code}). Your BITBUCKET_API_TOKEN is\n'
+            '  invalid, expired, or lacks Bitbucket scopes. Regenerate it at\n'
+            '  https://id.atlassian.com/manage-profile/security/api-tokens (Pull requests: read+write)\n'
+            '  and confirm BITBUCKET_EMAIL matches that Atlassian account.')
+    if r.returncode != 0 or code not in ('200', '201'):
+        die(f'Bitbucket API request failed (HTTP {code or "?"}):\n  {r.stderr.strip() or body.strip()}')
+    return json.loads(body)
 
 
 def find_pr_id(api_base: str, auth: tuple[str, str], branch: str) -> str:
