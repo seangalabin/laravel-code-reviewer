@@ -9,7 +9,7 @@ For developers who want to fix issues on their own branch before pushing (instea
 Run `/code-reviewer` in Claude Code and it will:
 
 1. Refuse to run on `main`, `master`, or `develop` (feature branches only)
-2. Check previously posted comments and mark any that have been addressed
+2. Check previously posted comments — mark any that have been addressed, and respond to developer replies on them
 3. Refresh dismissal memory — skip findings a developer has already marked won't-fix
 4. Diff the current branch against `develop`
 5. Run a mechanical pre-pass (`scan_diff.py`) over the changed lines to surface red flags
@@ -133,6 +133,17 @@ If a posted comment is a false positive, mark it won't-fix:
 ```
 
 The comment is updated with a ❌ banner and a hidden marker. The **next** `/code-reviewer` run reads dismissals from the PR and skips matching findings (same file, same dimension, line within ±5). To re-evaluate everything, pass `--ignore-dismissals`.
+
+### Responding to developer replies
+
+If a developer replies to one of the bot's review comments — to push back, ask a question, or say they've fixed it — the next `/code-reviewer` run reads the thread and responds:
+
+- **Push-back it agrees with** → replies conceding, and dismisses the finding so it won't be re-flagged.
+- **Push-back it disagrees with** → replies explaining why the finding still stands.
+- **A question** → answers inline.
+- **"I fixed it"** → verifies against the current code and, if genuinely addressed, replies and marks the finding resolved.
+
+It shows you the drafted replies and asks before posting. Because a reply doesn't add a commit, the bot answers on the next run — including a re-run with no new commits to review. (Live, reply-time responses arrive with the hosted/CI version.)
 
 ### Review a branch without checking it out
 

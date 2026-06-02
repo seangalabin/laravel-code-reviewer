@@ -42,7 +42,7 @@ Every command in this document is written in **Unix mode**. In Windows mode, tra
 | `git diff ${BASE_REF}...HEAD` | `git diff "$BASE_REF...HEAD"` |
 | `cd "$WORKTREE" && cmd` (target mode) | `Set-Location $WORKTREE; cmd` |
 
-The `.py` scripts (`scan_diff.py`, `check_resolved.py`, `check_dismissals.py`, `update_resolved.py`, `aggregate_stats.py`) are byte-identical across platforms — only the launcher differs (`python`). Each `.ps1` accepts the same arguments and reads the same `.ai-review/target.json` as its `.sh` counterpart. The one command that doesn't follow the table mechanically is `post_review.sh` (it reads findings on stdin via a heredoc) — its Windows form is shown in **Posting the review**.
+The `.py` scripts (`scan_diff.py`, `check_resolved.py`, `check_dismissals.py`, `check_replies.py`, `update_resolved.py`, `post_reply.py`, `aggregate_stats.py`) are byte-identical across platforms — only the launcher differs (`python`). Each `.ps1` accepts the same arguments and reads the same `.ai-review/target.json` as its `.sh` counterpart. The one command that doesn't follow the table mechanically is `post_review.sh` (it reads findings on stdin via a heredoc) — its Windows form is shown in **Posting the review**.
 
 Windows PowerShell 5.1 has no `&&` — chain commands with `;`. For `--branch` / `--pr` target mode, prefer `pwsh` (PowerShell 7+).
 
@@ -197,7 +197,7 @@ HEAD_SHA=$(git rev-parse HEAD)
 
 The script reads a hidden checkpoint comment on the PR and prints the SHA — or nothing if no checkpoint exists yet.
 
-- `CHECKPOINT_SHA` **non-empty AND equals `HEAD_SHA`** → the PR has already been reviewed at the current tip. Print exactly this, then **stop the run** (do not run scoping, analysis, or posting):
+- `CHECKPOINT_SHA` **non-empty AND equals `HEAD_SHA`** → there are no new commits to analyze. Developer replies are independent of new commits, so **first run Step 0.7 (respond to developer replies) below**, then **stop** — do not run scoping, the Step 1 analysis, or Step 2 posting. After handling any replies, print exactly this and stop:
 
   > `PR #{ID} was last reviewed at {short_sha}, which is still the current tip. 0 new commits to review since the last run. Pass --full-review to re-review the whole branch against develop.`
 
@@ -269,6 +269,68 @@ If `--ignore-dismissals` was passed when invoking the skill, **still run the ref
 
 ---
 
+## Step 0.7 — Respond to developer replies
+
+Developers can reply to a finding's comment thread on the PR to push back, ask a question, or say they've fixed it. Check for replies the bot hasn't answered yet:
+
+```bash
+.claude/skills/code-reviewer/scripts/check_replies.py
+```
+
+This outputs a JSON array of **open** findings whose thread ends with an unanswered developer reply. Each entry carries `root_id` (the finding comment), `reply_id` (the developer message to reply under), `path`, `line`, `posted_sha`, `problem`, `finding_body`, `reply_text`, `reply_author`, and the full ordered `thread`. **If the array is empty, skip to the Workflow.**
+
+For each entry, gather context, then judge the reply on its merits:
+
+1. Read the developer's `reply_text` (and the full `thread` when there's more than one message).
+2. Read the current code at `{path}:{line}` in the working tree (in target mode, read `$WORKTREE/{path}`).
+3. Re-read the original `problem` / `finding_body`.
+4. **Pick exactly one response type:**
+
+   | The reply is… | Response | Side effect (on confirm) |
+   |---|---|---|
+   | **A correct objection** — false positive, or acceptable given context you can verify | **Concede** — briefly agree and say you're dismissing it | Dismiss the finding |
+   | **A wrong or weak objection** — the finding still stands | **Hold** — explain *why* it still matters, answering their specific point (not a restatement) | none |
+   | **A question** | **Answer** in plain language | none |
+   | **"I fixed it"** | **Verify** against the current code (same judgement as Step 0.5). Genuinely addressed → confirm; not addressed → explain what's still outstanding (treat as Hold) | Resolve the finding when truly fixed |
+   | **Ambiguous / not a substantive objection** | **Answer** briefly | none — do **not** dismiss or resolve |
+
+   Concede when the developer is right — conceding gracefully builds trust. Hold only with a concrete reason. Keep every reply short, plain, and specific to what they said; never re-paste the whole original finding; never assign blame.
+
+5. Draft each reply as plain markdown — no severity prefix, no five-section finding structure. This is a conversation, not a new finding.
+
+Then print a summary and ask for confirmation:
+
+> {N} developer repl(y/ies) awaiting a response on PR #{ID}:
+> - `{path}:{line}` — {concede | hold | answer | confirm fix}
+>
+> Post these replies? [y/n]
+
+**n** → skip replying and continue to the Workflow.
+
+**y** → for each entry, post the reply (threaded under the developer's message), then apply its side effect:
+
+```bash
+.claude/skills/code-reviewer/scripts/post_reply.py --parent-id={reply_id} <<'REPLY'
+{your drafted reply}
+REPLY
+```
+
+- **Concede** → also dismiss the finding so future runs don't re-flag it:
+  ```bash
+  .claude/skills/code-reviewer/bin/ai-review dismiss --comment-id={root_id} --reason="{one line on why you conceded}"
+  ```
+- **Confirm fix** → find the commit that addressed it (as in Step 0.5: `git log --oneline {posted_sha}..HEAD -- {path}`, take the last line) and mark it resolved:
+  ```bash
+  .claude/skills/code-reviewer/scripts/update_resolved.py --comment-id={root_id} --fix-sha={fix_sha}
+  ```
+
+`post_reply.py` appends a hidden `<!-- ai-review:reply -->` marker so the bot recognises its own answer and never replies to it again. **Windows mode:** pipe the body into `python .claude/skills/code-reviewer/scripts/post_reply.py --parent-id={reply_id}` with a here-string, exactly like `post_review.ps1` in **Posting the review**.
+
+Print a summary before continuing:
+> Responded to {N} repl(y/ies): {a} conceded, {b} held, {c} answered, {d} resolved.
+
+---
+
 ## Workflow
 
 ### Step 1 — Analyze
@@ -288,7 +350,7 @@ If `--ignore-dismissals` was passed when invoking the skill, **still run the ref
 
 ### Step 2 — Post the review
 
-1. Print a summary and ask for confirmation (**this is the only interactive prompt in the run**):
+1. Print a summary and ask for confirmation (this and the Step 0.7 reply confirmation are the only interactive prompts in the run):
 
    > Found **{N} issues** ({X} critical, {Y} warnings, {Z} suggestions) on branch `{branch}`.
    > Post to PR #{ID}? [y/n]
@@ -458,6 +520,8 @@ Each `.sh` script below has a matching `.ps1` Windows variant (same name, same a
 - **`branch_summary.sh [base]`** — one-glance overview of what changed vs `origin/develop`.
 - **`scan_diff.py [--base REF] [--no-snippets]`** — pre-pass pattern scanner. Only scans `+` lines. False positives filtered by the agent.
 - **`post_review.sh`** — posts the compiled review as inline Bitbucket PR comments. Reads JSON from stdin. Requires `BITBUCKET_EMAIL` and `BITBUCKET_API_TOKEN` env vars.
+- **`check_replies.py`** — prints a JSON array of open findings whose thread ends with an unanswered developer reply (see Step 0.7). Empty `[]` when nothing awaits a response.
+- **`post_reply.py --parent-id=<ID>`** — posts a threaded reply (body on stdin) under a PR comment and tags it with a hidden `ai-review:reply` marker so the bot won't answer its own reply.
 - **`setup_target.sh --branch=<name>|--pr=<N>`** — fetches a branch and creates a detached git worktree for reviewing without checkout. Writes `.ai-review/target.json` inside the worktree. Prints the worktree path to stdout.
 - **`cleanup_target.sh <worktree-path>`** — removes a worktree created by `setup_target.sh`.
 

@@ -37,6 +37,7 @@ REPO_ROOT = Path(__file__).parent.parent
 bb              = load_module(SCRIPTS / '_bitbucket.py',      '_bitbucket')
 check_resolved  = load_module(SCRIPTS / 'check_resolved.py',  'check_resolved')
 check_dismissals= load_module(SCRIPTS / 'check_dismissals.py','check_dismissals')
+check_replies   = load_module(SCRIPTS / 'check_replies.py',   'check_replies')
 ai_review       = load_module(BIN / 'ai-review',              'ai_review')
 scan_diff       = load_module(SCRIPTS / 'scan_diff.py',        'scan_diff')
 build           = load_module(REPO_ROOT / 'build.py',         'build')
@@ -135,6 +136,44 @@ class TestCheckDismissals(unittest.TestCase):
     def test_parse_dismissal_invalid_json(self):
         self.assertIsNone(
             check_dismissals.parse_dismissal('<!-- ai-review:dismissed {bad} -->'))
+
+
+# ── check_replies — author detection & thread state ──────────────────────────
+
+class TestCheckReplies(unittest.TestCase):
+
+    def test_is_ai_comment_open_marker(self):
+        self.assertTrue(check_replies.is_ai_comment(
+            'A finding.\n<!-- ai-review:open:abc123 -->'))
+
+    def test_is_ai_comment_reply_marker(self):
+        self.assertTrue(check_replies.is_ai_comment(
+            "You're right, dismissing.\n\n<!-- ai-review:reply -->"))
+
+    def test_is_ai_comment_human_reply(self):
+        # A developer reply carries no marker, even when it disagrees.
+        self.assertFalse(check_replies.is_ai_comment(
+            "This is a false positive — auth is in the middleware."))
+
+    def test_is_resolved_or_dismissed_true(self):
+        self.assertTrue(check_replies.is_resolved_or_dismissed(
+            '<!-- ai-review:resolved:abc123 -->'))
+        self.assertTrue(check_replies.is_resolved_or_dismissed(
+            '<!-- ai-review:dismissed {"reason":"x"} -->'))
+
+    def test_is_resolved_or_dismissed_open(self):
+        self.assertFalse(check_replies.is_resolved_or_dismissed(
+            '<!-- ai-review:open:abc123 -->'))
+
+    def test_extract_open_sha(self):
+        self.assertEqual(
+            check_replies.extract_open_sha('x <!-- ai-review:open:deadbeef --> y'),
+            'deadbeef')
+
+    def test_author_name_fallback(self):
+        self.assertEqual(check_replies.author_name({}), 'developer')
+        self.assertEqual(
+            check_replies.author_name({'user': {'display_name': 'Jane'}}), 'Jane')
 
 
 # ── ai-review bin — diff extraction ───────────────────────────────────────────

@@ -100,6 +100,30 @@ def bb_put(url: str, auth: tuple[str, str], body: dict) -> bool:
     return r.returncode == 0
 
 
+def bb_post(url: str, auth: tuple[str, str], body: dict) -> dict | None:
+    """POST JSON and return the parsed response (the created object), or None.
+
+    Used for creating comments / threaded replies — returns the new comment
+    dict so callers can read its `id`.
+    """
+    r = subprocess.run(
+        ['curl', '-sS', '-w', '\n__HTTP__%{http_code}',
+         '-u', f'{auth[0]}:{auth[1]}',
+         '-X', 'POST',
+         '-H', 'Content-Type: application/json',
+         '-d', json.dumps(body),
+         url],
+        capture_output=True, text=True,
+    )
+    out, _, code = r.stdout.rpartition('__HTTP__')
+    if r.returncode != 0 or code.strip() not in ('200', '201'):
+        return None
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError:
+        return None
+
+
 def find_pr_id(api_base: str, auth: tuple[str, str], branch: str,
                target: dict | None = None) -> str | None:
     if target and target.get('pr_id'):
