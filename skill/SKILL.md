@@ -557,7 +557,7 @@ $user->fill($request->all())->save();
 $user->update($request->safe()->only(['name', 'email', 'phone']));
 ```
 
-`$guarded = []` without an explicit `$fillable` list: 🔵 Suggestion — flag, suggest adding `$fillable`.
+`$guarded = []` without an explicit `$fillable` list — see §4d (canonical rule).
 
 #### 3c. SQL injection in raw queries
 
@@ -639,7 +639,7 @@ return new UserResource($user);
 return UserResource::collection($users);
 ```
 
-Inside an API Resource's `toArray()`: no DB queries, no Service calls — 🟡 Warning (Resources transform already-loaded data only). Use `$this->whenLoaded('relation')` for related models — omitting it causes N+1 queries when the relation was not eager-loaded — 🔵 Suggestion.
+Inside an API Resource's `toArray()`: no DB queries, no Service calls — 🟡 Warning (Resources transform already-loaded data only). Use `$this->whenLoaded('relation')` for related models — omitting it causes N+1 queries when the relation was not eager-loaded — 🟡 Warning (same gravity as §4b).
 
 FormRequest validation: flag raw string rules where a `Rule` object would be safer (e.g. `Rule::unique()`, `Rule::exists()`) — 🔵 Suggestion.
 
@@ -692,9 +692,9 @@ event(new UserRegistered($user));
 
 `new ClassName()` inside a Controller, Service, or Repository where the class should be injected is 🔵 Suggestion. This includes `new OtherService()` inside a Service constructor body.
 
-#### 4g. `DB::transaction()` for multi-write paths
+#### 4g. `DB::transaction()` for multi-write paths (canonical)
 
-Any code path that issues two or more write queries must be wrapped in `DB::transaction()`. A missing transaction on a Service multi-write path is 🔵 Suggestion:
+Any code path that issues two or more write queries must be wrapped in `DB::transaction()`. A missing transaction on a Service multi-write path is 🟡 Warning — without it, the second write failing leaves the first committed and the dataset in an inconsistent state:
 
 ```php
 // GOOD
@@ -712,7 +712,7 @@ DB::transaction(function () use ($data, $items) {
 - HTTP concerns (`Request`, `response()`, `Auth` facade) inside a Model — 🟡 Warning.
 - A method that issues its own Eloquent query instead of defining a scope — 🔵 Suggestion.
 - Relationship method that contains eager-loading constraints (belongs in the Repository query, not the Model) — 🔵 Suggestion.
-- `$guarded = []` without `$fillable` — 🔵 Suggestion.
+- `$guarded = []` without `$fillable` — see §4d (canonical rule).
 
 ---
 
@@ -735,7 +735,7 @@ Business logic beyond label, color, or helper methods on the enum itself is 🟡
 
 ### 8. Data Integrity
 
-- Multiple Eloquent writes without `DB::transaction()` — 🔵 Suggestion.
+- Multiple Eloquent writes without `DB::transaction()` — see §4g (canonical rule, 🟡 Warning).
 - Check-then-act race conditions: `->exists()` + `->create()` → use `firstOrCreate()`.
 - Missing `->lockForUpdate()` on rows read-then-modified concurrently.
 
@@ -745,7 +745,7 @@ Business logic beyond label, color, or helper methods on the enum itself is 🟡
 
 - **N+1** — §4b. Always 🟡 Warning.
 - **`->get()` then `->isEmpty()`** — use `->exists()` or `->count()` on the query builder.
-- **`Http::` without `->timeout(N)`** — 🔵 Suggestion. Suggest `->timeout(30)`.
+- **`Http::` without `->timeout(N)`** — 🟡 Warning. Without a timeout the request can hang indefinitely under network issues, blocking the worker/request thread. Suggest `->timeout(30)`.
 - **Full-table loads** — `Model::all()` on unbounded tables; use `->chunk()` or `->cursor()`.
 - **Unnecessary re-fetch** — re-querying something already in scope.
 
