@@ -721,6 +721,69 @@ $table->string('phone')->nullable()->after('email');
 
 ---
 
+### 15. Blade views (`resources/views/`)
+
+Views are presentation only. Anything that queries data, decides business rules, or runs PHP belongs in a controller, service, or view-composer.
+
+#### 15a. No business logic in views
+
+- Direct Eloquent queries (`User::find(...)`, `$x->orders()->count()`) inside Blade — 🟡 Warning. Pass the data from the controller / view-composer.
+- `@php ... @endphp` blocks — 🟡 Warning. Almost always a smell; lift it out.
+- Multi-branch logic, calculations, formatting decisions — 🔵 Suggestion. Move to a helper, accessor, or view-composer.
+
+```blade
+{{-- BAD --}}
+@php($orders = $user->orders()->where('status', 'paid')->get())
+@foreach ($orders as $order) ... @endforeach
+
+{{-- GOOD — controller passes $paidOrders --}}
+@foreach ($paidOrders as $order) ... @endforeach
+```
+
+#### 15b. N+1 in `@foreach`
+
+Same rule as §4b — accessing a relation inside a loop without prior eager loading is 🟡 Warning. The fix lives in the controller/repository, not the view.
+
+```blade
+{{-- BAD: one query per user --}}
+@foreach ($users as $user)
+    {{ $user->profile->bio }}
+@endforeach
+
+{{-- Controller must eager-load: User::with('profile')->get() --}}
+```
+
+#### 15c. XSS — beyond `{!! !!}`
+
+- `{!! $var !!}` with user-supplied content — 🔴 Critical (also §3f).
+- `href="{{ $url }}"` or `src="{{ $url }}"` where the value is a user-supplied URL — 🟡 Warning. `{{ }}` escapes HTML but `javascript:foo()` still executes. Validate the scheme or whitelist URLs.
+- Inline JS event handlers carrying user data (`onclick="doThing('{{ $msg }}')"`) — 🟡 Warning. Use unobtrusive JS or pass via a data attribute with `@json($msg)`.
+- `style="{{ $userValue }}"` — 🔵 Suggestion. Style injection can leak data (`background-image: url(...)`) or break layout.
+
+#### 15d. CSRF on state-changing forms
+
+`<form method="POST" …>` (including spoofed `PUT`/`PATCH`/`DELETE` via `@method`) without `@csrf` — 🟡 Warning. The middleware will reject it at runtime; this is a bug-in-waiting.
+
+#### 15e. Auth / Request / DB facades in views
+
+`request()`, `auth()->user()`, `DB::`, raw query builders called directly from Blade — 🔵 Suggestion. Pass through the controller or a view-composer for testability and to keep layering clean.
+
+`@auth` / `@guest` / `auth()->check()` for conditional rendering are documented patterns and fine.
+
+#### 15f. Localisation
+
+If the project uses `__()` / `trans()` elsewhere, hardcoded user-facing strings in new Blade content — 🔵 Suggestion. Apply only when the surrounding codebase is already localised.
+
+#### 15g. Component extraction
+
+A single Blade file over ~200 lines, or a `@foreach` body of complex markup over ~25 lines — 🔵 Suggestion. Extract a Blade component (`<x-…>`) or partial via `@include`.
+
+#### 15h. Dynamic `@include` paths
+
+`@include($var)` where `$var` could be influenced by request input — 🔴 Critical. Path-traversal / arbitrary view rendering risk.
+
+---
+
 ## Output format
 
 ### Global rules

@@ -35,6 +35,7 @@ Run `/code-reviewer` in Claude Code and it will:
 | 12 | Vue / JavaScript | `:key`, Vuex mutation, `v-html` XSS, event listener leaks |
 | 13 | Testing | Stray HTTP, reflection, `withoutExceptionHandling()`, missing assertions |
 | 14 | API Design | Status codes, pagination, Resource field exposure |
+| 15 | Blade views | Business logic in views, N+1 in `@foreach`, URL/attr XSS, CSRF, dynamic `@include` |
 
 ## Severity
 
