@@ -64,6 +64,8 @@ def main() -> None:
     if repo is None:
         die('no git remote "origin" found or not a Bitbucket URL.')
 
+    print('🔍 Checking previously posted AI comments...', file=sys.stderr)
+
     branch   = get_branch(target)
     api_base = repo_api_base(repo)
     pr_id    = find_pr_id(api_base, auth, branch, target)
@@ -86,6 +88,14 @@ def main() -> None:
             'problem':    extract_problem(body),
             'body':       body,
         })
+
+    n = len(open_comments)
+    if n:
+        print(f'  ✓ Found {n} open AI comment(s) to evaluate for resolution.',
+              file=sys.stderr)
+    else:
+        print('  ↷ No open AI comments on this PR — nothing to re-evaluate.',
+              file=sys.stderr)
 
     print(json.dumps(open_comments, indent=2))
 

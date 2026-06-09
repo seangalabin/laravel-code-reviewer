@@ -16,14 +16,16 @@
 
 set -euo pipefail
 
+echo "💾 Saving review checkpoint to PR..." >&2
+
 if [[ -z "${BITBUCKET_EMAIL:-}" || -z "${BITBUCKET_API_TOKEN:-}" ]]; then
-    echo "  Skipping checkpoint — BITBUCKET_EMAIL / BITBUCKET_API_TOKEN not set." >&2
+    echo "  ↷ Skipping checkpoint — BITBUCKET_EMAIL / BITBUCKET_API_TOKEN not set." >&2
     exit 0
 fi
 
 REMOTE_URL=$(git remote get-url origin 2>/dev/null) || exit 0
 if [[ ! "$REMOTE_URL" =~ bitbucket\.org[:/]([^/]+)/([^/]+?)(\.git)?$ ]]; then
-    echo "  Skipping checkpoint — not a Bitbucket remote." >&2
+    echo "  ↷ Skipping checkpoint — not a Bitbucket remote." >&2
     exit 0
 fi
 

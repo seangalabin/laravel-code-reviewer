@@ -365,6 +365,10 @@ Print a summary before continuing:
 
 ## Workflow
 
+### Narration — show the run, don't run it silently
+
+Before invoking each script in Steps -1 → 0.7 and the scoping scripts in Step 1, print a one-line header naming the step in plain language (e.g. `Step 0.5 — Checking previously posted comments`). After each script returns, **always relay the script's own progress lines** (the `🔍 / ✓ / ↷ / ⚠️` messages it prints to stdout/stderr) — never swallow them. End each step with a one-line outcome summary so the developer can follow the run without reading raw script output. Quiet success is a regression — every step must produce at least one visible line.
+
 ### Step 1 — Analyze
 
 1. **Load project rules** (Step 0.1 above).

@@ -88,21 +88,27 @@ def author_name(c: dict) -> str:
 
 
 def main() -> None:
+    print('🔍 Checking for developer replies on AI findings...', file=sys.stderr)
+
     target = load_target()
     auth   = get_creds()
     if auth is None:
+        print('  ↷ Bitbucket creds not set — skipping reply check.', file=sys.stderr)
         soft_exit()
     repo = get_repo_info()
     if repo is None:
+        print('  ↷ Not a Bitbucket remote — skipping reply check.', file=sys.stderr)
         soft_exit()
 
     branch = get_branch(target)
     if not branch or branch in ('main', 'master', 'develop'):
+        print('  ↷ On a protected branch — skipping reply check.', file=sys.stderr)
         soft_exit()
 
     api_base = repo_api_base(repo)
     pr_id    = find_pr_id(api_base, auth, branch, target)
     if pr_id is None:
+        print('  ↷ No open PR for this branch — skipping reply check.', file=sys.stderr)
         soft_exit()
 
     comments = fetch_all_comments(api_base, pr_id, auth)
@@ -162,6 +168,14 @@ def main() -> None:
                 'text':   comment_body(t),
             } for t in ordered],
         })
+
+    n = len(awaiting)
+    if n:
+        print(f'  ✓ Found {n} reply thread(s) awaiting an AI response.',
+              file=sys.stderr)
+    else:
+        print('  ↷ No pending developer replies on AI findings.',
+              file=sys.stderr)
 
     print(json.dumps(awaiting, indent=2))
 

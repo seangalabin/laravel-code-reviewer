@@ -12,12 +12,17 @@
 
 set -euo pipefail
 
+echo "🔍 Checking PR for previous review checkpoint..." >&2
+
 if [[ -z "${BITBUCKET_EMAIL:-}" || -z "${BITBUCKET_API_TOKEN:-}" ]]; then
+    echo "  ↷ Bitbucket creds not set — full review against develop." >&2
     exit 0
 fi
 
-REMOTE_URL=$(git remote get-url origin 2>/dev/null) || exit 0
+REMOTE_URL=$(git remote get-url origin 2>/dev/null) || {
+    echo "  ↷ No git remote — full review against develop." >&2; exit 0; }
 if [[ ! "$REMOTE_URL" =~ bitbucket\.org[:/]([^/]+)/([^/]+?)(\.git)?$ ]]; then
+    echo "  ↷ Not a Bitbucket remote — full review against develop." >&2
     exit 0
 fi
 
@@ -36,7 +41,8 @@ else
     TARGET_PR_ID=""
 fi
 
-python3 - "$API_BASE" "$AUTH" "$BRANCH" "${TARGET_PR_ID:-}" 2>/dev/null <<'PYEOF' || true
+# Capture the SHA so we can emit a stderr status alongside it.
+CHECKPOINT_SHA=$(python3 - "$API_BASE" "$AUTH" "$BRANCH" "${TARGET_PR_ID:-}" 2>/dev/null <<'PYEOF' || true
 import json, sys, subprocess, urllib.parse, re
 
 api_base, auth, branch, target_pr_id = sys.argv[1:5]
@@ -75,3 +81,11 @@ while url:
             sys.exit(0)
     url = page.get('next')
 PYEOF
+)
+
+if [[ -n "$CHECKPOINT_SHA" ]]; then
+    echo "  ✓ Found checkpoint at ${CHECKPOINT_SHA:0:7} — incremental review." >&2
+    echo "$CHECKPOINT_SHA"
+else
+    echo "  ↷ No checkpoint comment on PR yet — full review against develop." >&2
+fi
