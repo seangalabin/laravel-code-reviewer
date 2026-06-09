@@ -432,6 +432,27 @@ Repositories own all Eloquent/query logic. They must:
 - Use Eloquent scopes for reusable filter chains — a very long query chain where a named scope would help readability is 🔵 Suggestion
 - Avoid eager-loading constraints inside relationship methods — those belong in the Repository query, not on the Model
 
+**Repository granularity — one per aggregate root, not one per Model.** A Repository owns an entire domain aggregate. Models that exist only as children of another aggregate root (data / details / items / attachments / metadata rows with a FK to a parent and no independent lifecycle outside it) belong inside the parent's Repository — do **not** create a separate Repository for them.
+
+- Adding a new `XYRepository` when `XRepository` already exists, and `XY` is a child of `X` (FK to `X`, no standalone use) — 🔵 Suggestion. The queries belong in `XRepository`; this is a structural refactor, not a runtime bug.
+- A Service or Controller querying a child Model directly (via the Model facade or bypassing the parent Repository entirely) when the parent Repository exists — 🟡 Warning. This is a real layering violation — add the method to the parent Repository instead.
+- Naming-heuristic guidance for the reviewer: if a new Repository's name shares a prefix with an existing Repository (e.g. `Appraisal`/`AppraisalData`, `Order`/`OrderItem`, `Property`/`PropertyMedia`), consider whether it should be folded. Apply judgement — many shared-prefix pairs are genuinely independent (`Product`/`ProductCategory`, `Payment`/`PaymentMethod`, `User`/`UserGroup`).
+
+```php
+// BAD — fragments the Appraisal aggregate across two repositories
+class AppraisalDataRepository {
+    public function forAppraisal(int $appraisalId): Collection { ... }
+}
+
+// GOOD — AppraisalData lives on the Appraisal aggregate
+class AppraisalRepository {
+    public function dataFor(int $appraisalId): Collection { ... }
+    public function withData(int $appraisalId): ?Appraisal { ... }
+}
+```
+
+**Exceptions** — a "child" Model gets its own Repository when it is genuinely its own aggregate: it has an independent lifecycle, is referenced from multiple unrelated aggregates, or belongs to its own bounded context (`User`, `Address`, `Tag`, `Currency`).
+
 #### 1d. DTOs for cross-layer data
 
 Data passing **into** or **out of** a Service must use a typed DTO class, not a raw `array`. Flag any Service method signature that accepts `array $data` as 🔵 Suggestion.
