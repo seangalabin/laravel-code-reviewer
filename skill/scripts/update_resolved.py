@@ -7,7 +7,9 @@ Usage:
 
 Fetches the comment, prepends a ✅ resolved banner with the commit reference,
 replaces the <!-- ai-review:open --> marker with <!-- ai-review:resolved -->,
-and PUTs the updated body back to Bitbucket.
+PUTs the updated body back to Bitbucket, and POSTs to the comment's
+/resolve endpoint so the inline thread shows as ✓ resolved in the
+Bitbucket UI (collapsed, filterable).
 
 Required env vars:
   BITBUCKET_EMAIL       Bitbucket account email
@@ -25,7 +27,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _bitbucket import (
-    bb_get, bb_put, find_pr_id, get_branch, get_creds,
+    bb_get, bb_post, bb_put, find_pr_id, get_branch, get_creds,
     get_repo_info, load_target, repo_api_base,
 )
 
@@ -90,6 +92,17 @@ def main() -> None:
         die(f'PUT failed for comment #{args.comment_id}.')
 
     print(f'  ✅ comment #{args.comment_id} marked resolved (fix: {args.fix_sha[:7]})')
+
+    # Also resolve the inline thread natively so it collapses in the Bitbucket
+    # UI. Best-effort: top-level (non-inline) AI comments aren't resolvable
+    # and the API 409s if the thread is already resolved — both fine states.
+    if bb_post(f'{comment_url}/resolve', auth, {}) is not None:
+        print(f'  ✓ comment #{args.comment_id} thread resolved in Bitbucket UI')
+    else:
+        print(
+            f'  ↷ comment #{args.comment_id} thread resolution skipped '
+            '(already resolved or not an inline thread)'
+        )
 
 
 if __name__ == '__main__':
