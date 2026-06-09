@@ -8,10 +8,12 @@ Run:  python3 -m pytest tests/          (if pytest is available)
 import importlib.util
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 # ── Import helpers ─────────────────────────────────────────────────────────────
 
@@ -38,9 +40,17 @@ bb              = load_module(SCRIPTS / '_bitbucket.py',      '_bitbucket')
 check_resolved  = load_module(SCRIPTS / 'check_resolved.py',  'check_resolved')
 check_dismissals= load_module(SCRIPTS / 'check_dismissals.py','check_dismissals')
 check_replies   = load_module(SCRIPTS / 'check_replies.py',   'check_replies')
+update_resolved = load_module(SCRIPTS / 'update_resolved.py', 'update_resolved')
 ai_review       = load_module(BIN / 'ai-review',              'ai_review')
 scan_diff       = load_module(SCRIPTS / 'scan_diff.py',        'scan_diff')
 build           = load_module(REPO_ROOT / 'build.py',         'build')
+
+
+def _fake_completed(stdout: str, returncode: int = 0):
+    """Build a fake subprocess.CompletedProcess for mocking curl invocations."""
+    return subprocess.CompletedProcess(
+        args=[], returncode=returncode, stdout=stdout, stderr='',
+    )
 
 
 # ── _bitbucket helpers ─────────────────────────────────────────────────────────
@@ -85,6 +95,88 @@ class TestBitbucketHelpers(unittest.TestCase):
         self.assertEqual(bb.get_creds(), ('a@b.com', 'tok'))
         del os.environ['BITBUCKET_EMAIL']
         del os.environ['BITBUCKET_API_TOKEN']
+
+
+# ── bb_post_status / bb_post — status-aware POST ──────────────────────────────
+
+class TestBbPostStatus(unittest.TestCase):
+
+    def test_2xx_returns_status_and_parsed_body(self):
+        fake = _fake_completed('{"id": 42}\n__HTTP__200', 0)
+        with patch.object(bb.subprocess, 'run', return_value=fake):
+            status, body = bb.bb_post_status('http://x', ('e', 't'), {})
+        self.assertEqual(status, 200)
+        self.assertEqual(body, {'id': 42})
+
+    def test_201_returns_status_and_parsed_body(self):
+        fake = _fake_completed('{"id": 7}\n__HTTP__201', 0)
+        with patch.object(bb.subprocess, 'run', return_value=fake):
+            status, body = bb.bb_post_status('http://x', ('e', 't'), {})
+        self.assertEqual(status, 201)
+        self.assertEqual(body, {'id': 7})
+
+    def test_409_returns_status_and_error_body(self):
+        fake = _fake_completed(
+            '{"type":"error","error":{"message":"already resolved"}}\n__HTTP__409', 0
+        )
+        with patch.object(bb.subprocess, 'run', return_value=fake):
+            status, body = bb.bb_post_status('http://x', ('e', 't'), {})
+        self.assertEqual(status, 409)
+        self.assertEqual(body, {'type': 'error', 'error': {'message': 'already resolved'}})
+
+    def test_500_with_unparseable_body_returns_status_only(self):
+        fake = _fake_completed('<html>500</html>\n__HTTP__500', 0)
+        with patch.object(bb.subprocess, 'run', return_value=fake):
+            status, body = bb.bb_post_status('http://x', ('e', 't'), {})
+        self.assertEqual(status, 500)
+        self.assertIsNone(body)
+
+    def test_transport_failure_returns_zero(self):
+        fake = _fake_completed('', 7)  # curl non-zero exit
+        with patch.object(bb.subprocess, 'run', return_value=fake):
+            status, body = bb.bb_post_status('http://x', ('e', 't'), {})
+        self.assertEqual(status, 0)
+        self.assertIsNone(body)
+
+    def test_bb_post_wrapper_returns_body_on_2xx(self):
+        fake = _fake_completed('{"id": 99}\n__HTTP__201', 0)
+        with patch.object(bb.subprocess, 'run', return_value=fake):
+            self.assertEqual(bb.bb_post('http://x', ('e', 't'), {}), {'id': 99})
+
+    def test_bb_post_wrapper_returns_none_on_4xx(self):
+        fake = _fake_completed('{"error":"x"}\n__HTTP__409', 0)
+        with patch.object(bb.subprocess, 'run', return_value=fake):
+            self.assertIsNone(bb.bb_post('http://x', ('e', 't'), {}))
+
+
+# ── update_resolved — body rewriting ──────────────────────────────────────────
+
+class TestUpdateResolvedBody(unittest.TestCase):
+
+    def test_replaces_open_marker_with_resolved(self):
+        original = 'Original finding\n\n<!-- ai-review:open:abc123def456 -->\n\nmore text'
+        with patch.object(update_resolved, 'get_commit_subject', return_value='Fix the bug'):
+            result = update_resolved.build_resolved_body(original, 'fix1234abcdef')
+
+        self.assertIn('✅ **Addressed in `fix1234`**', result)
+        self.assertIn('— Fix the bug', result)
+        self.assertIn('<!-- ai-review:resolved:fix1234abcdef -->', result)
+        # Open marker must not survive.
+        self.assertNotIn('ai-review:open:', result)
+        # Original prose preserved.
+        self.assertIn('Original finding', result)
+        self.assertIn('more text', result)
+
+    def test_handles_body_without_open_marker(self):
+        original = 'Some finding with no marker at all'
+        with patch.object(update_resolved, 'get_commit_subject', return_value=''):
+            result = update_resolved.build_resolved_body(original, 'fix1234abcdef')
+
+        # Empty subject → no `— subject` tail on the banner line.
+        first_line = result.split('\n', 1)[0]
+        self.assertEqual(first_line, '✅ **Addressed in `fix1234`**')
+        self.assertIn('Some finding with no marker at all', result)
+        self.assertIn('<!-- ai-review:resolved:fix1234abcdef -->', result)
 
 
 # ── check_resolved — marker parsing ───────────────────────────────────────────

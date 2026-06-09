@@ -100,11 +100,14 @@ def bb_put(url: str, auth: tuple[str, str], body: dict) -> bool:
     return r.returncode == 0
 
 
-def bb_post(url: str, auth: tuple[str, str], body: dict) -> dict | None:
-    """POST JSON and return the parsed response (the created object), or None.
+def bb_post_status(url: str, auth: tuple[str, str], body: dict) -> tuple[int, dict | None]:
+    """POST JSON. Returns (http_status, parsed_body_or_None).
 
-    Used for creating comments / threaded replies — returns the new comment
-    dict so callers can read its `id`.
+    `http_status` is 0 if curl itself failed (network/transport).
+    `parsed_body_or_None` is the JSON-decoded response when present and parseable,
+    otherwise None. Use this directly when you need to distinguish 2xx success
+    from 4xx-soft (e.g. 404 / 409) from real failures (401, 403, 5xx, transport).
+    Most callers can keep using `bb_post`.
     """
     r = subprocess.run(
         ['curl', '-sS', '-w', '\n__HTTP__%{http_code}',
@@ -115,13 +118,29 @@ def bb_post(url: str, auth: tuple[str, str], body: dict) -> dict | None:
          url],
         capture_output=True, text=True,
     )
-    out, _, code = r.stdout.rpartition('__HTTP__')
-    if r.returncode != 0 or code.strip() not in ('200', '201'):
-        return None
+    out, _, code_str = r.stdout.rpartition('__HTTP__')
+    if r.returncode != 0:
+        return (0, None)
     try:
-        return json.loads(out)
+        status = int(code_str.strip())
+    except ValueError:
+        status = 0
+    try:
+        parsed = json.loads(out) if out.strip() else None
     except json.JSONDecodeError:
-        return None
+        parsed = None
+    return (status, parsed)
+
+
+def bb_post(url: str, auth: tuple[str, str], body: dict) -> dict | None:
+    """POST JSON and return the parsed response (the created object), or None.
+
+    Backward-compatible wrapper over `bb_post_status` — returns None for any
+    non-(200|201) response. Used for creating comments / threaded replies, where
+    the caller only cares about the new object on success.
+    """
+    status, parsed = bb_post_status(url, auth, body)
+    return parsed if status in (200, 201) else None
 
 
 def find_pr_id(api_base: str, auth: tuple[str, str], branch: str,

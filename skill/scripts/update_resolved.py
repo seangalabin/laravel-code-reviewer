@@ -27,7 +27,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _bitbucket import (
-    bb_get, bb_post, bb_put, find_pr_id, get_branch, get_creds,
+    bb_get, bb_post_status, bb_put, find_pr_id, get_branch, get_creds,
     get_repo_info, load_target, repo_api_base,
 )
 
@@ -94,14 +94,23 @@ def main() -> None:
     print(f'  ✅ comment #{args.comment_id} marked resolved (fix: {args.fix_sha[:7]})')
 
     # Also resolve the inline thread natively so it collapses in the Bitbucket
-    # UI. Best-effort: top-level (non-inline) AI comments aren't resolvable
-    # and the API 409s if the thread is already resolved — both fine states.
-    if bb_post(f'{comment_url}/resolve', auth, {}) is not None:
+    # UI. Best-effort with a real signal on actual failures so an API change,
+    # missing token scope, or 5xx doesn't silently degrade the feature.
+    status, _ = bb_post_status(f'{comment_url}/resolve', auth, {})
+    if status in (200, 201):
         print(f'  ✓ comment #{args.comment_id} thread resolved in Bitbucket UI')
-    else:
+    elif status in (404, 409):
+        # 404 = thread isn't resolvable (top-level / unknown), 409 = already resolved.
         print(
             f'  ↷ comment #{args.comment_id} thread resolution skipped '
             '(already resolved or not an inline thread)'
+        )
+    else:
+        detail = f'HTTP {status}' if status else 'transport failure'
+        print(
+            f'  ⚠️  resolve POST for comment #{args.comment_id} returned '
+            f'{detail} — body update succeeded; check token scope or API path.',
+            file=sys.stderr,
         )
 
 

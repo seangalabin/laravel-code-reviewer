@@ -140,6 +140,38 @@ If none exist, skip this step. The skill's built-in rules are reasonable Laravel
 
 ---
 
+## Step 0.2 — Load card context (recommended)
+
+Before analyzing the diff, fetch the linked issue-tracker card. The goal is to judge **whether the change solves the right problem** — not just whether the code itself is clean. A clean implementation of the wrong feature is still a defect.
+
+1. **Find the ticket reference.** Look, in order, for a pattern like `[A-Z]+-\d+`:
+   - PR title (e.g. `B20-11233 - Add listing logic report`)
+   - Source branch name (e.g. `feature/B20-11233-add-stats-...`)
+   - PR description body
+
+2. **Fetch the card.** Use the first available source — never block the run on this:
+   - **Atlassian MCP** tools (`mcp__claude_ai_Atlassian__getJiraIssue`, `mcp__claude_ai_Atlassian__searchJiraIssuesUsingJql`) when configured. Preferred.
+   - **PR description** body — read whatever the developer wrote inline.
+   - **Branch name** — last resort; gives only the slugified card title.
+
+3. **Read these fields when available:**
+   - Title (the actual ask)
+   - Description (the problem and constraints)
+   - Acceptance criteria (what "done" means)
+   - Type (bug / feature / refactor — informs review tone)
+
+4. **Use this as reference context for Step 1, not as a new scope.** The Scope rule below is unchanged — you still review only what the diff touched. The card informs **judgment**:
+   - Does the diff address the stated problem, or something adjacent?
+   - Does it satisfy the explicit acceptance criteria?
+   - Does it scope-creep beyond what the card asks for? (Surface scope-creep as 🔵 Suggestion — out-of-scope changes belong in a separate PR.)
+   - Are obvious card requirements missing from the diff? (Surface as 🟡 Warning — likely incomplete work.)
+
+5. **No ticket detected** → print `No ticket reference detected — reviewing diff against develop only.` and continue. The skill still works without a card; it just loses the "right problem" signal.
+
+6. **Read-only.** Never edit the card, post comments on it, transition its status, or write back any state.
+
+---
+
 ## Scope rule (read this before touching files)
 
 **Review only what the branch changed.** That means:
