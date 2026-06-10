@@ -717,31 +717,45 @@ $users = User::with('profile')->get();
 $orders->load('items');  // before the loop
 ```
 
-**Manual cross-table queries via the FK count too.** When a piece of code fetches a model and then re-fetches a related model by its FK with a second `Model::find()` (or `Model::where(...)->first()`), that's an N+1-shaped query even outside a loop, and it always scales to N+1 once a loop appears. Use a defined relationship + `->with()` instead — 🟡 Warning.
+**Manual cross-table queries via the FK count too.** This rule is **model-agnostic** — apply it to *every* parent / child pair in the codebase, not just ones that look like the examples below. Any code path that fetches an Eloquent model and then re-fetches a related model by its FK with a second `Model::find()` / `Model::where(...)->first()` is an N+1-shaped query — even outside a loop, and it always scales to N+1 once a loop wraps it. Use a defined relationship + `->with()` (or `->load()`) instead — 🟡 Warning.
 
 ```php
 // BAD — two queries; in a loop this is N+1
-foreach ($appraisals as $appraisal) {
-    $property = Property::find($appraisal->property_id);
+foreach ($orders as $order) {
+    $customer = Customer::find($order->customer_id);
     // ...
 }
 
-// BAD — same shape outside a loop
-$appraisal = Appraisal::find($id);
-$property  = Property::find($appraisal->property_id);
+// BAD — same shape outside a loop, any parent/child pair
+$invoice = Invoice::find($id);
+$client  = Client::find($invoice->client_id);
 
-// GOOD — one query, relation already loaded
-$appraisals = Appraisal::with('property')->get();
-foreach ($appraisals as $appraisal) {
-    $property = $appraisal->property;
+// BAD — child-side: looking up the parent by FK
+$post   = Post::find($id);
+$author = User::find($post->author_id);
+
+// BAD — manually querying children instead of using the relation
+$user      = User::find($id);
+$addresses = Address::where('user_id', $user->id)->get();
+
+// GOOD — one query with the relation eager-loaded
+$orders = Order::with('customer')->get();
+foreach ($orders as $order) {
+    $customer = $order->customer;
 }
 
 // GOOD — single query for the standalone case
-$appraisal = Appraisal::with('property')->findOrFail($id);
-$property  = $appraisal->property;
+$invoice = Invoice::with('client')->findOrFail($id);
+$client  = $invoice->client;
+
+// GOOD — use the relation, not Model::where(fk)
+$user      = User::with('addresses')->findOrFail($id);
+$addresses = $user->addresses;
 ```
 
-If the relationship isn't defined on the Model yet, the fix is to define it (`public function property(): BelongsTo { ... }`) — not to keep manually joining via `Model::find($fk)`.
+The rule applies to **every** Eloquent model and relationship in the codebase — `Order`/`Customer`, `Invoice`/`Item`, `Post`/`Comment`, `Project`/`Task`, `Tenant`/`Booking`, anything. Treat the BAD/GOOD pairs above as the *shape* to recognise, not as an exhaustive whitelist of models.
+
+**If the relationship isn't defined on the Model yet, the fix is to define it** — `public function customer(): BelongsTo`, `public function items(): HasMany`, `public function author(): BelongsTo`, etc. — not to keep manually joining via `Model::find($fk)` or `Model::where('fk_column', …)`.
 
 #### 4c. Eloquent scopes
 
