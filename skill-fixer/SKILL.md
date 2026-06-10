@@ -608,6 +608,32 @@ $users = User::with('profile')->get();
 $orders->load('items');  // before the loop
 ```
 
+**Manual cross-table queries via the FK count too.** When a piece of code fetches a model and then re-fetches a related model by its FK with a second `Model::find()` (or `Model::where(...)->first()`), that's an N+1-shaped query even outside a loop, and it always scales to N+1 once a loop appears. Use a defined relationship + `->with()` instead — 🟡 Warning.
+
+```php
+// BAD — two queries; in a loop this is N+1
+foreach ($appraisals as $appraisal) {
+    $property = Property::find($appraisal->property_id);
+    // ...
+}
+
+// BAD — same shape outside a loop
+$appraisal = Appraisal::find($id);
+$property  = Property::find($appraisal->property_id);
+
+// GOOD — one query, relation already loaded
+$appraisals = Appraisal::with('property')->get();
+foreach ($appraisals as $appraisal) {
+    $property = $appraisal->property;
+}
+
+// GOOD — single query for the standalone case
+$appraisal = Appraisal::with('property')->findOrFail($id);
+$property  = $appraisal->property;
+```
+
+If the relationship isn't defined on the Model yet, the fix is to define it (`public function property(): BelongsTo { ... }`) — not to keep manually joining via `Model::find($fk)`.
+
 #### 4c. Eloquent scopes
 
 Repeated query chains belong in a named local scope. Flag duplicated filter chains as 🔵 Suggestion.
