@@ -101,6 +101,31 @@ If none exist, skip this step. The skill's built-in rules are reasonable Laravel
 
 ---
 
+## Step 0.1 — Load card context (recommended)
+
+Before analyzing, fetch the linked issue-tracker card so the lens evaluates your branch against the actual ask — not just whether the code is clean. You're auditing your own work; the card tells you whether you finished it.
+
+1. **Find the ticket reference.** Look, in order, for a pattern like `[A-Z]+-\d+`:
+   - Current branch name (e.g. `feature/B20-11233-add-stats-...`)
+   - Recent commit subjects on the branch (`git log --format=%s origin/develop..HEAD`)
+
+2. **Fetch the card.** Use the first available source — never block the run on this:
+   - **Atlassian MCP** tools (`mcp__claude_ai_Atlassian__getJiraIssue`, `mcp__claude_ai_Atlassian__searchJiraIssuesUsingJql`) when configured. Preferred.
+   - **Branch name** — last resort; gives only the slugified card title.
+
+3. **Read these fields when available:** Title, Description, Acceptance criteria, Type (bug / feature / refactor).
+
+4. **Use this as reference context for Step 1, not as a new scope.** The Scope rule below is unchanged — you still review only what the branch touched. The card informs **judgment**:
+   - Does the branch address the stated problem?
+   - Does it satisfy the explicit acceptance criteria? (Missing requirements → 🟡 Warning.)
+   - Does it scope-creep beyond what the card asks for? (Out-of-scope changes → 🔵 Suggestion.)
+
+5. **No ticket detected** → print `No ticket reference detected — auditing branch against develop only.` and continue.
+
+6. **Read-only.** Never edit the card, post comments on it, or transition its status.
+
+---
+
 ## Scope rule (read this before touching files)
 
 **Review only what the branch changed.** That means:
@@ -171,6 +196,10 @@ git diff origin/develop...HEAD    # source of truth for scope
 ---
 
 ## Workflow
+
+### Narration — show the run, don't run it silently
+
+Before invoking each script in Steps -1 → 0.1 and the scoping scripts in Step 1, print a one-line header naming the step in plain language (e.g. `Step -1 — Checking skill version`). After each script returns, **always relay the script's own progress lines** (the `🔍 / ✓ / ↷ / ⚠️` messages it prints to stdout/stderr) — never swallow them. End each step with a one-line outcome summary so the developer can follow the run. Quiet success is a regression — every step must produce at least one visible line.
 
 ### Step 1 — Analyze
 

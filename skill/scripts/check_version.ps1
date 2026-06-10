@@ -1,5 +1,7 @@
 # Checks the installed skill version against the latest on GitHub.
 # Exits 0 if current or GitHub unreachable. Exits 1 if outdated.
+Write-Host "Checking skill version..."
+
 $SkillDir = Split-Path -Parent $PSScriptRoot
 $VersionFile = Join-Path $SkillDir "VERSION"
 $LocalVersion = if (Test-Path $VersionFile) { (Get-Content $VersionFile -Raw).Trim() } else { $null }
@@ -13,10 +15,16 @@ try {
         -ErrorAction Stop
     $RemoteVersion = $response.Content.Trim()
 } catch {
+    $installed = if ($LocalVersion) { $LocalVersion } else { "unknown" }
+    Write-Host "  Could not reach GitHub - continuing with installed v$installed."
     exit 0
 }
 
-if ([string]::IsNullOrEmpty($RemoteVersion)) { exit 0 }
+if ([string]::IsNullOrEmpty($RemoteVersion)) {
+    $installed = if ($LocalVersion) { $LocalVersion } else { "unknown" }
+    Write-Host "  Could not reach GitHub - continuing with installed v$installed."
+    exit 0
+}
 
 if ($LocalVersion -ne $RemoteVersion) {
     $installed = if ($LocalVersion) { $LocalVersion } else { "unknown" }
@@ -29,4 +37,5 @@ if ($LocalVersion -ne $RemoteVersion) {
     exit 1
 }
 
+Write-Host "  Up to date (v$LocalVersion)"
 exit 0
