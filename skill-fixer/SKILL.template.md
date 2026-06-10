@@ -158,14 +158,16 @@ When you encounter one of these markers above a line you would otherwise flag, *
 
 ### Refresh the base branch first
 
-The review is diffed against `origin/develop`. A stale remote-tracking ref means the diff base is wrong, so update it before anything else:
+Print `🔍 Refreshing origin/develop...` then run:
 
 ```bash
 git fetch origin develop
 ```
 
-- Success → continue.
-- Failure (offline, no remote, etc.) → print `⚠️  Couldn't refresh develop — reviewing against your local copy.` and continue. A missing fetch is not fatal; the local `origin/develop` is still usable.
+The review is diffed against `origin/develop`. A stale remote-tracking ref means the diff base is wrong.
+
+- Success → print `  ✓ origin/develop up to date.` and continue.
+- Failure (offline, no remote, etc.) → print `  ↷ Couldn't refresh develop — reviewing against your local copy.` and continue. A missing fetch is not fatal; the local `origin/develop` is still usable.
 
 ### Run the scoping scripts
 
@@ -382,6 +384,7 @@ Prefix each comment's title with one of:
 - Don't suggest rewrites of working code unless there's a concrete reason.
 - Don't say "consider" or "you might want to" — be direct: "this will fail when X" or "this is fine, but Y is faster."
 - Don't repeat the same issue across multiple lines. Comment once on the first occurrence and mention "same pattern appears at lines X, Y, Z."
+- Don't reference the original codebase author or assign blame.
 - Don't auto-commit, push, or stage any files. Ever.
 
 ---
