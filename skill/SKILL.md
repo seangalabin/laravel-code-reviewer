@@ -398,6 +398,53 @@ Do not run any Bitbucket posting scripts until the user confirms **y**.
 
 ---
 
+### Step 3 — Learning summary (private — author only, never posted)
+
+After the review is posted (or skipped), generate a short learning summary for the developer who ran the skill. This is a **private artefact** — it exists to help the author stay sharp while the bot does the review work. It must **never** appear on Bitbucket, never be folded into the disclaimer, never be attached to a finding comment, never be emailed, never be exposed in any channel that another person sees.
+
+**Output exactly two places:**
+1. Print to the terminal (stderr is fine) so the author sees it at end of run.
+2. Append to `.ai-review/learning-log.md` (the directory is gitignored — verify before writing). Create the file if missing; never overwrite a previous entry.
+
+**Template (use this exact section order; one log entry per run):**
+
+```
+─── 📚 Learning summary — PR #{PR_ID} / {branch} ───
+Findings: {N} ({X} critical, {Y} warnings, {Z} suggestions)
+
+Dimensions exercised (most → least):
+  • §{n} {dimension name} ×{count}
+  ...
+
+Recurring patterns this run:
+  • {one-line pattern that spans 2+ findings, with `path:line` refs}
+  ...
+  (if no recurring pattern: `• No repeated pattern this run.`)
+
+Concepts worth re-reading before your next session:
+  • §{n} {dimension name} — {one-line concept reminder}
+  ...
+  (cap at 3; pick the dimensions that fired most often or most severely)
+
+Saved to .ai-review/learning-log.md
+```
+
+**Synthesis rules:**
+- Group by **pattern**, not by file. Inline comments already cover per-file detail; this section's job is to surface the *theme* across findings.
+- A "recurring pattern" needs at least 2 findings of the same dimension OR the same root cause across different dimensions.
+- The "concepts" list is a teaching tool — write each as a single sentence the author can quote from memory next time.
+- Skip the summary entirely if 0 findings, but still append a log entry: `─── 📚 No findings on PR #{PR_ID} — clean diff. ───`.
+
+**Log file header (only when creating the file for the first time):**
+
+```markdown
+# AI review — personal learning log
+
+Private notes synthesised from each `/code-reviewer` run. Gitignored, never posted.
+```
+
+Each run appends a new dated entry with the timestamp + the template above, separated by `---`.
+
 ## Review lens
 
 Work through these dimensions in order. If the project has `.coderabbit.yaml` or `CLAUDE.md` rules, apply those first — these dimensions extend them.

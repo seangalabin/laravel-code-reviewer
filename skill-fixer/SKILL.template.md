@@ -287,6 +287,54 @@ Verification: {pint/pest/lint status of the last run}
 Run the full suite before pushing.
 ```
 
+### Step 4 — Learning summary (private — author only, never posted)
+
+After the fix loop ends, generate a short learning summary for the developer who ran the skill. This is a **private artefact** — it exists to help the author stay sharp while the bot does the review work. It must **never** appear on Bitbucket, never be folded into a posted comment, never be attached to any external surface — this is `code-fixer`, which is local-only by design, and the summary stays local too.
+
+**Output exactly two places:**
+1. Print to the terminal so the author sees it at end of run.
+2. Append to `.ai-review/learning-log.md` (the directory is gitignored — verify before writing). Create the file if missing; never overwrite a previous entry.
+
+**Template (same shape as `/code-reviewer`'s Step 3 — keep these in lockstep):**
+
+```
+─── 📚 Learning summary — {branch} (local fix loop) ───
+Findings analysed: {N} ({X} critical, {Y} warnings, {Z} suggestions)
+Applied: {A}  ·  Skipped: {S}
+
+Dimensions exercised (most → least):
+  • §{n} {dimension name} ×{count}
+  ...
+
+Recurring patterns this run:
+  • {one-line pattern that spans 2+ findings, with `path:line` refs}
+  ...
+  (if no recurring pattern: `• No repeated pattern this run.`)
+
+Concepts worth re-reading before your next session:
+  • §{n} {dimension name} — {one-line concept reminder}
+  ...
+  (cap at 3; pick the dimensions that fired most often or most severely)
+
+Saved to .ai-review/learning-log.md
+```
+
+**Synthesis rules:**
+- Group by **pattern**, not by file. Per-finding detail is already in the applied-fixes log; this section's job is to surface the *theme*.
+- A "recurring pattern" needs at least 2 findings of the same dimension OR the same root cause across different dimensions.
+- The "concepts" list is a teaching tool — write each as a single sentence the author can quote from memory next time.
+- Skip the summary entirely if 0 findings, but still append a log entry: `─── 📚 No findings on {branch} — clean diff. ───`.
+
+**Log file header** (only when creating the file for the first time):
+
+```markdown
+# AI review — personal learning log
+
+Private notes synthesised from each `/code-reviewer` and `/code-fixer` run. Gitignored, never posted.
+```
+
+Each run appends a new dated entry with the timestamp + the template above, separated by `---`.
+
 ---
 
 <!-- include:src/review-lens.md -->
