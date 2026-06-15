@@ -18,7 +18,11 @@ if [[ ! -d "$WORKTREE" ]]; then
     exit 0
 fi
 
-git worktree remove --force "$WORKTREE" 2>/dev/null \
-    || rm -rf "$WORKTREE"
+if ! git worktree remove --force "$WORKTREE" 2>/dev/null; then
+    # Not a registered worktree (or remove failed). Delete the dir directly,
+    # then prune so no stale admin entry leaks into .git/worktrees.
+    rm -rf "$WORKTREE"
+    git worktree prune 2>/dev/null || true
+fi
 
 echo "  Worktree removed: $WORKTREE" >&2

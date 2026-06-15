@@ -69,7 +69,10 @@ else
 fi
 
 if [[ -z "$PR_ID" ]]; then
-    ENCODED_BRANCH=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1]))" "$BRANCH")
+    # quote(..., safe='') so a "/" in the branch (e.g. feature/B20-1) is encoded
+    # too — an unescaped "/" inside the already-encoded BBQL value breaks the
+    # PR lookup and yields a false "no open PR found".
+    ENCODED_BRANCH=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$BRANCH")
     QUERY="source.branch.name%3D%22${ENCODED_BRANCH}%22%20AND%20state%3D%22OPEN%22"
 
     PR_JSON=$(curl -sSf -u "$BASIC_AUTH" \

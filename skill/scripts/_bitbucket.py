@@ -25,6 +25,25 @@ from pathlib import Path
 _AUTH_WARNED = False
 
 
+def _maybe_warn_auth(code: str) -> None:
+    """Print a one-shot, actionable warning when Bitbucket rejects the token.
+
+    Shared by bb_get / bb_put / bb_post_status so every verb surfaces a 401/403
+    loudly instead of letting it masquerade as 'no data' / a silent failure.
+    """
+    global _AUTH_WARNED
+    if code in ('401', '403') and not _AUTH_WARNED:
+        _AUTH_WARNED = True
+        print(
+            f"WARNING: Bitbucket rejected the API credentials (HTTP {code}). This is not "
+            "'no PR' — your BITBUCKET_API_TOKEN is invalid, expired, or lacks Bitbucket "
+            "scopes. Regenerate it at "
+            "https://id.atlassian.com/manage-profile/security/api-tokens (Pull requests: "
+            "read+write) and confirm BITBUCKET_EMAIL matches that Atlassian account.",
+            file=sys.stderr,
+        )
+
+
 def load_target() -> dict | None:
     """Read .ai-review/target.json when setup_target.sh created a worktree."""
     p = Path('.ai-review/target.json')
@@ -63,23 +82,13 @@ def bb_get(url: str, auth: tuple[str, str]) -> dict | None:
     # Capture the HTTP status (instead of letting `curl -f` collapse every
     # non-2xx into a bare failure) so a rejected token surfaces loudly rather
     # than masquerading as "no data" / "no PR".
-    global _AUTH_WARNED
     r = subprocess.run(
         ['curl', '-sS', '-w', '\n__HTTP__%{http_code}', '-u', f'{auth[0]}:{auth[1]}', url],
         capture_output=True, text=True,
     )
     body, _, code = r.stdout.rpartition('__HTTP__')
     code = code.strip()
-    if code in ('401', '403') and not _AUTH_WARNED:
-        _AUTH_WARNED = True
-        print(
-            f"WARNING: Bitbucket rejected the API credentials (HTTP {code}). This is not "
-            "'no PR' — your BITBUCKET_API_TOKEN is invalid, expired, or lacks Bitbucket "
-            "scopes. Regenerate it at "
-            "https://id.atlassian.com/manage-profile/security/api-tokens (Pull requests: "
-            "read+write) and confirm BITBUCKET_EMAIL matches that Atlassian account.",
-            file=sys.stderr,
-        )
+    _maybe_warn_auth(code)
     if r.returncode != 0 or code not in ('200', '201'):
         return None
     try:
@@ -89,15 +98,22 @@ def bb_get(url: str, auth: tuple[str, str]) -> dict | None:
 
 
 def bb_put(url: str, auth: tuple[str, str], body: dict) -> bool:
+    # Capture the status (instead of `curl -f` collapsing every non-2xx to one
+    # bool) so a rejected token surfaces loudly via _maybe_warn_auth, the same
+    # way bb_get / bb_post_status do.
     r = subprocess.run(
-        ['curl', '-sSf', '-u', f'{auth[0]}:{auth[1]}',
+        ['curl', '-sS', '-w', '\n__HTTP__%{http_code}',
+         '-u', f'{auth[0]}:{auth[1]}',
          '-X', 'PUT',
          '-H', 'Content-Type: application/json',
          '-d', json.dumps(body),
          url],
         capture_output=True, text=True,
     )
-    return r.returncode == 0
+    _, _, code = r.stdout.rpartition('__HTTP__')
+    code = code.strip()
+    _maybe_warn_auth(code)
+    return r.returncode == 0 and code in ('200', '201')
 
 
 def bb_post_status(url: str, auth: tuple[str, str], body: dict) -> tuple[int, dict | None]:
@@ -121,6 +137,7 @@ def bb_post_status(url: str, auth: tuple[str, str], body: dict) -> tuple[int, di
     out, _, code_str = r.stdout.rpartition('__HTTP__')
     if r.returncode != 0:
         return (0, None)
+    _maybe_warn_auth(code_str.strip())
     try:
         status = int(code_str.strip())
     except ValueError:
@@ -147,7 +164,9 @@ def find_pr_id(api_base: str, auth: tuple[str, str], branch: str,
                target: dict | None = None) -> str | None:
     if target and target.get('pr_id'):
         return str(target['pr_id'])
-    q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"')
+    # safe='' so a "/" in the branch name (e.g. feature/B20-1) is encoded too —
+    # an unescaped "/" inside the BBQL value yields a false "no PR found".
+    q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"', safe='')
     data = bb_get(f'{api_base}/pullrequests?q={q}&fields=values.id', auth)
     if not data:
         return None

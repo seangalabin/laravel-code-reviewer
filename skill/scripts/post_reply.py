@@ -36,6 +36,17 @@ def die(msg: str) -> None:
     sys.exit(1)
 
 
+def ensure_reply_marker(body: str) -> str:
+    """Append the anti-loop reply marker unless it's already present.
+
+    The marker lets check_replies.py recognise a bot reply (so the bot never
+    answers its own reply). Idempotent — appending twice is a no-op.
+    """
+    if REPLY_MARKER in body:
+        return body
+    return f'{body}\n\n{REPLY_MARKER}'
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description='Post a threaded reply to a PR comment.')
     parser.add_argument('--parent-id', required=True, type=int)
@@ -44,8 +55,7 @@ def main() -> None:
     body = sys.stdin.read().strip()
     if not body:
         die('reply body is empty (pass it on stdin).')
-    if REPLY_MARKER not in body:
-        body = f'{body}\n\n{REPLY_MARKER}'
+    body = ensure_reply_marker(body)
 
     target = load_target()
     auth   = get_creds()

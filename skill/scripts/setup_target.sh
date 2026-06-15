@@ -108,7 +108,7 @@ if [[ -z "$PR_ID" && "$IS_BITBUCKET" == "true" ]]; then
     PR_ID=$(python3 - "$WORKSPACE" "$REPO_SLUG" "$BRANCH" "$BB_AUTH" <<'PYEOF' || true
 import sys, json, subprocess, urllib.parse
 workspace, repo, branch, auth = sys.argv[1:5]
-q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"')
+q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"', safe='')
 r = subprocess.run(
     ['curl', '-sS', '-w', '\n__HTTP__%{http_code}', '-u', auth,
      f'https://api.bitbucket.org/2.0/repositories/{workspace}/{repo}'

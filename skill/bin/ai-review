@@ -85,7 +85,8 @@ def curl_get(url: str, auth: tuple[str, str]) -> dict:
 
 
 def find_pr_id(api_base: str, auth: tuple[str, str], branch: str) -> str:
-    q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"')
+    # safe='' so a "/" in the branch name is encoded inside the BBQL value.
+    q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"', safe='')
     data = curl_get(f'{api_base}/pullrequests?q={q}&fields=values.id,values.title', auth)
     prs = data.get('values', [])
     if not prs:

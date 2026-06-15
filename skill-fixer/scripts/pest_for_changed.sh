@@ -17,18 +17,19 @@ if ! git rev-parse --verify "${REMOTE_BASE}" >/dev/null 2>&1; then
   exit 1
 fi
 
-mapfile -t changed < <(
+# Portable (no mapfile / no `declare -A` — both are bash 4+; macOS ships 3.2).
+changed=$(
   {
     git diff --name-only --diff-filter=AMR "${REMOTE_BASE}...HEAD" -- '*.php'
     git diff --name-only --diff-filter=AMR -- '*.php'
-  } | sort -u | grep -v -e '^vendor/' -e '^storage/' || true
+  } | grep -v -e '^vendor/' -e '^storage/' | sort -u || true
 )
 
-declare -A test_set
-for f in "${changed[@]}"; do
+candidates=()
+while IFS= read -r f; do
   [[ -z "$f" ]] && continue
   if [[ "$f" == tests/* ]]; then
-    [[ -f "$f" ]] && test_set["$f"]=1
+    [[ -f "$f" ]] && candidates+=("$f")
     continue
   fi
   if [[ "$f" == app/* ]]; then
@@ -36,21 +37,29 @@ for f in "${changed[@]}"; do
     dir=$(dirname "$rel")
     base=$(basename "$rel" .php)
     candidate="tests/Feature/${dir}/${base}Test.php"
-    [[ -f "$candidate" ]] && test_set["$candidate"]=1
+    [[ -f "$candidate" ]] && candidates+=("$candidate")
   fi
-done
+done <<< "$changed"
 
-if [[ ${#test_set[@]} -eq 0 ]]; then
+# Dedup the existence-checked candidates (indexed array; no associative array).
+tests=()
+if [[ ${#candidates[@]} -gt 0 ]]; then
+  while IFS= read -r t; do
+    [[ -n "$t" ]] && tests+=("$t")
+  done < <(printf '%s\n' "${candidates[@]}" | sort -u)
+fi
+
+if [[ ${#tests[@]} -eq 0 ]]; then
   echo "No matching Pest test files for the changed code."
   echo "(For the full suite, run: vendor/bin/pest --compact)"
   exit 0
 fi
 
 echo "Matched:"
-for t in "${!test_set[@]}"; do
+for t in "${tests[@]}"; do
   echo "  $t"
 done
 
 echo
-echo "Running ${#test_set[@]} test file(s)..."
-vendor/bin/pest --compact "$@" "${!test_set[@]}"
+echo "Running ${#tests[@]} test file(s)..."
+vendor/bin/pest --compact "$@" "${tests[@]}"

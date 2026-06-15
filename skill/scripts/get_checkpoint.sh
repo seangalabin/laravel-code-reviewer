@@ -56,7 +56,7 @@ def curl(url):
 if target_pr_id:
     pr_id = int(target_pr_id)
 else:
-    q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"')
+    q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"', safe='')
     r = curl(f'{api_base}/pullrequests?q={q}&fields=values.id')
     if r.returncode != 0:
         sys.exit(0)

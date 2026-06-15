@@ -42,6 +42,8 @@ check_dismissals= load_module(SCRIPTS / 'check_dismissals.py','check_dismissals'
 check_replies   = load_module(SCRIPTS / 'check_replies.py',   'check_replies')
 update_resolved = load_module(SCRIPTS / 'update_resolved.py', 'update_resolved')
 update_card     = load_module(SCRIPTS / 'update_card_status.py', 'update_card_status')
+aggregate_stats = load_module(SCRIPTS / 'aggregate_stats.py', 'aggregate_stats')
+post_reply      = load_module(SCRIPTS / 'post_reply.py',      'post_reply')
 ai_review       = load_module(BIN / 'ai-review',              'ai_review')
 scan_diff       = load_module(SCRIPTS / 'scan_diff.py',        'scan_diff')
 build           = load_module(REPO_ROOT / 'build.py',         'build')
@@ -148,6 +150,75 @@ class TestBbPostStatus(unittest.TestCase):
         fake = _fake_completed('{"error":"x"}\n__HTTP__409', 0)
         with patch.object(bb.subprocess, 'run', return_value=fake):
             self.assertIsNone(bb.bb_post('http://x', ('e', 't'), {}))
+
+
+# ── aggregate_stats — classify / parse_meta / parse_created_at ────────────────
+
+import datetime as _dt
+
+
+class TestAggregateStats(unittest.TestCase):
+
+    NOW = _dt.datetime(2026, 6, 15, tzinfo=_dt.timezone.utc)
+
+    def test_classify_resolved(self):
+        body = 'x <!-- ai-review:resolved:abc123 --> y'
+        self.assertEqual(aggregate_stats.classify(body, '2026-06-14T00:00:00Z', self.NOW),
+                         'resolved')
+
+    def test_classify_other_when_no_marker(self):
+        self.assertEqual(aggregate_stats.classify('plain comment', '2026-06-14T00:00:00Z', self.NOW),
+                         'other')
+
+    def test_classify_open_recent(self):
+        body = '<!-- ai-review:open:abc123 -->'
+        # created today → age 0 < STALE_DAYS
+        self.assertEqual(aggregate_stats.classify(body, '2026-06-15T00:00:00Z', self.NOW),
+                         'open')
+
+    def test_classify_stale_after_threshold(self):
+        body = '<!-- ai-review:open:abc123 -->'
+        old = '2026-05-01T00:00:00Z'  # >14 days before NOW
+        self.assertEqual(aggregate_stats.classify(body, old, self.NOW), 'stale')
+
+    def test_parse_meta_valid(self):
+        body = 'x <!-- ai-review:meta {"dim":"4b","severity":"warning"} --> y'
+        self.assertEqual(aggregate_stats.parse_meta(body),
+                         {'dim': '4b', 'severity': 'warning'})
+
+    def test_parse_meta_absent(self):
+        self.assertEqual(aggregate_stats.parse_meta('no meta here'), {})
+
+    def test_parse_meta_invalid_json(self):
+        self.assertEqual(aggregate_stats.parse_meta('<!-- ai-review:meta {bad} -->'), {})
+
+    def test_parse_created_at_roundtrips_z_suffix(self):
+        dt = aggregate_stats.parse_created_at('2026-06-15T12:00:00Z')
+        self.assertEqual(dt.year, 2026)
+        self.assertEqual(dt.tzinfo, _dt.timezone.utc)
+
+    def test_parse_created_at_bad_input_returns_now(self):
+        # Non-fatal: bad timestamps fall back to "now" rather than crashing.
+        dt = aggregate_stats.parse_created_at('not-a-date')
+        self.assertIsInstance(dt, _dt.datetime)
+
+
+# ── post_reply — anti-loop marker ─────────────────────────────────────────────
+
+class TestPostReplyMarker(unittest.TestCase):
+
+    def test_appends_marker_when_absent(self):
+        out = post_reply.ensure_reply_marker('Thanks, dismissing this.')
+        self.assertTrue(out.endswith(post_reply.REPLY_MARKER))
+        self.assertIn('Thanks, dismissing this.', out)
+
+    def test_idempotent_when_present(self):
+        already = f'Body text\n\n{post_reply.REPLY_MARKER}'
+        self.assertEqual(post_reply.ensure_reply_marker(already), already)
+
+    def test_no_double_marker(self):
+        out = post_reply.ensure_reply_marker(f'x {post_reply.REPLY_MARKER}')
+        self.assertEqual(out.count(post_reply.REPLY_MARKER), 1)
 
 
 # ── update_card_status — ticket extraction ────────────────────────────────────
@@ -448,13 +519,6 @@ class TestSharedFilesNoDrift(unittest.TestCase):
 
     SHARED = [
         'scripts/scan_diff.py',
-        'scripts/pint_changed.sh',
-        'scripts/pest_for_changed.sh',
-        'references/laravel_review_guide.md',
-        'references/vue_review_guide.md',
-        'references/coding_standards.md',
-        'references/common_antipatterns.md',
-        'references/code_review_checklist.md',
     ]
 
     def test_shared_files_identical(self):

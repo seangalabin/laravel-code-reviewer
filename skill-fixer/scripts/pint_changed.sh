@@ -20,26 +20,20 @@ if ! git rev-parse --verify "${REMOTE_BASE}" >/dev/null 2>&1; then
   exit 1
 fi
 
-mapfile -t files < <(
-  git diff --name-only --diff-filter=AMR "${REMOTE_BASE}...HEAD" -- '*.php' \
-    | grep -v -e '^vendor/' -e '^storage/' || true
+# Collect committed-vs-base AND uncommitted PHP changes, dedup, keep existing.
+# Portable (no mapfile / no `declare -A` — both are bash 4+; macOS ships 3.2).
+files=$(
+  {
+    git diff --name-only --diff-filter=AMR "${REMOTE_BASE}...HEAD" -- '*.php'
+    git diff --name-only --diff-filter=AMR -- '*.php'
+  } | grep -v -e '^vendor/' -e '^storage/' | sort -u || true
 )
 
-# Also include any uncommitted PHP changes (so the agent can lint dirty trees too)
-mapfile -t -O "${#files[@]}" files < <(
-  git diff --name-only --diff-filter=AMR -- '*.php' \
-    | grep -v -e '^vendor/' -e '^storage/' || true
-)
-
-# Deduplicate, keep only files that still exist
-declare -A seen
 existing=()
-for f in "${files[@]}"; do
+while IFS= read -r f; do
   [[ -z "$f" ]] && continue
-  [[ -n "${seen[$f]:-}" ]] && continue
-  seen["$f"]=1
   [[ -f "$f" ]] && existing+=("$f")
-done
+done <<< "$files"
 
 if [[ ${#existing[@]} -eq 0 ]]; then
   echo "No PHP changes vs ${BASE}."

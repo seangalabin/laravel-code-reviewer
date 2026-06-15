@@ -106,7 +106,7 @@ branch    = os.environ['AI_REVIEW_BRANCH']
 auth      = os.environ['AI_REVIEW_AUTH']
 # Distinguish "no PR" (HTTP 200, empty) from a rejected token (401/403) or an
 # unreachable API, so the review's final message reflects the real cause.
-q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"')
+q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"', safe='')
 r = subprocess.run(
     ['curl', '-sS', '-w', '\n__HTTP__%{http_code}', '-u', auth,
      f'https://api.bitbucket.org/2.0/repositories/{workspace}/{repo}'

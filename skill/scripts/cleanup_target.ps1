@@ -18,7 +18,10 @@ if (-not (Test-Path -Path $WorkTree -PathType Container)) {
 
 git worktree remove --force $WorkTree 2>$null
 if ($LASTEXITCODE -ne 0) {
+    # Not a registered worktree (or remove failed). Delete directly, then prune
+    # so no stale admin entry leaks into .git/worktrees.
     Remove-Item -Path $WorkTree -Recurse -Force -ErrorAction SilentlyContinue
+    git worktree prune 2>$null
 }
 
 [Console]::Error.WriteLine("  Worktree removed: $WorkTree")

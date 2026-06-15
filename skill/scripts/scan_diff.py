@@ -79,7 +79,6 @@ NON_MODEL_PREFIXES = {
     "Number", "Password", "Pipeline", "Queue", "Redirect", "Request",
     "Response", "Route", "Rule", "Schema", "Session", "Storage", "Str",
     "URL", "Validator", "View", "AssetType", "CrmSource", "UserType",
-    "Response",
 }
 
 MODEL_STATIC_RE = re.compile(
@@ -277,10 +276,9 @@ RESOURCE_RULES = [
     ("MUST", "resource-db-query",
      MODEL_STATIC_RE,
      "Eloquent query inside an API Resource toArray() — Resources must only transform already-loaded data; eager-load in the Repository/Controller instead", model_predicate),
-
-    ("WARN", "resource-missing-when-loaded",
-     re.compile(r"\$this->(?!when(?:Loaded|Pivot|Count|Has)?)\w+\s*(?:->|\[)"),
-     "relation accessed directly in Resource — use $this->whenLoaded('relation') to avoid N+1 when relation is not eager-loaded", None),
+    # NOTE: a "relation accessed directly in Resource" pre-pass rule was removed —
+    # any `$this->x->`/`$this->x[` matched, flooding the agent with false positives.
+    # The lens (§4a whenLoaded) still instructs the agent to check this by judgement.
 ]
 
 # ─── Console Commands ────────────────────────────────────────────────────────
@@ -290,9 +288,9 @@ COMMAND_RULES = [
      MODEL_STATIC_RE,
      "direct Eloquent in Console Command handle() — delegate to a Repository", model_predicate),
 
-    ("MUST", "command-business-logic",
+    ("WARN", "command-business-logic",
      re.compile(r"(?:if\s*\(|foreach\s*\(|for\s*\(|while\s*\()"),
-     "business logic in Console Command handle() — delegate conditionals and loops to a Service or Repository", None),
+     "business logic in Console Command handle() — delegate conditionals and loops to a Service or Repository (WARN: guard clauses are fine; agent filters)", None),
 
     ("WARN", "command-echo-output",
      re.compile(r"\becho\s+"),

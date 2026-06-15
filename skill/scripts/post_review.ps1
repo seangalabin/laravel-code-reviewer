@@ -88,7 +88,7 @@ ws     = os.environ['AI_REVIEW_WS']
 repo   = os.environ['AI_REVIEW_REPO']
 branch = os.environ['AI_REVIEW_BRANCH']
 auth   = os.environ['AI_REVIEW_AUTH']
-q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"')
+q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"', safe='')
 r = subprocess.run(
     ['curl', '-sSf', '-u', auth,
      f'https://api.bitbucket.org/2.0/repositories/{ws}/{repo}'
