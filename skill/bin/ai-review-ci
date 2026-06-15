@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# ai-review-ci — run /code-reviewer headlessly for CI environments.
+#
+# Reads PR context from CI env vars and invokes the Claude Code CLI in
+# --print --bare mode. Bypasses all interactive prompts (the skill detects
+# AI_REVIEW_CI=1 and auto-confirms every [y/n] prompt). Designed to be
+# called from a Bitbucket Pipelines step (or any CI provider).
+#
+# Required env vars:
+#   ANTHROPIC_API_KEY        Claude API key for headless invocation.
+#   BITBUCKET_EMAIL          For the skill's Bitbucket REST calls.
+#   BITBUCKET_API_TOKEN
+#
+# Optional env vars:
+#   JIRA_BASE_URL            For Step 3 — Sync Jira card status.
+#   JIRA_EMAIL               (falls back to BITBUCKET_EMAIL)
+#   JIRA_API_TOKEN           (falls back to BITBUCKET_API_TOKEN)
+#   BITBUCKET_PR_ID          Auto-set by Bitbucket Pipelines on PR steps.
+#   BITBUCKET_BRANCH         Auto-set by Bitbucket Pipelines.
+#   AI_REVIEW_MAX_USD        Default 5.00 — caps spend per run.
+#   AI_REVIEW_MODEL          Override the model (e.g. "sonnet" for cheaper runs).
+#   AI_REVIEW_OUTPUT         Path for the JSON output. Default: ./ai-review-output.json
+#
+# Exit codes:
+#   0  Run completed (review posted; findings may or may not exist).
+#   1  Infrastructure failure (missing env, claude CLI not installed, etc.).
+#   2  Claude returned a non-zero exit (run errored mid-flight).
+
+set -uo pipefail
+
+# ── Pre-flight env checks ─────────────────────────────────────────────────────
+if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
+    echo "ERROR: ANTHROPIC_API_KEY is required for headless CI mode." >&2
+    exit 1
+fi
+if [[ -z "${BITBUCKET_EMAIL:-}" || -z "${BITBUCKET_API_TOKEN:-}" ]]; then
+    echo "ERROR: BITBUCKET_EMAIL and BITBUCKET_API_TOKEN are required (the skill posts comments via Bitbucket REST)." >&2
+    exit 1
+fi
+if ! command -v claude >/dev/null 2>&1; then
+    echo "ERROR: 'claude' CLI not on PATH. Install Claude Code in the CI image." >&2
+    exit 1
+fi
+
+# ── Build the prompt ──────────────────────────────────────────────────────────
+PR_ARG=""
+if [[ -n "${BITBUCKET_PR_ID:-}" ]]; then
+    PR_ARG="--pr=$BITBUCKET_PR_ID"
+elif [[ -n "${BITBUCKET_BRANCH:-}" ]]; then
+    PR_ARG="--branch=$BITBUCKET_BRANCH"
+fi
+
+PROMPT="/code-reviewer $PR_ARG"
+MAX_USD="${AI_REVIEW_MAX_USD:-5.00}"
+OUTPUT_FILE="${AI_REVIEW_OUTPUT:-./ai-review-output.json}"
+
+MODEL_ARGS=()
+if [[ -n "${AI_REVIEW_MODEL:-}" ]]; then
+    MODEL_ARGS=(--model "$AI_REVIEW_MODEL")
+fi
+
+# Tells the skill (via SKILL.md "CI / headless mode" section) to skip prompts.
+export AI_REVIEW_CI=1
+
+# ── Tool allowlist ────────────────────────────────────────────────────────────
+# --bare skips .claude/settings.json, so we list every Bash pattern the skill
+# legitimately uses. Bare mode also keeps Anthropic auth strictly to the env
+# key (no keychain / OAuth reads), matching CI's BYO-key model.
+ALLOWED_TOOLS=(
+    "Read"
+    "Write"
+    "Edit"
+    "Bash(.claude/skills/code-reviewer/scripts/*)"
+    "Bash(.claude/skills/code-reviewer/bin/*)"
+    "Bash(bash .claude/skills/code-reviewer/scripts/*)"
+    "Bash(python3 .claude/skills/code-reviewer/scripts/*)"
+    "Bash(git *)"
+    "Bash(curl *)"
+)
+
+# ── Banner ────────────────────────────────────────────────────────────────────
+echo "🚀 ai-review-ci — running /code-reviewer headlessly"
+echo "  Prompt        : $PROMPT"
+echo "  Max budget    : \$$MAX_USD"
+[[ -n "${AI_REVIEW_MODEL:-}" ]] && echo "  Model         : ${AI_REVIEW_MODEL}"
+echo "  Output JSON   : $OUTPUT_FILE"
+echo
+
+# ── Invoke Claude headlessly ──────────────────────────────────────────────────
+claude --print "$PROMPT" \
+    --bare \
+    --no-session-persistence \
+    --output-format json \
+    --permission-mode dontAsk \
+    --max-budget-usd "$MAX_USD" \
+    "${MODEL_ARGS[@]}" \
+    --allowedTools "${ALLOWED_TOOLS[@]}" \
+    > "$OUTPUT_FILE"
+RC=$?
+
+echo
+echo "─── Claude run finished (exit code $RC) ───"
+if command -v jq >/dev/null 2>&1; then
+    jq -r '.result // .' "$OUTPUT_FILE" 2>/dev/null || cat "$OUTPUT_FILE"
+else
+    cat "$OUTPUT_FILE"
+fi
+
+if [[ $RC -ne 0 ]]; then
+    echo "❌ Headless run failed (exit $RC). See $OUTPUT_FILE for details." >&2
+    exit 2
+fi
+
+echo
+echo "✓ ai-review-ci completed. Findings posted to PR (if any). Output: $OUTPUT_FILE"
+exit 0

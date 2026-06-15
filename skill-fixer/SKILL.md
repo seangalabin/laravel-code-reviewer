@@ -940,7 +940,7 @@ A single Blade file over ~200 lines, or a `@foreach` body of complex markup over
 
 Each issue must contain sections 1–4 below, in this exact order, with these exact headings. Section 5 (the Pest test) is **conditional** — include it only when the fix changes behaviour.
 
-#### 1. The problem (plain English)
+#### 1. The problem
 One or two sentences. What's wrong, in the simplest words possible. No "consider refactoring" — say what's actually broken or risky and why it matters.
 
 #### 2. AI fix prompt
@@ -978,7 +978,7 @@ If a diff doesn't fit (e.g. new file), show the full replacement code block with
 #### 4. Why this fix
 Two or three sentences. Explain *why* this fix works, not just *what* it does. Connect it to a concrete consequence (performance, security, readability, layering rule).
 
-#### 5. Suggested Pest test (conditional)
+#### 5. Suggested Pest test
 Include this section **only when the fix changes behaviour** — a bug fix, a security/authorization change, new business logic, a data-integrity guard, or an API contract change. Provide a Pest test that would fail before the fix and pass after it.
 
 **Skip this section entirely** for pure-style fixes (formatting, naming, readability, type hints, missing `strict_types`) — they don't change behaviour, so a test adds noise.

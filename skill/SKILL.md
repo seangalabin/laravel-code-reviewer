@@ -78,6 +78,20 @@ These apply in all modes and cannot be overridden by project config:
 
 ---
 
+## CI / headless mode (no interactive prompts)
+
+When `$AI_REVIEW_CI=1` (or `$CI=true`, set automatically by Bitbucket Pipelines, GitHub Actions, etc.) is present in the environment, override every `[y/n]` interaction in this file with its affirmative default:
+
+- **Skip Step -1 (version check) entirely.** The container's installed version is fixed — there's no manual update path in CI. Print `↷ CI mode — skipping version check.` and continue.
+- **Skip the Step 2 post-confirmation prompt.** Treat the answer as `y` and post the findings without asking.
+- **Skip the Step 0.7 reply-confirmation prompt(s).** Take the analysed action without asking.
+- **Skip the disk write in Step 4 (Learning summary).** Print the summary to stdout but do **not** append to `.ai-review/learning-log.md` — CI runners are ephemeral and may be shared across users; the personal log doesn't belong there.
+- Narration unchanged — print every `🔍 / ✓ / ↷ / ⚠️` line so CI logs show what happened.
+
+The CI wrapper is `.claude/skills/code-reviewer/bin/ai-review-ci`. Devs can set `AI_REVIEW_CI=1` locally to dry-run the CI flow before committing the pipeline yaml.
+
+---
+
 ## Step 0 — Set up review target (only when `--branch` or `--pr` is passed)
 
 **If neither flag was passed, skip to Step 0.1.** The review targets the currently checked-out branch.
@@ -1081,7 +1095,7 @@ This applies to every channel: do **not** include the disclaimer in inline findi
 
 Each inline comment must contain these five sections, in this exact order, with these exact headings:
 
-#### 1. The problem (plain English)
+#### 1. The problem
 One or two sentences. What's wrong, in the simplest words possible. No "consider refactoring" — say what's actually broken or risky and why it matters.
 
 #### 2. AI fix prompt
