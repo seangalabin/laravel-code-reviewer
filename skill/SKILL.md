@@ -1021,7 +1021,7 @@ Views are presentation only. Anything that queries data, decides business rules,
 #### 15a. No business logic in views
 
 - Direct Eloquent queries (`User::find(...)`, `$x->orders()->count()`) inside Blade — 🟡 Warning. Pass the data from the controller / view-composer.
-- `@php ... @endphp` blocks — 🟡 Warning. Almost always a smell; lift it out.
+- `@php ... @endphp` blocks **containing queries, business logic, or side effects** — 🟡 Warning; lift it out. A trivial `@php $i = 0; @endphp` loop counter or `@php use App\Enum; @endphp` import is fine — don't flag those.
 - Multi-branch logic, calculations, formatting decisions — 🔵 Suggestion. Move to a helper, accessor, or view-composer.
 
 ```blade
@@ -1238,13 +1238,3 @@ Each `.sh` script below has a matching `.ps1` Windows variant (same name, same a
 - **`post_reply.py --parent-id=<ID>`** — posts a threaded reply (body on stdin) under a PR comment and tags it with a hidden `ai-review:reply` marker so the bot won't answer its own reply.
 - **`setup_target.sh --branch=<name>|--pr=<N>`** — fetches a branch and creates a detached git worktree for reviewing without checkout. Writes `.ai-review/target.json` inside the worktree. Prints the worktree path to stdout.
 - **`cleanup_target.sh <worktree-path>`** — removes a worktree created by `setup_target.sh`.
-
----
-
-## Reference material
-
-- `references/laravel_review_guide.md` — Laravel-specific patterns, anti-patterns, correctness traps
-- `references/vue_review_guide.md` — Vue 3 / Vuex 4 patterns and component quality checks
-- `references/coding_standards.md` — PSR-12, naming conventions, method length limits
-- `references/common_antipatterns.md` — copy-paste reference for the most common violations
-- `references/code_review_checklist.md` — quick checklist for every diff

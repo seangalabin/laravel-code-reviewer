@@ -13,7 +13,7 @@ Run `/code-reviewer` in Claude Code and it will:
 3. Refresh dismissal memory — skip findings a developer has already marked won't-fix
 4. Diff the current branch against `develop`
 5. Run a mechanical pre-pass (`scan_diff.py`) over the changed lines to surface red flags
-6. Apply a 14-dimension review lens to every hunk
+6. Apply a 15-dimension review lens to every hunk
 7. Ask: **Post {N} findings to PR #{ID}? [y/n]** — the only interactive prompt
 8. Post each finding as an inline Bitbucket PR comment with a copy-pasteable fix prompt and an auto-apply command
 
@@ -208,6 +208,22 @@ Each run prints a digest of how many findings were resolved, are still open, or 
 
 If you're the developer cleaning up your own branch (rather than reviewing someone else's PR), use the `code-fixer` skill instead — see [below](#code-fixer-developer-skill).
 
+### CI / headless mode (preview)
+
+`code-reviewer` can run non-interactively for CI, driven by `skill/bin/ai-review-ci`. It invokes the skill via `claude --print --bare`, auto-confirming every prompt (set by `AI_REVIEW_CI=1`), and posts findings + syncs the Jira card with no human in the loop.
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-...   # required for headless invocation
+BITBUCKET_EMAIL=...            # required (skill posts via Bitbucket REST)
+BITBUCKET_API_TOKEN=...
+BITBUCKET_PR_ID=42             # auto-set by Bitbucket Pipelines on PR steps
+.claude/skills/code-reviewer/bin/ai-review-ci
+```
+
+Optional knobs: `AI_REVIEW_MAX_USD` (spend cap, default 5.00), `AI_REVIEW_MODEL` (e.g. `sonnet`), `AI_REVIEW_OUTPUT` (JSON output path). Exit codes: `0` ran, `1` infra failure (missing env / no `claude` CLI), `2` the run errored.
+
+> **Preview:** the wrapper works on any host with the `claude` CLI on `PATH` and is good for local dry-runs (`AI_REVIEW_CI=1`). A turnkey Bitbucket Pipe (Docker image + `bitbucket-pipelines.yml` template) is still in progress — until then you supply the `claude` CLI and pipeline yaml yourself.
+
 ## Updating
 
 Each time you run `/code-reviewer` or `/code-fixer`, the skill checks its installed version against the latest on GitHub. If it's out of date, it asks before continuing:
@@ -230,7 +246,7 @@ The check is skipped silently if GitHub is unreachable.
 
 ## code-fixer (developer skill)
 
-Use `code-fixer` when you want to clean up your **own** branch before pushing — it runs the same 14-dimension analysis as `code-reviewer` but instead of posting comments to Bitbucket, it walks you through applying fixes interactively on your local machine. No credentials needed.
+Use `code-fixer` when you want to clean up your **own** branch before pushing — it runs the same 15-dimension analysis as `code-reviewer` but instead of posting comments to Bitbucket, it walks you through applying fixes interactively on your local machine. No credentials needed.
 
 ### When to use it
 
@@ -267,7 +283,7 @@ The skill will:
 
 1. Check its version is up to date
 2. Diff your branch against `develop`
-3. Scan for issues across all 14 review dimensions
+3. Scan for issues across all 15 review dimensions
 4. Print a summary: `Found 5 issues (1 critical, 3 warnings, 1 suggestion). Starting fix loop.`
 5. Check for uncommitted changes — if any exist, ask whether to proceed
 6. Walk through each issue one at a time, Critical → Warning → Suggestion
@@ -323,7 +339,7 @@ Every fix you accept is logged to `.ai-review/applied-{timestamp}.log` so you ca
 
 **`skill/SKILL.md` and `skill-fixer/SKILL.md` are generated. Never edit them by hand.** Edit the inputs and rebuild:
 
-- The 14-dimension review lens (shared by both skills) lives in `src/review-lens.md`.
+- The 15-dimension review lens (shared by both skills) lives in `src/review-lens.md`.
 - Everything else lives in the per-skill templates: `skill/SKILL.template.md` and `skill-fixer/SKILL.template.md` (each pulls in the lens via `<!-- include:src/review-lens.md -->`).
 
 After editing a template or the lens, regenerate:
@@ -336,9 +352,9 @@ Commit the template(s), `src/review-lens.md`, and the regenerated `SKILL.md` fil
 
 > A hand-edit to a generated `SKILL.md` is silently destroyed by the next `python3 build.py`. The `TestBuildIdempotency` test guards against this — it fails if any committed `SKILL.md` differs from `expand(template)`. Run the tests before committing.
 
-### Shared scripts and references
+### Shared scripts
 
-Three scripts (`scan_diff.py`, `pint_changed.sh`, `pest_for_changed.sh`) and all five `references/*.md` files are duplicated verbatim in both `skill/` and `skill-fixer/` and **must stay byte-identical** — edit one, copy it to the other. `TestSharedFilesNoDrift` fails if they diverge. (`check_version.sh` and `branch_summary.sh` are intentionally per-skill — don't sync those.)
+`scan_diff.py` is duplicated verbatim in both `skill/` and `skill-fixer/` and **must stay byte-identical** — edit one, copy it to the other. `TestSharedFilesNoDrift` fails if they diverge. (`check_version.sh` and `branch_summary.sh` are intentionally per-skill — don't sync those. Pint/Pest scripts live only in `code-fixer`.)
 
 ### Versioning
 

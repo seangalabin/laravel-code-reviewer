@@ -868,7 +868,7 @@ Views are presentation only. Anything that queries data, decides business rules,
 #### 15a. No business logic in views
 
 - Direct Eloquent queries (`User::find(...)`, `$x->orders()->count()`) inside Blade — 🟡 Warning. Pass the data from the controller / view-composer.
-- `@php ... @endphp` blocks — 🟡 Warning. Almost always a smell; lift it out.
+- `@php ... @endphp` blocks **containing queries, business logic, or side effects** — 🟡 Warning; lift it out. A trivial `@php $i = 0; @endphp` loop counter or `@php use App\Enum; @endphp` import is fine — don't flag those.
 - Multi-branch logic, calculations, formatting decisions — 🔵 Suggestion. Move to a helper, accessor, or view-composer.
 
 ```blade
@@ -1040,13 +1040,3 @@ Each script has a Unix (`.sh`) and Windows (`.ps1`) variant. Use whichever match
 - **`scan_diff.py`** — pre-pass pattern scanner. Only scans `+` lines. False positives filtered by the agent.
 - **`pint_changed`** — run Pint against changed PHP files. Check-only by default; the fixer uses check-only (never auto-stages).
 - **`pest_for_changed`** — run only the Pest tests that map to changed files (`app/Foo/Bar.php` → `tests/Feature/Foo/BarTest.php`).
-
----
-
-## Reference material
-
-- `.claude/skills/code-fixer/references/laravel_review_guide.md` — Laravel-specific patterns, anti-patterns, correctness traps
-- `.claude/skills/code-fixer/references/vue_review_guide.md` — Vue 3 / Vuex 4 patterns and component quality checks
-- `.claude/skills/code-fixer/references/coding_standards.md` — PSR-12, naming conventions, method length limits
-- `.claude/skills/code-fixer/references/common_antipatterns.md` — copy-paste reference for the most common violations
-- `.claude/skills/code-fixer/references/code_review_checklist.md` — quick checklist for every diff

@@ -529,7 +529,7 @@ Views are presentation only. Anything that queries data, decides business rules,
 #### 15a. No business logic in views
 
 - Direct Eloquent queries (`User::find(...)`, `$x->orders()->count()`) inside Blade — 🟡 Warning. Pass the data from the controller / view-composer.
-- `@php ... @endphp` blocks — 🟡 Warning. Almost always a smell; lift it out.
+- `@php ... @endphp` blocks **containing queries, business logic, or side effects** — 🟡 Warning; lift it out. A trivial `@php $i = 0; @endphp` loop counter or `@php use App\Enum; @endphp` import is fine — don't flag those.
 - Multi-branch logic, calculations, formatting decisions — 🔵 Suggestion. Move to a helper, accessor, or view-composer.
 
 ```blade

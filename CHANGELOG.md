@@ -5,6 +5,119 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.13.0 / code-fixer 1.9.0 — 2026-06-15
+
+### Removed
+- Deleted the 10 orphaned `references/*.md` files (5 × both skills) — never loaded by any
+  SKILL.md or script; pure duplication of the lens. Dropped the dead "Reference material"
+  footer from both skills.
+- Removed dead `pest_for_changed.sh` / `pint_changed.sh` copies from **code-reviewer** (it
+  never runs Pint/Pest; the fixer keeps its own).
+
+### Fixed
+- **Branch-name URL encoding** — `quote(..., safe='')` everywhere a branch is spliced into a
+  Bitbucket BBQL query (`post_review`, `find_pr_id`, `setup_target`, `get_checkpoint`,
+  `save_reviewed_sha`, both bins, `.ps1` twins). A `/` in a branch (e.g. `feature/B20-1`) no
+  longer yields a false "no open PR found".
+- `bb_put` now surfaces 401/403 via the shared `_maybe_warn_auth` helper instead of collapsing
+  all errors to a bare bool; `bb_post_status` warns too.
+- `cleanup_target` runs `git worktree prune` after the `rm -rf` fallback so no stale worktree
+  entry leaks (`.sh` + `.ps1`).
+- `pest_for_changed.sh` / `pint_changed.sh` no longer use `mapfile` / `declare -A` (bash 4+);
+  rewritten portably so they work on macOS's stock bash 3.2.
+- `scan_diff.py`: removed the flooding `resource-missing-when-loaded` pre-pass rule and
+  downgraded `command-business-logic` from MUST to WARN (guard clauses are legitimate).
+
+### Changed
+- **CI headless allowlist** (`ai-review-ci`) now matches absolute-path / `bash …` / `python3 …`
+  invocations used in target (`--pr`) mode, so worktree scripts aren't silently blocked under
+  `--permission-mode dontAsk`.
+- Installer writes `python3` (and Windows `pwsh`/`python`) tool patterns for both skills — the
+  scripts call `python3` directly, which the old `python`-only allowlist missed.
+- Packaging: `assets/` added to the npm `files` whitelist (the company-rules scaffold shipped
+  empty before); `.npmignore` excludes `__pycache__`, `*.pyc`, and `*.template.md`.
+- `.gitignore` now covers `.idea/` and `.claude/settings.local.json` (defense-in-depth).
+- Docs corrected from "14-dimension" to **15** (Blade added); README gains a CI / headless
+  (preview) section; this CHANGELOG backfilled to current versions.
+
+### Added
+- Test coverage for `aggregate_stats.py` (`classify`, `parse_meta`, `parse_created_at`) and
+  `post_reply.py` marker logic.
+
+## code-reviewer 1.12.0 — 2026-06-12
+
+### Added
+- **CI / headless mode** — `AI_REVIEW_CI=1` makes the skill skip every interactive prompt;
+  new `bin/ai-review-ci` wrapper drives `claude --print --bare` for pipeline use.
+
+### Changed
+- Dropped the stray `(plain English)` / `(conditional)` parentheticals from posted-comment
+  headings (also code-fixer 1.8.2).
+
+## code-reviewer 1.11.0 — 2026-06-11
+
+### Added
+- **Jira card status sync** — after each run, transition the linked card to `Failed Code
+  Review` (findings remain) or `Code Review` (clean / all-addressed) via direct Jira REST.
+  New `update_card_status.py`; soft-skips when Jira env vars are absent.
+
+## code-reviewer 1.10.0 / code-fixer 1.8.0 — 2026-06-09
+
+### Added
+- **Private end-of-run learning summary** — printed to the terminal and appended to the
+  gitignored `.ai-review/learning-log.md` so the author keeps their reviewing instincts sharp.
+
+## code-reviewer 1.9.1 / code-fixer 1.7.1 — 2026-06-08
+
+### Changed
+- Broadened §4b's manual-FK N+1 rule to be model-agnostic with varied parent/child examples.
+
+## code-reviewer 1.9.0 / code-fixer 1.7.0 — 2026-06-08
+
+### Added
+- §4b now flags manual cross-table queries (`Model::find($fk)`) as N+1-shaped, not just
+  relation access inside loops.
+
+## code-reviewer 1.8.2 / code-fixer 1.6.1 — 2026-06-05
+
+### Changed
+- Aligned code-fixer with code-reviewer: card context loading, the "show the run" narration
+  paragraph, `check_version` output, `.ps1` parity, and the "no blame author" rule.
+
+## code-reviewer 1.8.1 — 2026-06-04
+
+### Changed
+- Every step script prints visible `🔍 / ✓ / ↷` progress instead of running silently.
+
+## code-reviewer 1.8.0 — 2026-06-04
+
+### Added
+- **Load card context** (Step 0.2) — fetch the linked Jira card before analysis so the review
+  judges whether the change solves the right problem. Status-aware `bb_post_status`.
+
+## code-reviewer 1.7.1 — 2026-06-03
+
+### Added
+- When a finding is addressed, the inline thread is natively resolved in the Bitbucket UI.
+
+## code-reviewer 1.7.0 / code-fixer 1.5.0 — 2026-06-03
+
+### Added
+- **Repository granularity** rule — one Repository per aggregate root (🔵 for splitting a
+  child model out; 🟡 for a Service/Controller bypassing the parent Repository).
+
+## code-reviewer 1.6.1 / code-fixer 1.4.1 — 2026-06-03
+
+### Changed
+- Bumped `whenLoaded` / `DB::transaction` / `Http::timeout` to 🟡 Warning; consolidated
+  duplicate rules to canonical entries.
+
+## code-reviewer 1.6.0 / code-fixer 1.4.0 — 2026-06-03
+
+### Added
+- **Dimension 15 — Blade views** (business logic in views, N+1 in `@foreach`, URL/attr XSS,
+  CSRF, dynamic `@include`).
+
 ## code-reviewer 1.5.0 — 2026-06-02
 
 ### Added
