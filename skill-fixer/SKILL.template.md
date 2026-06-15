@@ -105,7 +105,7 @@ If none exist, skip this step. The skill's built-in rules are reasonable Laravel
 
 Before analyzing, fetch the linked issue-tracker card so the lens evaluates your branch against the actual ask — not just whether the code is clean. You're auditing your own work; the card tells you whether you finished it.
 
-1. **Find the ticket reference.** Look, in order, for a pattern like `[A-Z]+-\d+`:
+1. **Find the ticket reference.** Look, in order, for a pattern like `[A-Z][A-Z0-9_]*-\d+` (Atlassian project key format — e.g. `B20-11233`, `PROJ-42`):
    - Current branch name (e.g. `feature/B20-11233-add-stats-...`)
    - Recent commit subjects on the branch (`git log --format=%s origin/develop..HEAD`)
 

@@ -144,7 +144,7 @@ If none exist, skip this step. The skill's built-in rules are reasonable Laravel
 
 Before analyzing the diff, fetch the linked issue-tracker card. The goal is to judge **whether the change solves the right problem** — not just whether the code itself is clean. A clean implementation of the wrong feature is still a defect.
 
-1. **Find the ticket reference.** Look, in order, for a pattern like `[A-Z]+-\d+`:
+1. **Find the ticket reference.** Look, in order, for a pattern like `[A-Z][A-Z0-9_]*-\d+` (Atlassian project key format — e.g. `B20-11233`, `PROJ-42`):
    - PR title (e.g. `B20-11233 - Add listing logic report`)
    - Source branch name (e.g. `feature/B20-11233-add-stats-...`)
    - PR description body
@@ -398,7 +398,38 @@ Do not run any Bitbucket posting scripts until the user confirms **y**.
 
 ---
 
-### Step 3 — Learning summary (private — author only, never posted)
+### Step 3 — Sync Jira card status (idempotent, soft-fails)
+
+After all the comment-state work in Steps 0.5 / 0.6 / 2 is done, transition the linked Jira card based on the **current state of the PR** — not just what this run produced. A clean diff or a fully-addressed PR should move the card back to `Code Review`; remaining open findings should move it to `Failed Code Review`.
+
+1. **Compute `has_open_findings`** — `true` if any of:
+   - This run posted ≥1 new finding (and the user said `y`).
+   - There are pre-existing open findings from prior runs that weren't marked resolved this run (i.e. `check_resolved.py`'s output minus what Step 0.5 just resolved).
+   - **Dismissed findings do NOT count as open** — they're explicit accepts.
+
+   Otherwise → `false` (clean PR, or all findings now resolved/dismissed).
+
+2. **Run:**
+
+   ```bash
+   .claude/skills/code-reviewer/scripts/update_card_status.py \
+       --has-open-findings={true|false}
+   ```
+
+   The script:
+   - Auto-detects the ticket key from the current branch (regex `[A-Z][A-Z0-9_]*-\d+`); pass `--ticket=KEY` to override.
+   - Reads `JIRA_BASE_URL`, `JIRA_EMAIL` (falls back to `BITBUCKET_EMAIL`), `JIRA_API_TOKEN` (falls back to `BITBUCKET_API_TOKEN`).
+   - Fetches the issue's current status. No-op if already correct.
+   - Finds the transition whose target matches the desired status — defaults: `Failed Code Review` (findings exist) or `Code Review` (clean / all-addressed). Override per-repo via `JIRA_FAILED_STATUS` / `JIRA_PASSED_STATUS`.
+   - POSTs the transition.
+
+3. **Soft-fail everywhere.** Missing creds, no JIRA key in branch name, workflow doesn't expose the needed transition — the script prints a `↷ skipped` reason to stderr and exits 0. The review run never fails because of Jira sync.
+
+4. Relay the script's output verbatim per the narration rule.
+
+---
+
+### Step 4 — Learning summary (private — author only, never posted)
 
 After the review is posted (or skipped), generate a short learning summary for the developer who ran the skill. This is a **private artefact** — it exists to help the author stay sharp while the bot does the review work. It must **never** appear on Bitbucket, never be folded into the disclaimer, never be attached to a finding comment, never be emailed, never be exposed in any channel that another person sees.
 

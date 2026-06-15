@@ -41,6 +41,7 @@ check_resolved  = load_module(SCRIPTS / 'check_resolved.py',  'check_resolved')
 check_dismissals= load_module(SCRIPTS / 'check_dismissals.py','check_dismissals')
 check_replies   = load_module(SCRIPTS / 'check_replies.py',   'check_replies')
 update_resolved = load_module(SCRIPTS / 'update_resolved.py', 'update_resolved')
+update_card     = load_module(SCRIPTS / 'update_card_status.py', 'update_card_status')
 ai_review       = load_module(BIN / 'ai-review',              'ai_review')
 scan_diff       = load_module(SCRIPTS / 'scan_diff.py',        'scan_diff')
 build           = load_module(REPO_ROOT / 'build.py',         'build')
@@ -147,6 +148,47 @@ class TestBbPostStatus(unittest.TestCase):
         fake = _fake_completed('{"error":"x"}\n__HTTP__409', 0)
         with patch.object(bb.subprocess, 'run', return_value=fake):
             self.assertIsNone(bb.bb_post('http://x', ('e', 't'), {}))
+
+
+# ── update_card_status — ticket extraction ────────────────────────────────────
+
+class TestUpdateCardStatus(unittest.TestCase):
+
+    def test_extract_from_feature_branch(self):
+        self.assertEqual(
+            update_card.extract_ticket_id('feature/B20-11233-add-stats-to-dashboards'),
+            'B20-11233',
+        )
+
+    def test_extract_from_bugfix_branch(self):
+        self.assertEqual(
+            update_card.extract_ticket_id('bugfix/PROJ-42-fix-the-thing'),
+            'PROJ-42',
+        )
+
+    def test_extract_from_pr_title(self):
+        self.assertEqual(
+            update_card.extract_ticket_id('B20-11233 - Add listing logic report'),
+            'B20-11233',
+        )
+
+    def test_extract_first_match_when_multiple(self):
+        # Only the first JIRA-style key should be returned.
+        self.assertEqual(
+            update_card.extract_ticket_id('B20-1 then later XYZ-99'),
+            'B20-1',
+        )
+
+    def test_extract_returns_none_for_master(self):
+        self.assertIsNone(update_card.extract_ticket_id('master'))
+
+    def test_extract_returns_none_for_empty(self):
+        self.assertIsNone(update_card.extract_ticket_id(''))
+        self.assertIsNone(update_card.extract_ticket_id(None))
+
+    def test_extract_ignores_lowercase_prefix(self):
+        # Convention is uppercase prefix; `feat-123` shouldn't be picked up as a ticket.
+        self.assertIsNone(update_card.extract_ticket_id('feat-123-something'))
 
 
 # ── update_resolved — body rewriting ──────────────────────────────────────────

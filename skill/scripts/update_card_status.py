@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""
+update_card_status.py — transition the linked Jira card after a review run.
+
+Usage:
+    update_card_status.py --has-open-findings={true|false} [--ticket=KEY]
+
+Decision rule:
+- has-open-findings=true  → transition to JIRA_FAILED_STATUS (default "Failed Code Review")
+- has-open-findings=false → transition to JIRA_PASSED_STATUS (default "Code Review")
+
+The script auto-detects the ticket key from the current branch (regex `[A-Z]+-\\d+`)
+unless `--ticket` is passed. It is **idempotent** — if the card is already in
+the target status, it no-ops. It **soft-exits on every failure path** so a Jira
+hiccup never fails the review run itself.
+
+Required env vars:
+  JIRA_BASE_URL        e.g. https://yourcompany.atlassian.net (no trailing /rest)
+  JIRA_EMAIL           Atlassian account email (falls back to BITBUCKET_EMAIL)
+  JIRA_API_TOKEN       Atlassian API token   (falls back to BITBUCKET_API_TOKEN)
+
+Optional env vars:
+  JIRA_FAILED_STATUS   defaults to "Failed Code Review"
+  JIRA_PASSED_STATUS   defaults to "Code Review"
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+
+# Atlassian project keys: start with a letter, may contain letters/digits/underscores,
+# then "-" then the issue number. `\b` boundaries stop accidental matches inside
+# lowercase identifiers like "feat-123-foo".
+TICKET_PATTERN = re.compile(r'\b([A-Z][A-Z0-9_]*-\d+)\b')
+
+
+def soft_exit(msg: str = '') -> None:
+    if msg:
+        print(f'  ↷ {msg}', file=sys.stderr)
+    sys.exit(0)
+
+
+def extract_ticket_id(text: str) -> str | None:
+    """Return the first JIRA-style key in `text`, or None."""
+    if not text:
+        return None
+    m = TICKET_PATTERN.search(text)
+    return m.group(1) if m else None
+
+
+def detect_ticket_from_branch() -> str | None:
+    r = subprocess.run(['git', 'branch', '--show-current'],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
+    return extract_ticket_id(r.stdout.strip())
+
+
+def jira_curl(method: str, url: str, auth: str,
+              body: dict | None = None) -> tuple[int, dict | None]:
+    """Return (http_status, parsed_body_or_None). status==0 means transport failure."""
+    cmd = ['curl', '-sS', '-w', '\n__HTTP__%{http_code}',
+           '-u', auth,
+           '-X', method,
+           '-H', 'Content-Type: application/json',
+           '-H', 'Accept: application/json']
+    if body is not None:
+        cmd.extend(['-d', json.dumps(body)])
+    cmd.append(url)
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    out, _, code_str = r.stdout.rpartition('__HTTP__')
+    if r.returncode != 0:
+        return (0, None)
+    try:
+        status = int(code_str.strip())
+    except ValueError:
+        status = 0
+    try:
+        parsed = json.loads(out) if out.strip() else None
+    except json.JSONDecodeError:
+        parsed = None
+    return (status, parsed)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--has-open-findings', required=True,
+                        choices=['true', 'false'])
+    parser.add_argument('--ticket', default=None,
+                        help='Override branch-based ticket detection.')
+    args = parser.parse_args()
+
+    print('🔍 Syncing Jira card status...', file=sys.stderr)
+
+    base_url = os.environ.get('JIRA_BASE_URL', '').rstrip('/')
+    email    = os.environ.get('JIRA_EMAIL') or os.environ.get('BITBUCKET_EMAIL', '')
+    token    = os.environ.get('JIRA_API_TOKEN') or os.environ.get('BITBUCKET_API_TOKEN', '')
+
+    if not base_url:
+        soft_exit('JIRA_BASE_URL not set — skipping Jira sync.')
+    if not (email and token):
+        soft_exit('JIRA_EMAIL / JIRA_API_TOKEN not set — skipping Jira sync.')
+
+    ticket = args.ticket or detect_ticket_from_branch()
+    if not ticket:
+        soft_exit('No JIRA-style ticket detected from branch — skipping Jira sync.')
+
+    failed_status = os.environ.get('JIRA_FAILED_STATUS', 'Failed Code Review')
+    passed_status = os.environ.get('JIRA_PASSED_STATUS', 'Code Review')
+    target = failed_status if args.has_open_findings == 'true' else passed_status
+
+    auth = f'{email}:{token}'
+
+    # 1) Fetch current status.
+    status, issue = jira_curl(
+        'GET',
+        f'{base_url}/rest/api/3/issue/{ticket}?fields=status',
+        auth,
+    )
+    if status != 200 or not issue:
+        soft_exit(f'Could not fetch Jira issue {ticket} (HTTP {status}) — skipping.')
+
+    current = ((issue.get('fields') or {}).get('status') or {}).get('name', '') or '?'
+    print(f'  Ticket {ticket}: currently "{current}", target "{target}".', file=sys.stderr)
+
+    if current.casefold() == target.casefold():
+        print(f'  ✓ Already in "{target}" — no transition needed.', file=sys.stderr)
+        return
+
+    # 2) List available transitions.
+    status, t_data = jira_curl(
+        'GET',
+        f'{base_url}/rest/api/3/issue/{ticket}/transitions',
+        auth,
+    )
+    if status != 200 or not t_data:
+        soft_exit(f'Could not list transitions for {ticket} (HTTP {status}) — skipping.')
+
+    transitions = t_data.get('transitions', []) or []
+    matching = next(
+        (t for t in transitions
+         if (t.get('to') or {}).get('name', '').casefold() == target.casefold()),
+        None,
+    )
+    if not matching:
+        available = ', '.join(
+            (t.get('to') or {}).get('name', '?') for t in transitions
+        ) or 'none'
+        soft_exit(
+            f'No transition from "{current}" → "{target}" available '
+            f'(workflow exposes: {available}) — skipping.'
+        )
+
+    # 3) Apply the transition.
+    status, _ = jira_curl(
+        'POST',
+        f'{base_url}/rest/api/3/issue/{ticket}/transitions',
+        auth,
+        body={'transition': {'id': matching['id']}},
+    )
+    if status not in (200, 204):
+        print(
+            f'  ⚠️  Transition POST for {ticket} returned HTTP {status} — '
+            'card may not have moved; check token scope or workflow permissions.',
+            file=sys.stderr,
+        )
+        return
+
+    print(f'  ✓ Transitioned {ticket} → "{target}".', file=sys.stderr)
+
+
+if __name__ == '__main__':
+    main()

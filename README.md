@@ -85,7 +85,36 @@ After installing, add your Bitbucket credentials to `.claude/settings.local.json
 Create a Bitbucket API token with **Pull requests: write** scope at:
 https://bitbucket.org/account/settings/personal-access-tokens/
 
-Restart Claude Code to pick up the new environment variables.
+### Optional — Jira card status sync
+
+To automatically transition the linked Jira card after each review (`Failed Code Review` when findings remain, `Code Review` when clean / all-addressed), also add to `.claude/settings.local.json`:
+
+```json
+{
+  "env": {
+    "JIRA_BASE_URL":     "https://yourcompany.atlassian.net",
+    "JIRA_EMAIL":        "your@email.com",
+    "JIRA_API_TOKEN":    "your_jira_api_token"
+  }
+}
+```
+
+`JIRA_EMAIL` and `JIRA_API_TOKEN` fall back to `BITBUCKET_EMAIL` / `BITBUCKET_API_TOKEN` if your Bitbucket and Jira accounts share an Atlassian login — set the dedicated ones only when they differ.
+
+Override the status names if your workflow uses different labels:
+
+```json
+{
+  "env": {
+    "JIRA_FAILED_STATUS": "Failed Code Review",
+    "JIRA_PASSED_STATUS": "Code Review"
+  }
+}
+```
+
+If any Jira variable is missing the sync soft-skips — the review itself never fails.
+
+Restart Claude Code to pick up any new environment variables.
 
 ## Usage
 
