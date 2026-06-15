@@ -73,6 +73,15 @@ const allowedTools = isFixer
         'Bash(.claude/skills/code-fixer/scripts/*)',
         'Bash(.claude/skills/code-fixer/bin/*)',
         'Bash(bash .claude/skills/code-fixer/scripts/*)',
+        // Scripts call python3 directly; both python3 and python must be allowed.
+        'Bash(python3 .claude/skills/code-fixer/scripts/*)',
+        'Bash(python3 .claude/skills/code-fixer/bin/*)',
+        // Windows: PowerShell variants + Python launcher
+        'Bash(pwsh .claude/skills/code-fixer/scripts/*)',
+        'Bash(powershell .claude/skills/code-fixer/scripts/*)',
+        'Bash(python .claude/skills/code-fixer/scripts/*)',
+        'Bash(python .claude/skills/code-fixer/bin/*)',
+        'Bash(uname*)',
         'Bash(git diff*)',
         'Bash(git log*)',
         'Bash(git branch*)',
@@ -86,6 +95,9 @@ const allowedTools = isFixer
         'Bash(.claude/skills/code-reviewer/scripts/*)',
         'Bash(.claude/skills/code-reviewer/bin/*)',
         'Bash(bash .claude/skills/code-reviewer/scripts/*)',
+        // Scripts call python3 directly; both python3 and python must be allowed.
+        'Bash(python3 .claude/skills/code-reviewer/scripts/*)',
+        'Bash(python3 .claude/skills/code-reviewer/bin/*)',
         // Windows: PowerShell variants + Python launcher
         'Bash(pwsh .claude/skills/code-reviewer/scripts/*)',
         'Bash(powershell .claude/skills/code-reviewer/scripts/*)',
@@ -160,7 +172,7 @@ if (isFixer) {
 The skill will:
   1. Refuse to run on main, master, or develop
   2. Diff the current branch against develop
-  3. Run the 14-dimension analysis
+  3. Run the 15-dimension analysis
   4. Walk you through fixes interactively [y/n/s/q]
 
 No Bitbucket credentials needed — fixes are applied locally only.

@@ -66,14 +66,25 @@ export AI_REVIEW_CI=1
 # --bare skips .claude/settings.json, so we list every Bash pattern the skill
 # legitimately uses. Bare mode also keeps Anthropic auth strictly to the env
 # key (no keychain / OAuth reads), matching CI's BYO-key model.
+#
+# IMPORTANT: in target mode (--pr/--branch, which is exactly what CI uses) the
+# skill runs worktree scripts via an ABSOLUTE path —
+#   bash "$SKILLS_ROOT/scripts/setup_target.sh"  (SKILLS_ROOT=$PWD/.claude/...)
+# so the allowlist must match both the relative and absolute forms, and both the
+# bare-path (shebang+exec) and explicit `bash …`/`python3 …` invocations.
 ALLOWED_TOOLS=(
     "Read"
     "Write"
     "Edit"
+    # bare-path execution (shebang + exec bit), relative and absolute
     "Bash(.claude/skills/code-reviewer/scripts/*)"
     "Bash(.claude/skills/code-reviewer/bin/*)"
-    "Bash(bash .claude/skills/code-reviewer/scripts/*)"
-    "Bash(python3 .claude/skills/code-reviewer/scripts/*)"
+    "Bash(*/.claude/skills/code-reviewer/scripts/*)"
+    # explicit interpreter, relative and absolute, for both .sh and .py
+    "Bash(bash *.claude/skills/code-reviewer/scripts/*)"
+    "Bash(bash */scripts/*)"
+    "Bash(python3 *.claude/skills/code-reviewer/scripts/*)"
+    "Bash(python3 */scripts/*)"
     "Bash(git *)"
     "Bash(curl *)"
 )
