@@ -672,6 +672,33 @@ class UserService {
 | Blade views | `kebab-case.blade.php` | `user-profile.blade.php` |
 | Model names | Singular | `User`, `Order` |
 
+#### 2e. Positive conditionals (if/else only)
+
+When an `if` has an `else` branch, the `if` should test the **positive/truthy** case, not a negation — the reader shouldn't have to mentally invert the condition and then read the `else` as "the normal case". Flag `if (<negated>) { … } else { … }` as 🔵 Suggestion: swap the branches and drop the negation.
+
+```php
+// BAD — negated if with an else
+if (! $user->isActive()) {
+    return $this->reject();
+} else {
+    return $this->grant();
+}
+
+// GOOD — positive if, branches swapped
+if ($user->isActive()) {
+    return $this->grant();
+} else {
+    return $this->reject();
+}
+```
+
+**Strictly scoped — do NOT flag:**
+- **Guard clauses / early returns with no `else`** — `if (! $user) { return; }`, `if (! $ok) { abort(404); }`. These are the *preferred* idiom (they avoid nesting); a negation here is correct and good. The rule applies **only** when a real `else` (or `elseif`) branch exists.
+- **Compound conditions** — for `if (! $a && ! $b)`, do **not** mechanically apply De Morgan (→ `if ($a || $b)` with swapped branches). That's a correctness risk; flag-only at most, never auto-rewrite.
+- Conditions where the negative is genuinely the natural primary case and flipping reads worse — use judgement; this is a Suggestion, not a mandate.
+
+When auto-fixing, only swap branches + remove the leading `!` on a simple condition. Leave compound/De-Morgan cases for the developer.
+
 ---
 
 ### 3. Security
