@@ -546,6 +546,89 @@ if ($user->isActive()) {
 
 When auto-fixing, only swap branches + remove the leading `!` on a simple condition. Leave compound/De-Morgan cases for the developer.
 
+#### 2f. Redundant else after return
+
+When the `if` branch ends in `return` / `throw` / `continue` / `break`, the `else` is dead weight — drop it and de-indent the trailing block. 🔵 Suggestion.
+
+```php
+// BAD
+if ($user->isActive()) {
+    return $this->grant();
+} else {
+    return $this->reject();
+}
+
+// GOOD
+if ($user->isActive()) {
+    return $this->grant();
+}
+
+return $this->reject();
+```
+
+#### 2g. Guard clauses over deep nesting
+
+Code nested **≥3 levels** of `if` where an early `return` / `continue` / `throw` would flatten it ("arrow code") — 🔵 Suggestion. Invert the outer conditions into guard clauses so the happy path reads top-to-bottom at the base indent. Only flag genuine nesting; a single `if` body is fine.
+
+```php
+// BAD — arrow code
+public function handle($order): void {
+    if ($order) {
+        if ($order->isPaid()) {
+            if (! $order->isShipped()) {
+                $this->ship($order);
+            }
+        }
+    }
+}
+
+// GOOD — guard clauses
+public function handle($order): void {
+    if (! $order) return;
+    if (! $order->isPaid()) return;
+    if ($order->isShipped()) return;
+
+    $this->ship($order);
+}
+```
+
+#### 2h. Nested ternaries
+
+A ternary nested inside another (`$a ? $b : ($c ? $d : $e)`) — 🔵 Suggestion. Rewrite as a `match (true)`, an if/elseif chain, or extract a method. (PHP 8 already errors on *un-parenthesised* nesting — this targets the parenthesised-but-unreadable form.) A single, flat ternary is fine — don't flag those.
+
+#### 2i. Magic numbers and strings
+
+Unexplained literals that encode meaning — HTTP status codes (`200`, `422`), role/status strings (`'admin'`, `'pending'`), business limits (`if ($attempts > 5)`) — should be a named constant, enum case, or config value. 🔵 Suggestion.
+
+- **Exempt:** `0`, `1`, `-1`, array indices, obvious unit math (`* 60`, `/ 100`), and test data.
+- Status/role strings are the highest-value target — they usually map to an existing enum.
+
+```php
+// BAD
+return response()->json($data, 422);
+if ($user->role === 'admin') { ... }
+
+// GOOD
+return response()->json($data, Response::HTTP_UNPROCESSABLE_ENTITY);
+if ($user->role === Role::Admin) { ... }
+```
+
+#### 2j. Boolean flag arguments
+
+A boolean literal passed at a call site (`$service->generate($data, true, false)`) is unreadable — the reader can't tell what `true` means without opening the signature. 🔵 Suggestion. Prefer two intention-revealing methods, a named enum, or (last resort) a named argument (`generate($data, force: true)`). Judgement rule — a single, obvious boolean on a well-named method is acceptable.
+
+#### 2k. Long parameter lists
+
+A method/constructor with **more than 5** parameters — 🔵 Suggestion. Group related params into a DTO (see §1d) or a value object. (Distinct from §1a's controller-constructor DI cap, which is about *dependency* count.)
+
+#### 2l. Double negatives
+
+A negatively-named variable then tested negatively — `$notReady` with `if (! $notReady)`, `$isInvalid` with `! $isInvalid` — forces a double mental inversion. 🔵 Suggestion. Rename to the positive (`$ready`, `$isValid`) and flip the uses.
+
+#### 2m. `count()` for emptiness checks
+
+`count($x) > 0` / `count($x) === 0` to test emptiness — 🔵 Suggestion. Use `! empty($x)` / `empty($x)` for arrays, or `$collection->isNotEmpty()` / `->isEmpty()` for Eloquent collections — clearer intent and (for collections) avoids materialising a count.
+
 ---
 
 ### 3. Security
