@@ -118,7 +118,12 @@ Before analyzing, fetch the linked issue-tracker card so the lens evaluates your
 4. **Use this as reference context for Step 1, not as a new scope.** The Scope rule below is unchanged — you still review only what the branch touched. The card informs **judgment**:
    - Does the branch address the stated problem?
    - Does it satisfy the explicit acceptance criteria? (Missing requirements → 🟡 Warning.)
-   - Does it scope-creep beyond what the card asks for? (Out-of-scope changes → 🔵 Suggestion.)
+
+4a. **File relatedness check — every changed file should plausibly belong to this task.** List the changed files (`git diff --name-only origin/develop...HEAD`) and, for each, ask: *does this file's change serve the card's stated goal?* Flag any file with **no plausible connection** as a 🟡 Warning, phrased to confirm — not accuse:
+
+   > 🟡 `{path}` doesn't appear related to {TICKET} ({one-line task summary}). Confirm it belongs on this branch, or move it out — unrelated changes ride in unreviewed and muddy the diff.
+
+   **Use judgement — a file that legitimately *supports* the task is related**, even if the card doesn't name it: the implementation files, the layers they call through, the view/component that surfaces the change, any config/migration they require, and the matching tests all count. Only flag files whose change has **no believable link** to the stated work — a stray formatting sweep, a leftover debug statement, a merge artifact, or an edit in a feature area the task never mentions. Skip this check when no card context was obtained (step 5).
 
 5. **No ticket detected** → print `No ticket reference detected — auditing branch against develop only.` and continue.
 

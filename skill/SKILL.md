@@ -177,10 +177,17 @@ Before analyzing the diff, fetch the linked issue-tracker card. The goal is to j
 4. **Use this as reference context for Step 1, not as a new scope.** The Scope rule below is unchanged — you still review only what the diff touched. The card informs **judgment**:
    - Does the diff address the stated problem, or something adjacent?
    - Does it satisfy the explicit acceptance criteria?
-   - Does it scope-creep beyond what the card asks for? (Surface scope-creep as 🔵 Suggestion — out-of-scope changes belong in a separate PR.)
    - Are obvious card requirements missing from the diff? (Surface as 🟡 Warning — likely incomplete work.)
 
-5. **No ticket detected** → print `No ticket reference detected — reviewing diff against develop only.` and continue. The skill still works without a card; it just loses the "right problem" signal.
+4a. **File relatedness check — every changed file should plausibly belong to this task.** Once the card is loaded, list the changed files (`git diff --name-only <base>...HEAD`) and, for each, ask: *does this file's change serve the card's stated goal?* Flag any file with **no plausible connection** to the task as a 🟡 Warning, phrased as a request to confirm — not an accusation:
+
+   > 🟡 `{path}` doesn't appear related to {TICKET} ({one-line task summary}). Confirm it belongs in this PR, or move it to its own branch — unrelated changes ride in unreviewed and muddy the diff.
+
+   **Use judgement — a file that legitimately *supports* the task is related**, even if the card doesn't name it: the implementation files, the layers they call through (controller → service → repository → model), the view/component that surfaces the change, any config/migration they require, and the matching tests all count. Only flag files whose change has **no believable link** to the stated work — e.g. a stray formatting sweep, a leftover debug statement, a merge artifact, or an edit in a feature area the task never mentions.
+
+   Skip this check entirely when no card context was obtained (step 5) — you can't judge relatedness without knowing the task.
+
+5. **No ticket detected** → print `No ticket reference detected — reviewing diff against develop only.` and continue. The skill still works without a card; it just loses the "right problem" + file-relatedness signal.
 
 6. **Read-only.** Never edit the card, post comments on it, transition its status, or write back any state.
 
