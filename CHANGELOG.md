@@ -5,6 +5,48 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.17.0 / code-fixer 1.13.0 — 2026-06-19
+
+### Added
+- **§2n Descriptive, meaningful names** (🟡 Warning) — catches correctly-cased but opaque
+  identifiers that §2d's casing table doesn't: cryptic vars (`$d`, `$tmp`), vague placeholders
+  (`$data`, `$val`, `$thing`), unclear abbreviations (`$usrRepo`), and vague method names
+  (`process()`, `getData()`, `doStuff()`). Exempts conventional short names (`$i`/`$j`/`$k`,
+  `$e`, `$q`), well-known acronyms (`$url`, `$id`, `$dto`, `$pdf`), and framework-required
+  method names (`handle()`, `boot()`, migration `up()`/`down()`, `rules()`/`authorize()`,
+  Eloquent relationship methods).
+- **§2o Comments — only where the code can't explain itself** (🔵 Suggestion) — flags
+  redundant comments that restate the code, commented-out dead code left in the diff, and
+  genuinely dense logic with no *why* comment. Exempts informative PHPDoc (generics / array
+  shapes, `@throws`, `@deprecated`), tooling pragmas (`@phpstan-ignore`, `phpcs:ignore`,
+  `@noinspection`), `TODO`/`FIXME`/`HACK` markers, and licence headers.
+
+### Fixed
+- **`post_review.ps1` (Windows)** now accepts a UTF-8 findings-file path as its first argument
+  (`pwsh post_review.ps1 .ai-review/findings.json`), sidestepping the console code page, pipe
+  encoding, and PowerShell's BOM-less here-string decoding — every boundary that could turn
+  emoji / em-dashes into mojibake. The stdin here-string form still works as a fallback.
+
+## code-reviewer 1.16.0 / code-fixer 1.12.0 — 2026-06-17
+
+### Added
+- **Task-relatedness file check** in the card-context step — flags changed files that fall
+  outside the linked card's stated scope (🟡 Warning, judgement-scoped).
+
+## code-reviewer 1.15.0 / code-fixer 1.11.0 — 2026-06-17
+
+### Added
+- **§2f–§2m readability rules** (all 🔵 Suggestion) — redundant `else` after `return` (§2f),
+  guard clauses over deep nesting (§2g), nested ternaries (§2h), magic numbers / strings (§2i),
+  boolean flag arguments (§2j), long parameter lists (§2k), double negatives (§2l), and
+  `count()` for emptiness checks (§2m).
+
+## code-reviewer 1.14.0 / code-fixer 1.10.0 — 2026-06-17
+
+### Added
+- **§2e Positive conditionals** (🔵 Suggestion) — an `if` with an `else` should test the
+  positive case, not a negation; guard clauses / early returns with no `else` are exempt.
+
 ## code-reviewer 1.13.0 / code-fixer 1.9.0 — 2026-06-15
 
 ### Removed

@@ -1,7 +1,10 @@
 # post_review.ps1 -- posts code-review findings as inline comments on the
 # Bitbucket PR for the current branch. Windows port of post_review.sh.
 #
-# Usage (PowerShell here-string piped on stdin):
+# Usage (preferred on Windows -- pass a UTF-8 findings file written by the editor):
+#   pwsh post_review.ps1 .ai-review/findings.json
+#
+# Usage (fallback -- pipe a here-string on stdin):
 #   @'
 #   [ { "path": "app/Foo.php", "line": 42, "body": "...", "dim": "3b", "severity": "critical" } ]
 #   '@ | pwsh post_review.ps1
@@ -10,11 +13,19 @@
 #   BITBUCKET_EMAIL     -- your Bitbucket account email
 #   BITBUCKET_API_TOKEN -- API token with "Pull requests: write" scope
 #
-# Encoding note: this script is pure ASCII on purpose. Findings arriving on
-# stdin are read as explicit UTF-8 (not the console code page, which is CP1252
-# on stock Windows and would corrupt emoji / em-dashes). Glyphs that end up in
-# posted comments are written as Python \u escapes below, so json.dumps emits
-# them as ASCII \uXXXX regardless of the console or file encoding.
+# Encoding note: this script is pure ASCII on purpose. Prefer the file-path form:
+# a findings file written by the editor is UTF-8 (no BOM), so it sidesteps the
+# Windows console code page, the pipe encoding, AND PowerShell's BOM-less
+# here-string decoding -- every boundary that can turn emoji / em-dashes into
+# mojibake (e.g. "ðŸ”µ Suggestion â€”"). Findings (whether from the file arg or
+# stdin) are read as explicit UTF-8. Glyphs that end up in posted comments are
+# written as Python \u escapes below, so json.dumps emits them as ASCII \uXXXX
+# regardless of the console or file encoding.
+
+param(
+    [Parameter(Position = 0)]
+    [string]$FindingsPath = ""
+)
 
 # ---- Auth ----
 if ([string]::IsNullOrEmpty($env:BITBUCKET_EMAIL) -or [string]::IsNullOrEmpty($env:BITBUCKET_API_TOKEN)) {
@@ -40,15 +51,26 @@ $RepoSlug  = $Matches[2]
 $ApiBase   = "https://api.bitbucket.org/2.0/repositories/$Workspace/$RepoSlug"
 $Auth      = "$($env:BITBUCKET_EMAIL):$($env:BITBUCKET_API_TOKEN)"
 
-# ---- Read findings JSON from stdin as explicit UTF-8 (not the console code page) ----
-$stdin  = [Console]::OpenStandardInput()
-$reader = New-Object System.IO.StreamReader($stdin, (New-Object System.Text.UTF8Encoding($false)))
-$FindingsRaw = $reader.ReadToEnd()
-$reader.Dispose()
+# ---- Read findings JSON as explicit UTF-8 (never the console code page) ----
+# Prefer the file-path argument (UTF-8, no BOM, written by the editor); fall
+# back to stdin for the legacy here-string form.
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+if (-not [string]::IsNullOrEmpty($FindingsPath)) {
+    if (-not (Test-Path -LiteralPath $FindingsPath)) {
+        [Console]::Error.WriteLine("ERROR: findings file not found: $FindingsPath")
+        exit 1
+    }
+    $FindingsRaw = [System.IO.File]::ReadAllText($FindingsPath, $utf8)
+} else {
+    $stdin  = [Console]::OpenStandardInput()
+    $reader = New-Object System.IO.StreamReader($stdin, $utf8)
+    $FindingsRaw = $reader.ReadToEnd()
+    $reader.Dispose()
+}
 
 # Write to a temp file as UTF-8 (no BOM) so the Python side reads it cleanly.
 $FindingsFile = [System.IO.Path]::GetTempFileName()
-[System.IO.File]::WriteAllText($FindingsFile, $FindingsRaw, (New-Object System.Text.UTF8Encoding($false)))
+[System.IO.File]::WriteAllText($FindingsFile, $FindingsRaw, $utf8)
 
 $pyValidate = @'
 import json, sys

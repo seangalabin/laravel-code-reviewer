@@ -634,6 +634,69 @@ A negatively-named variable then tested negatively — `$notReady` with `if (! $
 
 `count($x) > 0` / `count($x) === 0` to test emptiness — 🔵 Suggestion. Use `! empty($x)` / `empty($x)` for arrays, or `$collection->isNotEmpty()` / `->isEmpty()` for Eloquent collections — clearer intent and (for collections) avoids materialising a count.
 
+#### 2n. Descriptive, meaningful names — 🟡 Warning
+
+§2d governs *casing*; this rule governs whether the name actually says what the thing is. A name that is correctly `camelCase` but opaque (`$tmp`, `$d`, `handle2()`) still fails review. Flag identifiers — variables, properties, parameters, methods — whose name does not convey their role:
+
+- **Cryptic / single-letter variables** outside the idioms below — `$d`, `$x`, `$a2`, `$str`, `$obj`.
+- **Vague placeholder names** that carry no meaning — `$data`, `$data2`, `$tmp`, `$temp`, `$val`, `$arr`, `$res`, `$info`, `$thing`, `$stuff`, `$foo`. (`$result` is fine when it genuinely *is* the result of the method.)
+- **Unclear abbreviations** that aren't well-known — `$usrRepo` → `$userRepository`, `$calcAmt` → `$calculatedAmount`, `$ctr` → `$counter`.
+- **Vague method names** that don't state what they do — `process()`, `doStuff()`, `doIt()`, `manage()`, `getData()`, `run2()`. Name the action and its subject — `calculateInvoiceTotal()`, `markOrderShipped()`.
+
+```php
+// BAD
+public function process($d): array {
+    $tmp = [];
+    foreach ($d as $x) {
+        $tmp[] = $x->total * 1.1;
+    }
+    return $tmp;
+}
+
+// GOOD
+public function applyGstToLineTotals(array $lineItems): array {
+    $totalsWithGst = [];
+    foreach ($lineItems as $lineItem) {
+        $totalsWithGst[] = $lineItem->total * 1.1;
+    }
+    return $totalsWithGst;
+}
+```
+
+**Exemptions — do NOT flag:**
+- **Conventional short names:** `$i` / `$j` / `$k` as classic `for` counters, `$e` for the exception in a `catch`, `$q` / `$query` for a query builder in a scope closure, `$key` / `$value` in array iteration, `$id`.
+- **Well-known acronyms / domain terms:** `$url`, `$id`, `$db`, `$dto`, `$http`, `$api`, `$pdf`, `$csv`, `$ui`, `$io`.
+- **Framework-required method names:** `handle()` on Jobs / Commands / Listeners / Middleware, `__invoke()`, `boot()`, `register()`, `up()` / `down()` in migrations, `rules()` / `authorize()` on FormRequests, `toArray()` on Resources, Eloquent relationship method names.
+- A short closure parameter whose meaning is obvious from one line of surrounding context — use judgement; the bar is "would a new reader know what this holds?"
+
+#### 2o. Comments — only where the code can't explain itself — 🔵 Suggestion
+
+A comment should explain **why** (a non-obvious constraint, a workaround, a business/regulatory reason), not **what** the code already says. The first fix for unclear code is a clearer name or an extracted method — not a comment. Flag three things:
+
+- **Redundant / obvious comments** that merely restate the code — `$i++; // increment i`, `// loop over users`, `// return the result`. Delete them; they add noise and drift out of date.
+- **Commented-out code** left in the diff — delete it. Git history preserves anything you might want back; dead code in the file is just clutter.
+- **A genuinely hard-to-follow block with no explanatory comment** — when logic is unavoidably dense (a tricky algorithm, a non-obvious edge-case guard, a deliberate deviation from the obvious approach), a short *why* comment is warranted. Suggest adding one, or refactoring so it isn't needed.
+
+```php
+// BAD — restates the code
+// increment the counter by one
+$counter++;
+
+// BAD — dead code left behind
+// $user->notify(new OldWelcome($user));
+$user->notify(new Welcome($user));
+
+// GOOD — explains a non-obvious *why*
+// Stripe rounds half-up; we floor here to match the ledger's banker's rounding.
+$amount = (int) floor($cents);
+```
+
+**Exemptions — do NOT flag:**
+- **PHPDoc that adds information the signature can't express** — generics / array shapes (`@param array<int, User>`, `@return Collection<int, Order>`), `@throws`, `@deprecated`, `@see`.
+- **Tooling pragmas** — `// @phpstan-ignore-line`, `// phpcs:ignore`, `// @noinspection`, Pint/Psalm directives.
+- **Intentional markers** — `// TODO`, `// FIXME`, `// HACK`. These are signals, not noise.
+- **Licence / file headers.**
+
 ---
 
 ### 3. Security
