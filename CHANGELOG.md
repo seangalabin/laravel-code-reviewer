@@ -5,6 +5,14 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-fixer 1.13.1 — 2026-06-19
+
+### Fixed
+- **`check_version.ps1` (Windows)** — replaced a stray `⚠️` emoji on the out-of-date warning
+  with ASCII `!!`, matching code-reviewer's convention that `.ps1` scripts stay pure ASCII
+  (emoji corrupts to mojibake on a stock Windows console code page). The `.sh` twin keeps the
+  emoji — it runs on UTF-8-clean Unix. This was the last emoji straggler in any fixer `.ps1`.
+
 ## code-reviewer 1.17.1 — 2026-06-19
 
 ### Changed

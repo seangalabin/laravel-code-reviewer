@@ -29,7 +29,7 @@ if ([string]::IsNullOrEmpty($RemoteVersion)) {
 if ($LocalVersion -ne $RemoteVersion) {
     $installed = if ($LocalVersion) { $LocalVersion } else { "unknown" }
     Write-Host ""
-    Write-Host "⚠️  code-fixer is out of date (installed: $installed, latest: $RemoteVersion)."
+    Write-Host "!!  code-fixer is out of date (installed: $installed, latest: $RemoteVersion)."
     Write-Host "   Update before continuing:"
     Write-Host ""
     Write-Host "     npx github:seangalabin/laravel-code-reviewer --skill=fixer"
