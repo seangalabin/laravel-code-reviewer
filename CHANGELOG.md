@@ -5,6 +5,17 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.17.1 — 2026-06-19
+
+### Changed
+- **`post_review.sh` now accepts a UTF-8 findings-file path as its first argument**
+  (`post_review.sh .ai-review/findings.json`), matching `post_review.ps1`; stdin remains a
+  fallback. The two scripts are functional twins again.
+- **Posting the review** now writes findings to `.ai-review/findings.json` and passes the path
+  on *both* platforms instead of piping a here-string. This actually exercises the Windows
+  emoji/em-dash mojibake fix shipped in 1.17.0 (the old Windows instructions still piped, so
+  the fix was inert), and gives both platforms one identical calling convention.
+
 ## code-reviewer 1.17.0 / code-fixer 1.13.0 — 2026-06-19
 
 ### Added

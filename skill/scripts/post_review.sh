@@ -2,10 +2,13 @@
 # post_review.sh — posts code-review findings as inline comments on the Bitbucket PR
 # for the current branch.
 #
-# Usage:
+# Usage (preferred — pass a UTF-8 findings file written by the editor):
+#   ./post_review.sh .ai-review/findings.json
+#
+# Usage (fallback — pipe a JSON array on stdin):
 #   ./post_review.sh < findings.json
 #
-# Input: a JSON array on stdin. Each element:
+# Input: a JSON array (from the file-path arg or stdin). Each element:
 #   { "path": "app/Foo.php", "line": 42, "body": "MUST FIX — ..." }
 #     → posted as an inline comment anchored to that file:line
 #   { "body": "Summary..." }
@@ -43,11 +46,24 @@ fi
 API_BASE="https://api.bitbucket.org/2.0/repositories/$WORKSPACE/$REPO_SLUG"
 BASIC_AUTH="$BITBUCKET_EMAIL:$BITBUCKET_API_TOKEN"
 
-# ── Read findings JSON from stdin ─────────────────────────────────────────────
+# ── Read findings JSON: prefer a file-path arg (UTF-8), fall back to stdin ────
+# The optional first argument is a path to a UTF-8 findings file written by the
+# editor — the same calling convention as post_review.ps1. This sidesteps shell
+# quoting and (on Windows) console-encoding issues; falls back to reading stdin
+# (heredoc) when no path is given.
+FINDINGS_PATH="${1:-}"
 FINDINGS_FILE=$(mktemp)
 trap "rm -f '$FINDINGS_FILE'" EXIT
 
-cat > "$FINDINGS_FILE"
+if [[ -n "$FINDINGS_PATH" ]]; then
+    if [[ ! -f "$FINDINGS_PATH" ]]; then
+        echo "ERROR: findings file not found: $FINDINGS_PATH" >&2
+        exit 1
+    fi
+    cat "$FINDINGS_PATH" > "$FINDINGS_FILE"
+else
+    cat > "$FINDINGS_FILE"
+fi
 
 python3 -c "
 import json, sys

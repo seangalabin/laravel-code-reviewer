@@ -42,7 +42,7 @@ Every command in this document is written in **Unix mode**. In Windows mode, tra
 | `git diff ${BASE_REF}...HEAD` | `git diff "$BASE_REF...HEAD"` |
 | `cd "$WORKTREE" && cmd` (target mode) | `Set-Location $WORKTREE; cmd` |
 
-The `.py` scripts (`scan_diff.py`, `check_resolved.py`, `check_dismissals.py`, `check_replies.py`, `update_resolved.py`, `post_reply.py`, `aggregate_stats.py`) are byte-identical across platforms — only the launcher differs (`python`). Each `.ps1` accepts the same arguments and reads the same `.ai-review/target.json` as its `.sh` counterpart. The one command that doesn't follow the table mechanically is `post_review.sh` (it reads findings on stdin via a heredoc) — its Windows form is shown in **Posting the review**.
+The `.py` scripts (`scan_diff.py`, `check_resolved.py`, `check_dismissals.py`, `check_replies.py`, `update_resolved.py`, `post_reply.py`, `aggregate_stats.py`) are byte-identical across platforms — only the launcher differs (`python`). Each `.ps1` accepts the same arguments and reads the same `.ai-review/target.json` as its `.sh` counterpart — including `post_review`, which takes an optional findings-file path as its first argument (`post_review.ps1 .ai-review/findings.json`), falling back to stdin. See **Posting the review**.
 
 Windows PowerShell 5.1 has no `&&` — chain commands with `;`. For `--branch` / `--pr` target mode, prefer `pwsh` (PowerShell 7+).
 
@@ -377,7 +377,7 @@ REPLY
   .claude/skills/code-reviewer/scripts/update_resolved.py --comment-id={root_id} --fix-sha={fix_sha}
   ```
 
-`post_reply.py` appends a hidden `<!-- ai-review:reply -->` marker so the bot recognises its own answer and never replies to it again. **Windows mode:** pipe the body into `python .claude/skills/code-reviewer/scripts/post_reply.py --parent-id={reply_id}` with a here-string, exactly like `post_review.ps1` in **Posting the review**.
+`post_reply.py` appends a hidden `<!-- ai-review:reply -->` marker so the bot recognises its own answer and never replies to it again. **Windows mode:** pipe the body into `python .claude/skills/code-reviewer/scripts/post_reply.py --parent-id={reply_id}` with a here-string.
 
 Print a summary before continuing:
 > Responded to {N} repl(y/ies): {a} conceded, {b} held, {c} answered, {d} resolved.
@@ -1334,41 +1334,34 @@ Prefix each comment's title with one of:
 ### Posting the review
 
 1. Post the required AI disclaimer header as the first top-level PR comment (see Required header above).
-2. Compile all findings into a JSON array. Each entry needs:
+2. Compile all findings into a JSON array and write it to `.ai-review/findings.json` as UTF-8. Each entry needs:
    - `path`, `line` — where the issue lives
    - `body` — the full five-section comment including the auto-fix command with `{COMMENT_ID}` as a placeholder
    - `dim` — the dimension code from the Review lens (e.g. `"3a"`, `"4b"`, `"12"`). Used for telemetry.
    - `severity` — `"critical"`, `"warning"`, or `"suggestion"` (lowercase). Used for telemetry.
-3. Post via `post_review.sh` (which resolves `{COMMENT_ID}` and embeds the telemetry marker after posting):
+
+   Example `.ai-review/findings.json`:
+   ```json
+   [
+     {
+       "path": "app/Http/Controllers/UserController.php",
+       "line": 22,
+       "body": "🔴 **Critical** — ...\n\n### 1. The problem\n...",
+       "dim": "3b",
+       "severity": "critical"
+     }
+   ]
+   ```
+3. Post via `post_review`, passing the findings-file path (the script resolves `{COMMENT_ID}` and embeds the telemetry marker after posting). Writing findings to a UTF-8 file — rather than piping a here-string — sidesteps shell quoting and the Windows console code page, which can otherwise turn emoji / em-dashes into mojibake. Both scripts also still accept the JSON array on stdin as a fallback.
 
 **Unix mode:**
 ```bash
-.claude/skills/code-reviewer/scripts/post_review.sh <<'FINDINGS'
-[
-  {
-    "path": "app/Http/Controllers/UserController.php",
-    "line": 22,
-    "body": "🔴 **Critical** — ...\n\n### 1. The problem\n...",
-    "dim": "3b",
-    "severity": "critical"
-  }
-]
-FINDINGS
+.claude/skills/code-reviewer/scripts/post_review.sh .ai-review/findings.json
 ```
 
-**Windows mode** (pipe a here-string into the `.ps1`):
+**Windows mode:**
 ```powershell
-@'
-[
-  {
-    "path": "app/Http/Controllers/UserController.php",
-    "line": 22,
-    "body": "🔴 **Critical** — ...\n\n### 1. The problem\n...",
-    "dim": "3b",
-    "severity": "critical"
-  }
-]
-'@ | pwsh .claude/skills/code-reviewer/scripts/post_review.ps1
+pwsh .claude/skills/code-reviewer/scripts/post_review.ps1 .ai-review/findings.json
 ```
 
 4. Create a blocking task for every 🔴 Critical finding.
@@ -1413,7 +1406,7 @@ Each `.sh` script below has a matching `.ps1` Windows variant (same name, same a
 
 - **`branch_summary.sh [base]`** — one-glance overview of what changed vs `origin/develop`.
 - **`scan_diff.py [--base REF] [--no-snippets]`** — pre-pass pattern scanner. Only scans `+` lines. False positives filtered by the agent.
-- **`post_review.sh`** — posts the compiled review as inline Bitbucket PR comments. Reads JSON from stdin. Requires `BITBUCKET_EMAIL` and `BITBUCKET_API_TOKEN` env vars.
+- **`post_review.sh`** — posts the compiled review as inline Bitbucket PR comments. Reads findings from a JSON file path (first arg, preferred) or stdin. Requires `BITBUCKET_EMAIL` and `BITBUCKET_API_TOKEN` env vars.
 - **`check_replies.py`** — prints a JSON array of open findings whose thread ends with an unanswered developer reply (see Step 0.7). Empty `[]` when nothing awaits a response.
 - **`post_reply.py --parent-id=<ID>`** — posts a threaded reply (body on stdin) under a PR comment and tags it with a hidden `ai-review:reply` marker so the bot won't answer its own reply.
 - **`setup_target.sh --branch=<name>|--pr=<N>`** — fetches a branch and creates a detached git worktree for reviewing without checkout. Writes `.ai-review/target.json` inside the worktree. Prints the worktree path to stdout.
