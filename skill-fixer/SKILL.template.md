@@ -113,7 +113,7 @@ Before analyzing, fetch the linked issue-tracker card so the lens evaluates your
    - **Atlassian MCP** tools (`mcp__claude_ai_Atlassian__getJiraIssue`, `mcp__claude_ai_Atlassian__searchJiraIssuesUsingJql`) when configured. Preferred.
    - **Branch name** — last resort; gives only the slugified card title.
 
-3. **Read these fields when available:** Title, Description, Acceptance criteria, Type (bug / feature / refactor).
+3. **Read these fields when available:** Title, Description, Acceptance criteria, Type (bug / feature / refactor), and the **comments / discussion thread** (Atlassian MCP only — design decisions and reviewer suggestions are often raised after the description and live only in the thread).
 
 4. **Use this as reference context for Step 1, not as a new scope.** The Scope rule below is unchanged — you still review only what the branch touched. The card informs **judgment**:
    - Does the branch address the stated problem?
@@ -124,6 +124,12 @@ Before analyzing, fetch the linked issue-tracker card so the lens evaluates your
    > 🟡 `{path}` doesn't appear related to {TICKET} ({one-line task summary}). Confirm it belongs on this branch, or move it out — unrelated changes ride in unreviewed and muddy the diff.
 
    **Use judgement — a file that legitimately *supports* the task is related**, even if the card doesn't name it: the implementation files, the layers they call through, the view/component that surfaces the change, any config/migration they require, and the matching tests all count. Only flag files whose change has **no believable link** to the stated work — a stray formatting sweep, a leftover debug statement, a merge artifact, or an edit in a feature area the task never mentions. Skip this check when no card context was obtained (step 5).
+
+4b. **Discussion-decision check — honour decisions raised in the ticket thread.** When the comments were read (Atlassian MCP), scan them for a **concrete technical decision or suggestion** — a recommended package, library, or approach; an architectural choice; a constraint; or a "don't do X" steer. If the branch **contradicts or ignores** it, flag a 🟡 Warning, phrased to confirm:
+
+   > 🟡 The {TICKET} discussion suggested **{decision}** ({commenter}), but the branch appears to {do otherwise}. Confirm it was considered — if intentionally rejected, capture the reason on the ticket.
+
+   Scope tightly: only an actionable, technical, clearly-unaddressed steer (named library / pattern / explicit do-don't) — not chit-chat, questions, or "LGTM". If the branch follows it, or the thread already resolved it ("agreed, skip that because …"), say nothing. Skip when comments weren't available.
 
 5. **No ticket detected** → print `No ticket reference detected — auditing branch against develop only.` and continue.
 

@@ -173,6 +173,7 @@ Before analyzing the diff, fetch the linked issue-tracker card. The goal is to j
    - Description (the problem and constraints)
    - Acceptance criteria (what "done" means)
    - Type (bug / feature / refactor — informs review tone)
+   - **Comments / discussion thread** (Atlassian MCP only — `getJiraIssue` returns or links the comments). Design decisions, reviewer suggestions, and constraints are often raised *after* the description is written and live only in the thread. Read them.
 
 4. **Use this as reference context for Step 1, not as a new scope.** The Scope rule below is unchanged — you still review only what the diff touched. The card informs **judgment**:
    - Does the diff address the stated problem, or something adjacent?
@@ -187,7 +188,19 @@ Before analyzing the diff, fetch the linked issue-tracker card. The goal is to j
 
    Skip this check entirely when no card context was obtained (step 5) — you can't judge relatedness without knowing the task.
 
-5. **No ticket detected** → print `No ticket reference detected — reviewing diff against develop only.` and continue. The skill still works without a card; it just loses the "right problem" + file-relatedness signal.
+4b. **Discussion-decision check — honour decisions raised in the ticket thread.** When the comments were read (Atlassian MCP), scan them for **concrete technical decisions or suggestions** — a recommended package, library, or approach; an architectural choice; a constraint (e.g. "must stay backward-compatible with the v1 endpoint"); or a "don't do X" steer. If the diff **contradicts or ignores** such a decision, flag it as a 🟡 Warning, phrased to confirm — not accuse:
+
+   > 🟡 The {TICKET} discussion suggested **{decision}** ({commenter}, {date}), but the implementation appears to {do otherwise}. Confirm this was considered and intentionally not followed — if it was rejected, capture the reason on the ticket so it isn't re-raised.
+
+   **Scope tightly — only flag a decision that is concrete, technical, and clearly unaddressed:**
+   - It must be an actionable steer (a named library, pattern, endpoint, or explicit "do/don't"), not chit-chat, a question, "LGTM", or a status update.
+   - A suggestion the diff *does* follow → say nothing.
+   - A suggestion that was explicitly resolved in the thread ("agreed, we'll skip that because …") → respect that resolution; don't re-flag it.
+   - You're surfacing for confirmation, not enforcing — the team may have a good reason. One Warning per ignored decision.
+
+   Skip this check when comments weren't available (PR-body / branch-name fallback, or no MCP).
+
+5. **No ticket detected** → print `No ticket reference detected — reviewing diff against develop only.` and continue. The skill still works without a card; it just loses the "right problem", file-relatedness, and discussion-decision signals.
 
 6. **Read-only.** Never edit the card, post comments on it, transition its status, or write back any state.
 
