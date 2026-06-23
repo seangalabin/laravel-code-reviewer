@@ -852,6 +852,30 @@ $amount = (int) floor($cents);
 - **Intentional markers** — `// TODO`, `// FIXME`, `// HACK`. These are signals, not noise.
 - **Licence / file headers.**
 
+#### 2p. Method names are verb phrases — 🔵 Suggestion
+
+A method *does* something, so its name should start with a verb: `calculateTotal()`, `sendInvoice()`, `markAsPaid()`, `syncTags()` — not a bare noun like `total()`, `invoiceData()`, or `tags()` (for a method that performs work). Flag a method whose name is a noun/adjective with no verb as 🔵 Suggestion, suggesting a verb-led rename.
+
+```php
+// BAD — noun names for methods that do work
+public function totals(Order $order): Money { /* computes */ }
+public function invoicePdf(Order $order): string { /* generates */ }
+
+// GOOD
+public function calculateTotals(Order $order): Money { ... }
+public function generateInvoicePdf(Order $order): string { ... }
+```
+
+**Explicitly exempt — these are *conventionally* nouns/adjectives; do NOT flag:**
+- **Eloquent relationships** — `user()`, `orders()`, `latestInvoice()`. Nouns by Laravel convention.
+- **Accessors / attributes** — `fullName(): Attribute`, `getFullNameAttribute()`.
+- **Boolean predicates** — `is*` / `has*` / `can*` / `should*` / `was*` (`isActive()`, `hasPermission()`). These already read as verbs.
+- **Query scopes** — `scopeActive()` (the `scope` prefix is the convention; the suffix is an adjective by design).
+- **Framework-required names** — `handle()`, `boot()`, `register()`, `rules()`, `authorize()`, `up()` / `down()`, lifecycle hooks.
+- **Fluent/builder returns and enum/value-object helpers** where a noun reads naturally (`->name()`, `Money::zero()`).
+
+The rule targets *action* methods named as nouns. When in doubt — if the method has side effects or computes something — it wants a verb; if it's a typed property-like accessor or a relationship, leave it.
+
 ---
 
 ### 3. Security
