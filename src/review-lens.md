@@ -492,7 +492,34 @@ $key = config('services.stripe.secret');
 - `dd()`, `dump()`, `die()` — forbidden in committed code.
 - `error_log()`, `var_dump()`, `print_r()`, `echo` used for logging — use `Log::info()` / `Log::error()` / `Log::debug()`.
 - `$_SERVER`, `$_ENV`, `$_GET`, `$_POST`, `$_REQUEST` — use Laravel helpers (`request()`, `config()`).
-- Hardcoded credentials, API keys, or magic numbers that belong in `config/` or `.env`.
+- Magic numbers/strings that belong in `config/` or an enum — see §2i.
+
+#### 3i. Hardcoded secrets and credentials — 🔴 Critical
+
+A real secret literal committed to the repo is a security leak, not a style issue. Flag any hardcoded API key, password, token, OAuth/client secret, private key, signing/encryption key, or a connection/DSN string with an embedded password — 🔴 Critical. Move it to `.env` and read it through `config()` (never `env()` outside config — see §3g).
+
+Signals to catch:
+- Assignment of a literal that looks like a secret to a variable/property/array key named `*key*`, `*secret*`, `*token*`, `*password*`, `*passwd*`, `*apikey*`, `*auth*`.
+- Known credential shapes regardless of the variable name: `sk_live_…` / `sk_test_…` (Stripe), `AKIA…` (AWS), `ghp_…` / `gho_…` (GitHub), `xox[baprs]-…` (Slack), `AIza…` (Google), `-----BEGIN … PRIVATE KEY-----`, long base64/hex blobs used as keys, Basic-auth in a URL (`https://user:pass@host`).
+- A non-empty password/secret passed directly to a client (`new Client(['secret' => 'abc123…'])`, `Http::withToken('eyJ…')`).
+
+```php
+// BAD — secret committed to the repo
+$stripe = new StripeClient('sk_live_51H8xY2eZvKf...');
+'password' => 'Pr0dDbP@ss!',
+
+// GOOD — from config, value lives in .env (gitignored)
+$stripe = new StripeClient(config('services.stripe.secret'));
+'password' => config('database.connections.mysql.password'),
+```
+
+**When you flag a real (non-placeholder) secret, say so explicitly:** the value must be **rotated/revoked**, not just deleted — it remains exposed in git history. Note that in the finding.
+
+**Exempt — do NOT flag:**
+- Obvious dummy/test values in tests, factories, and seeders (`'password'`, `bcrypt('password')`, `'secret'`, `'test-token'`).
+- Placeholders and examples (`.env.example`, `'your-api-key-here'`, `'xxxxx'`).
+- **Public** keys / publishable keys (`pk_live_…`, public certificates) — not secret by design.
+- Non-secret config defaults (timeouts, URLs without credentials).
 
 ---
 
