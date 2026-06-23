@@ -220,10 +220,15 @@ Before invoking each script in Steps -1 → 0.1 and the scoping scripts in Step 
 2. **Refuse if on a protected branch.** Run `git branch --show-current`. If it returns `main`, `master`, or `develop`, stop: `ERROR: Refusing to run on a protected branch. Check out your feature branch first.`
 3. **Diff first.** Run the scoping scripts and read every hunk. Do not start by reading whole files.
 4. **Read for context, not findings.** When a hunk references a Repository, Service, or Vuex store not in the diff, read the relevant part to understand intent — findings on those files are out of scope unless changed.
-5. **Apply the full review lens** (all sections below) to everything in the diff.
-6. **Compile all findings** grouped by severity (🔴 Critical → 🟡 Warning → 🔵 Suggestion). Do not modify any files yet.
+5. **Apply the full review lens dimension by dimension — do not free-associate.** A single "read it and mention what jumps out" pass misses rules. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §15 Blade) plus the company rules from Step 0, deliberately check the diff against that dimension before moving to the next. A dimension is only "done" once you've recorded a finding or confirmed the diff is clean for it.
 
-Print a brief summary once analysis is done:
+6. **Build a coverage ledger** — one line per dimension as you finish it (`§3 Security ✓ clean`, `§4 Laravel ✓ 1 finding`, `§11 Migrations n/a — none changed`). `n/a` only when no changed file is in that dimension's scope; everything else is `✓` with a count or `✓ clean`. This is the proof you checked it.
+
+7. **Completeness critic — second pass over the gaps.** Re-scan the diff once more, focused only on the dimensions marked `✓ clean`: "genuinely fine, or did I skim past it?" Watch the easily-missed: §2i magic literals, §2m `count()` emptiness, §2p name-matches-behaviour, §3i hardcoded secrets, §4b N+1, §10 `report()` on caught exceptions.
+
+8. **Compile all findings** grouped by severity (🔴 Critical → 🟡 Warning → 🔵 Suggestion). Do not modify any files yet.
+
+Print the coverage ledger, then a brief summary once analysis is done:
 
 > Found **{N} issues** ({X} critical, {Y} warnings, {Z} suggestions). Starting fix loop.
 

@@ -409,14 +409,29 @@ Before invoking each script in Steps -1 → 0.7 and the scoping scripts in Step 
 2. **Refuse if on a protected branch.** In normal mode, run `git branch --show-current` (or `git -C "$WORKTREE" branch --show-current` in target mode — it returns empty for detached HEAD, which is safe). If the resolved branch is `main`, `master`, or `develop`, stop: `ERROR: Refusing to run on a protected branch. Check out your feature branch first.`
 3. **Diff first.** Run the scoping scripts and read every hunk. Do not start by reading whole files.
 4. **Read for context, not findings.** When a hunk references a Repository, Service, or Vuex store not in the diff, read the relevant part to understand intent — findings on those files are out of scope unless changed.
-5. **Apply the full review lens** (all sections below) to everything in the diff.
-6. **Filter dismissals.** For every candidate finding, read `.ai-review/dismissals.json` and skip the finding if any entry matches:
+5. **Apply the full review lens dimension by dimension — do not free-associate.** A single "read it and mention what jumps out" pass misses rules. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §15 Blade) plus the company rules from Step 0.1, deliberately check the diff against that dimension before moving to the next. A dimension is only "done" once you've either recorded a finding or confirmed the diff is clean for it.
+
+6. **Build a coverage ledger.** As you finish each dimension, record one line — this is the proof you actually checked it, not a guess:
+
+   | Dim | Status |
+   |---|---|
+   | §1 Architecture & layering | ✓ 2 findings |
+   | §2 Code standards (2a–2p) | ✓ clean |
+   | §3 Security (3a–3i) | ✓ 1 finding |
+   | … | … |
+   | §15 Blade | n/a — no Blade files changed |
+
+   Use `n/a` only when no changed file is in that dimension's scope (e.g. §11 Migrations when no migration changed, §15 Blade when no `.blade.php` changed). Every other dimension must be `✓` with a count or `✓ clean`.
+
+7. **Completeness critic — second pass over the gaps.** Before compiling, re-scan the diff **once more, focused only on the dimensions you marked `✓ clean`**. Ask: "did I clear this because the code is genuinely fine, or because I skimmed past it?" This catches the rules a first pass forgets. Adjust the ledger if the second pass surfaces anything. Pay special attention to the easily-missed: §2i magic literals, §2m `count()` emptiness, §2p name-matches-behaviour, §3i hardcoded secrets, §4b N+1, §10 `report()` on caught exceptions.
+
+8. **Filter dismissals.** For every candidate finding, read `.ai-review/dismissals.json` and skip the finding if any entry matches:
    - same `path`, AND
    - same `dim` (from the dismissal `dim` field), AND
    - candidate line is within ±5 of the dismissal `line`
 
    Skip this filter entirely if `--ignore-dismissals` was passed.
-7. **Compile remaining findings** grouped by severity (🔴 Critical → 🟡 Warning → 🔵 Suggestion). Do not post or modify any files yet.
+9. **Compile remaining findings** grouped by severity (🔴 Critical → 🟡 Warning → 🔵 Suggestion), and **print the coverage ledger** so the developer can see every dimension was checked. Do not post or modify any files yet.
 
 ### Step 2 — Post the review
 
@@ -1355,7 +1370,7 @@ This applies to every channel: do **not** include the disclaimer in inline findi
 
 ### Per-issue comment structure
 
-Each inline comment must contain these five sections, in this exact order, with these exact headings:
+Each inline comment must contain these four sections, in this exact order, with these exact headings:
 
 #### 1. The problem
 One or two sentences. What's wrong, in the simplest words possible. No "consider refactoring" — say what's actually broken or risky and why it matters.
@@ -1395,15 +1410,6 @@ If a diff doesn't fit (e.g. new file), show the full replacement code block with
 #### 4. Why this fix
 Two or three sentences. Explain *why* this fix works, not just *what* it does. Connect it to a concrete consequence (performance, security, readability, layering rule).
 
-#### 5. Auto-fix command
-At the end of every comment, include this exact line so the developer can apply the fix later:
-
-```bash
-.claude/skills/code-reviewer/bin/ai-review fix --comment-id={COMMENT_ID}
-```
-
-`{COMMENT_ID}` will be substituted with the actual Bitbucket comment ID by `post_review.sh` after posting.
-
 ### Severity tagging
 
 Prefix each comment's title with one of:
@@ -1418,7 +1424,7 @@ Prefix each comment's title with one of:
 1. Post the required AI disclaimer header as the first top-level PR comment (see Required header above).
 2. Compile all findings into a JSON array and write it to `.ai-review/findings.json` as UTF-8. Each entry needs:
    - `path`, `line` — where the issue lives
-   - `body` — the full five-section comment including the auto-fix command with `{COMMENT_ID}` as a placeholder
+   - `body` — the full four-section comment (problem, AI fix prompt, suggested fix, why)
    - `dim` — the dimension code from the Review lens (e.g. `"3a"`, `"4b"`, `"12"`). Used for telemetry.
    - `severity` — `"critical"`, `"warning"`, or `"suggestion"` (lowercase). Used for telemetry.
 
@@ -1434,7 +1440,7 @@ Prefix each comment's title with one of:
      }
    ]
    ```
-3. Post via `post_review`, passing the findings-file path (the script resolves `{COMMENT_ID}` and embeds the telemetry marker after posting). Writing findings to a UTF-8 file — rather than piping a here-string — sidesteps shell quoting and the Windows console code page, which can otherwise turn emoji / em-dashes into mojibake. Both scripts also still accept the JSON array on stdin as a fallback.
+3. Post via `post_review`, passing the findings-file path (the script embeds the telemetry marker after posting). Writing findings to a UTF-8 file — rather than piping a here-string — sidesteps shell quoting and the Windows console code page, which can otherwise turn emoji / em-dashes into mojibake. Both scripts also still accept the JSON array on stdin as a fallback.
 
 **Unix mode:**
 ```bash

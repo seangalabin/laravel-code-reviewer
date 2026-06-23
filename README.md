@@ -15,7 +15,7 @@ Run `/code-reviewer` in Claude Code and it will:
 5. Run a mechanical pre-pass (`scan_diff.py`) over the changed lines to surface red flags
 6. Apply a 15-dimension review lens to every hunk
 7. Ask: **Post {N} findings to PR #{ID}? [y/n]** — the only interactive prompt
-8. Post each finding as an inline Bitbucket PR comment with a copy-pasteable fix prompt and an auto-apply command
+8. Post each finding as an inline Bitbucket PR comment with a copy-pasteable fix prompt
 
 ## Review dimensions
 
@@ -132,12 +132,6 @@ The skill auto-detects the current branch, finds the open PR, runs the analysis,
 > Post to PR #42? [y/n]
 y
 > Posted 5 comments to PR #42. Review them at https://bitbucket.org/...
-```
-
-Each comment ends with an auto-apply command the developer can run:
-
-```bash
-.claude/skills/code-reviewer/bin/ai-review fix --comment-id=1234
 ```
 
 ### Inline suppression

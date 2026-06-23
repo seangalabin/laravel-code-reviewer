@@ -250,18 +250,16 @@ for finding in findings:
         except Exception:
             comment_id = '?'
 
-        if comment_id != '?':
-            final_body = body.replace('{COMMENT_ID}', str(comment_id))
-            if is_inline:
-                final_body += f'\n\n<!-- ai-review:open:{head_sha} -->'
-                meta = {}
-                if 'dim' in finding:
-                    meta['dim'] = finding['dim']
-                if 'severity' in finding:
-                    meta['severity'] = finding['severity']
-                if meta:
-                    meta_json = json.dumps(meta, separators=(',', ':'))
-                    final_body += f'\n<!-- ai-review:meta {meta_json} -->'
+        if comment_id != '?' and is_inline:
+            final_body = body + f'\n\n<!-- ai-review:open:{head_sha} -->'
+            meta = {}
+            if 'dim' in finding:
+                meta['dim'] = finding['dim']
+            if 'severity' in finding:
+                meta['severity'] = finding['severity']
+            if meta:
+                meta_json = json.dumps(meta, separators=(',', ':'))
+                final_body += f'\n<!-- ai-review:meta {meta_json} -->'
             update_comment(comment_id, final_body)
 
         print(f'  [ok] comment #{comment_id} -> {location}')
