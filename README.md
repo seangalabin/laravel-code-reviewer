@@ -4,6 +4,28 @@ A [Claude Code](https://claude.ai/code) skill that reviews pull requests on Lara
 
 For developers who want to fix issues on their own branch before pushing (instead of posting to a PR), use the companion skill [`code-fixer`](#code-fixer-developer-skill).
 
+## Background
+
+Generic AI reviewers (CodeRabbit and friends) are good at spotting universal bugs but don't know *your team's* conventions — your layering rules, your naming, the package you standardised on, the decision someone made in the ticket thread last week. This skill is the opposite: an **opinionated reviewer that encodes one team's standards** and applies them consistently to every PR, so review quality doesn't depend on which senior dev happened to look.
+
+It is built around a few deliberate choices:
+
+- **Diff-scoped, not file-scoped.** It reviews only the lines a branch changed — it won't drown you in findings about pre-existing code.
+- **An opinionated 15-dimension lens** (architecture & layering, security, Laravel/Eloquent best practices, readability, Blade, Vue/JS, testing, …) maintained in one place and shared by both skills. Teams can extend or override it with a committed `.claude/code-review-rules.md`.
+- **Findings you can act on** — each one is plain-language *what's wrong*, a copy-pasteable fix prompt, a suggested diff, and *why* it matters. Severity is 🔴 / 🟡 / 🔵 so the signal isn't buried.
+- **It reads the task, not just the code** — pulls the linked Jira card (title, acceptance criteria, **and the comment thread**) to judge whether the change solves the *right* problem, flags files unrelated to the task, and surfaces decisions raised in discussion that the code ignored.
+- **It has a memory** — tracks which findings were addressed (and resolves them), remembers what a developer dismissed as won't-fix, responds to replies on its comments, and can sync the Jira card status (`Failed Code Review` / `Code Review`).
+- **Bring-your-own-key.** It runs on your own Anthropic + Bitbucket credentials; your code is never sent to a third-party reviewing service.
+
+Two skills share the same lens:
+
+| Skill | For | What it does |
+|---|---|---|
+| **`code-reviewer`** | Reviewing someone's PR | Posts inline findings to the Bitbucket PR, syncs the Jira card |
+| **`code-fixer`** | Cleaning up your own branch | Same analysis, no posting — walks you through applying fixes locally |
+
+> **Where it's heading:** the goal is to run automatically in CI on every PR (like CodeRabbit, but on your standards and your key). A headless mode and `bin/ai-review-ci` wrapper exist today (see [CI / headless mode](#ci--headless-mode-preview)); a turnkey Bitbucket Pipe is in progress.
+
 ## What it does
 
 Run `/code-reviewer` in Claude Code and it will:
