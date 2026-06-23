@@ -876,6 +876,24 @@ public function generateInvoicePdf(Order $order): string { ... }
 
 The rule targets *action* methods named as nouns. When in doubt — if the method has side effects or computes something — it wants a verb; if it's a typed property-like accessor or a relationship, leave it.
 
+**Name must match behaviour — 🟡 Warning.** Beyond being a verb, the name must accurately describe what the method *actually does*. A name that misleads is worse than a vague one — it lies to every caller. Flag when the verb contradicts or hides the behaviour:
+
+- A read-implying verb (`get`, `find`, `fetch`, `load`, `calculate`, `format`, `build`) on a method that **mutates state, persists, deletes, or dispatches events/jobs/mail** — the side effect is invisible at the call site. Rename to reflect it (`getOrCreateUser()`, `calculateAndStoreTotals()`, or split the method).
+- A verb that names the **wrong action** — `updateUser()` that actually creates, `validateInput()` that also saves, `deleteX()` that soft-disables.
+- A name describing **less than the method does** — `sendEmail()` that also updates the record and logs an audit entry; the extra responsibilities are hidden (often also a single-responsibility smell — see §1b).
+
+```php
+// BAD — name says "get" (pure read) but it writes
+public function getActiveSubscription(User $user): Subscription {
+    return $user->subscription ?? $user->subscriptions()->create([...]); // creates!
+}
+
+// GOOD — the name tells the truth
+public function getOrCreateActiveSubscription(User $user): Subscription { ... }
+```
+
+Use judgement and read the body before flagging — this requires understanding what the method does, not just its signature. A correctly-named method with an obvious, expected side effect (e.g. `save()`, `dispatch()`) is fine.
+
 ---
 
 ### 3. Security
