@@ -5,6 +5,60 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.22.0 / code-fixer 1.18.0 — 2026-06-24
+
+### Changed
+- **Review recall — per-dimension coverage ledger + completeness critic.** Step 1 (Analyze)
+  now walks the lens dimension by dimension, emits a printed coverage table (`§3 ✓ 1 finding ·
+  §7 ✓ clean · §15 n/a — no Blade changed`), then does a focused second pass over every
+  dimension cleared with zero findings. Converts "review the diff and mention what jumps out"
+  into accountable, systematic coverage so rules aren't silently missed.
+
+### Removed
+- **Auto-fix command dropped from posted comments** (code-reviewer). Findings are now four
+  sections (problem, AI fix prompt, suggested fix, why) — the trailing
+  `ai-review fix --comment-id=…` line is gone, and the dead `{COMMENT_ID}` substitution was
+  removed from `post_review.sh` / `.ps1`. The `ai-review fix` bin subcommand remains for
+  manual use.
+
+## code-reviewer 1.21.0 / code-fixer 1.17.0 — 2026-06-24
+
+### Added
+- **Discussion-decision check** in the card-context step — reads the ticket's comment thread
+  (Atlassian MCP) and flags an implementation that contradicts or ignores a concrete technical
+  decision raised there (🟡 Warning, confirm-not-accuse). Scoped to actionable steers; silent
+  when the diff follows the decision or the thread already resolved it; skipped when comments
+  aren't available.
+
+## code-reviewer 1.20.0 / code-fixer 1.16.0 — 2026-06-24
+
+### Added
+- **§3i Hardcoded secrets and credentials** (🔴 Critical) — flags committed API keys, passwords,
+  tokens, OAuth/client secrets, private keys, and DSNs with embedded passwords, by both
+  secret-ish variable names and known key shapes (`sk_live_`, `AKIA`, `ghp_`, `xox*`, `AIza`,
+  `-----BEGIN … PRIVATE KEY-----`, basic-auth URLs). Finding instructs to **rotate/revoke**, not
+  just delete (it stays in git history). Exempts test/placeholder/public values.
+
+### Changed
+- De-bundled §3h: the old "hardcoded credentials **or** magic numbers" bullet split — magic
+  literals now point to §2i, secrets get the dedicated §3i rule.
+
+## code-reviewer 1.19.0 / code-fixer 1.15.0 — 2026-06-24
+
+### Added
+- **§2p extended — name must match behaviour** (🟡 Warning) — beyond requiring a verb, flags a
+  method whose verb lies about what it does: a read-implying verb (`get`/`find`/`calculate`)
+  that mutates, persists, deletes, or dispatches; a verb naming the wrong action; or a name
+  hiding extra responsibilities. Read-the-body judgement guard; expected side effects exempt.
+
+## code-reviewer 1.18.0 / code-fixer 1.14.0 — 2026-06-24
+
+### Added
+- **§2p Method names are verb phrases** (🔵 Suggestion) — flags action methods named as bare
+  nouns (`totals()` → `calculateTotals()`). Exempts Eloquent relationships, accessors/
+  attributes, boolean predicates (`is*`/`has*`/`can*`), query scopes, and framework-required
+  names (`handle()`, `boot()`, `rules()`, `up()`/`down()`).
+
 ## code-fixer 1.13.1 — 2026-06-19
 
 ### Fixed
