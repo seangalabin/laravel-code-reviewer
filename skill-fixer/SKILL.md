@@ -149,6 +149,8 @@ Before analyzing, fetch the linked issue-tracker card so the lens evaluates your
 
 When a pre-existing issue is in a touched hunk, label it `(pre-existing, but touched)`.
 
+**Reading existing code for context is allowed; *flagging* it is not.** You may open untouched files to understand how the change fits — a called Service, a sibling class, an existing interface or Repository — and the **architecture/consistency dimensions (§1, incl. §1c Repository granularity and §1g OOP structure) require it**: a duplication or missing-contract smell only shows when the new code is compared to what already exists. The rule is about *where the finding lands*, not what you may read: **anchor every finding to the changed lines** ("this **new** class duplicates the existing X — extract a shared contract"), never to a pre-existing problem inside an untouched file.
+
 **Do not flag issues already caught by Pint (formatting/style) or the Pest ArchitectureTest (suffix rules, base-class rules, enum rules).** Those run in CI before the card reaches code review.
 
 ### Honor inline suppression markers
@@ -475,6 +477,39 @@ Every Controller method that accepts user input must type-hint a dedicated `Form
 
 `handle()` in a Console Command is a thin CLI adapter — it must delegate to a Service or Repository. Direct Eloquent queries or business logic inside `handle()` is 🟡 Warning. Use `$this->info()` / `$this->error()` for output (not `echo`) — 🔵 Suggestion.
 
+#### 1g. Object-oriented structure — interfaces, abstract & final classes, inheritance
+
+Suggest OOP structure **only when the code shows a concrete need** — all 🔵 Suggestion. This dimension is where reviewers most often over-engineer; the default is *no change*, and a working concrete class with one implementation is not a finding. **Do not** suggest an abstraction for a single, stable implementation. YAGNI wins.
+
+**Judge the change against existing code, not in isolation.** This dimension is an explicit exception to the diff-only scope rule: to apply it you **may and should read related existing code** the change integrates with — sibling classes that fill the same role, an existing interface/contract, an abstract base or the class being extended, an existing Repository/Service with the same prefix (see §1c). A new class only reveals a duplication or a missing-contract smell when you compare it to what's already there. **But anchor every finding to the changed code** — e.g. "this **new** `StripeGateway` duplicates the existing `PaypalGateway`; extract a shared `PaymentGateway` contract" — never flag a pre-existing issue inside an untouched file. Read the old code to judge the new; report on the new.
+
+**Extract an interface (contract) — only with a real reason.** Flag when:
+- **Two or more** classes already fill the same conceptual role with the same shape and share **no** interface → propose a contract they both implement.
+- A **swappable / pluggable collaborator** is type-hinted as a concrete class where a contract would decouple it and make it fakeable in tests — a payment gateway, notification channel, external API client, or a Strategy picked at runtime.
+
+  ```php
+  // Worth a contract — multiple interchangeable implementations
+  interface PaymentGateway { public function charge(Money $amount): Receipt; }
+  final class StripeGateway implements PaymentGateway { ... }
+  final class PaypalGateway implements PaymentGateway { ... }
+  ```
+
+  **Do NOT flag** a Service/Repository with **one** implementation and no polymorphism or test-double need just for "missing an interface" — an interface-per-class with a single impl is cargo-cult; Laravel binds concretes fine. No speculative "might have another impl someday."
+
+**Reuse before rebuild; extract when a responsibility is inline** (judgement):
+- The change adds logic an **existing** class / Service / Action / helper already provides → reuse it instead of duplicating (🔵; 🟡 when it duplicates non-trivial existing behaviour — a real DRY/maintenance risk). This uses the same read-existing-code allowance above; anchor the finding to the new code ("this new block re-implements `App\Support\PriceCalculator`").
+- The change crams a **distinct responsibility** inline — a chunk of business logic inside a controller/model/command, a substantial repeated block with its own reason to change → suggest extracting a dedicated class (Service, Action, DTO, value object, Job) — 🔵.
+- Don't invert it into noise: no new class when an existing one is the right home, and no extraction of a trivial one-liner.
+
+**Abstract base class vs trait vs composition.** When sibling classes share real duplicated behaviour:
+- A genuine **is-a** family with shared state + template steps → an `abstract` base class (and mark it `abstract` if it's only meaningful as a parent yet is currently instantiable).
+- Cross-cutting reuse with **no** is-a relationship → a **trait** or a collaborator, **not** inheritance.
+- **Prefer composition over inheritance.** Flag `extends` used purely to share code (no true is-a). Flag inheritance depth **≥3 levels only when the change itself adds the `extends`** that lands the chain there — phrase it against the new subclass; don't flag a deep chain the diff merely touches.
+
+**`final` for new leaf classes.** A new class not designed for extension (no `protected` extension points, not abstract, not a framework base you must subclass) *may* be `final`. Flag a missing `final` **only when sibling leaf classes in the same diff or directory are already `final`** — i.e. the codebase demonstrably uses it as a convention. Never mass-suggest `final` on a codebase that doesn't. 🔵.
+
+**Program to the abstraction.** Once a contract exists, inject and type-hint the **interface**, not the concrete class.
+
 ---
 
 ### 2. PSR-12 & Code Standards
@@ -645,12 +680,12 @@ A negatively-named variable then tested negatively — `$notReady` with `if (! $
 
 `count($x) > 0` / `count($x) === 0` to test emptiness — 🔵 Suggestion. Use `! empty($x)` / `empty($x)` for arrays, or `$collection->isNotEmpty()` / `->isEmpty()` for Eloquent collections — clearer intent and (for collections) avoids materialising a count.
 
-#### 2n. Descriptive, meaningful names — 🟡 Warning
+#### 2n. Descriptive, meaningful names — 🔵 Suggestion
 
-§2d governs *casing*; this rule governs whether the name actually says what the thing is. A name that is correctly `camelCase` but opaque (`$tmp`, `$d`, `handle2()`) still fails review. Flag identifiers — variables, properties, parameters, methods — whose name does not convey their role:
+§2d governs *casing*; this rule governs whether the name actually says what the thing is. A name that is correctly `camelCase` but opaque (`$tmp`, `$d`, `handle2()`) is worth a nudge. It's 🔵 — an opaque-but-honest name is a readability suggestion; a name that actively *misleads* about behaviour is the 🟡 case in §2p. Flag identifiers — variables, properties, parameters, methods — whose name does not convey their role:
 
 - **Cryptic / single-letter variables** outside the idioms below — `$d`, `$x`, `$a2`, `$str`, `$obj`.
-- **Vague placeholder names** that carry no meaning — `$data`, `$data2`, `$tmp`, `$temp`, `$val`, `$arr`, `$res`, `$info`, `$thing`, `$stuff`, `$foo`. (`$result` is fine when it genuinely *is* the result of the method.)
+- **Vague placeholder names** that carry no meaning — `$data`, `$data2`, `$tmp`, `$temp`, `$val`, `$arr`, `$res`, `$info`, `$thing`, `$stuff`, `$foo`. (`$result` is fine when it genuinely *is* the result of the method.) **Judge by role, not spelling:** a short-lived local whose meaning is obvious from the adjacent line — e.g. `$data` passed straight into `Model::create($data)` — is acceptable; don't flag a name the surrounding context already explains.
 - **Unclear abbreviations** that aren't well-known — `$usrRepo` → `$userRepository`, `$calcAmt` → `$calculatedAmount`, `$ctr` → `$counter`.
 - **Vague method names** that don't state what they do — `process()`, `doStuff()`, `doIt()`, `manage()`, `getData()`, `run2()`. Name the action and its subject — `calculateInvoiceTotal()`, `markOrderShipped()`.
 
@@ -770,6 +805,8 @@ Gate::authorize('update-user', $user);
 
 Every `FormRequest::authorize()` that unconditionally returns `true` without a comment explaining why (e.g., genuinely public endpoint) is 🔵 Suggestion.
 
+**Missing auth guard on a newly-added route.** When the diff **adds** a mutating route (`POST` / `PUT` / `PATCH` / `DELETE`) that is not inside an authenticated/authorized route group and carries no `->middleware(...)` / `->can(...)`, flag it 🟡 — confirm-not-accuse: "confirm authz is applied (route group, controller `__construct`, or a Policy) or this endpoint is intentionally public." Only fire on a **route registration** the diff adds; do **not** flag a bare controller-method addition (its guard usually lives in the route group or constructor you may not see).
+
 #### 3b. Mass assignment
 
 🟡 Warning:
@@ -801,15 +838,21 @@ DB::statement("DELETE FROM users WHERE id = $id")
 
 #### 3d. Insecure direct object reference (IDOR)
 
-🟡 Warning — any controller that fetches a resource by ID without scoping to the authenticated user or checking a Policy:
+A resource fetched by a **request-supplied ID** without scoping to the authenticated user is IDOR. Severity by what happens to the fetched model:
+
+- The model is then **mutated, deleted, or its ownership-bound data written** — 🔴 Critical (a request-supplied ID that lets a user alter another user's record is a data-breach/tamper path).
+- The model is only **read/returned** — 🟡 Warning.
 
 ```php
-// BAD
+// BAD — request id, no ownership scope; if this then ->update()/->delete() it's 🔴
 $order = Order::findOrFail($request->order_id);
+$order->update($request->validated());
 
-// GOOD
+// GOOD — scoped to the owner
 $order = auth()->user()->orders()->findOrFail($request->order_id);
 ```
+
+**Check for guards you may not see before flagging.** The ownership/authz check can live outside the fetch line: inspect the same method and its `FormRequest::authorize()` for a user-scoped query, a Policy, `$this->authorize()`, `Gate::authorize()`, or `authorizeResource()`; and route middleware (`can:`) may not be in the diff at all. If a guard is plausibly present but you can't see it, **phrase the finding as a question** ("confirm ownership is enforced on `$request->order_id`") rather than an assertion. Do **not** flag genuinely global / reference resources (a public `Product`, a lookup table) that aren't user-scoped by design.
 
 #### 3e. File upload security
 
@@ -855,7 +898,7 @@ A real secret literal committed to the repo is a security leak, not a style issu
 
 Signals to catch:
 - Assignment of a literal that looks like a secret to a variable/property/array key named `*key*`, `*secret*`, `*token*`, `*password*`, `*passwd*`, `*apikey*`, `*auth*`.
-- Known credential shapes regardless of the variable name: `sk_live_…` / `sk_test_…` (Stripe), `AKIA…` (AWS), `ghp_…` / `gho_…` (GitHub), `xox[baprs]-…` (Slack), `AIza…` (Google), `-----BEGIN … PRIVATE KEY-----`, long base64/hex blobs used as keys, Basic-auth in a URL (`https://user:pass@host`).
+- Known credential shapes regardless of the variable name: `sk_live_…` / `sk_test_…` (Stripe), `AKIA…` (AWS), `ghp_…` / `gho_…` (GitHub), `xox[baprs]-…` (Slack), `AIza…` (Google), `-----BEGIN … PRIVATE KEY-----`, Basic-auth in a URL (`https://user:pass@host`). A long base64/hex blob counts **only when it is used as an API key, token, or signing/encryption secret** — not when it's a hash, checksum, or opaque identifier.
 - A non-empty password/secret passed directly to a client (`new Client(['secret' => 'abc123…'])`, `Http::withToken('eyJ…')`).
 
 ```php
@@ -875,6 +918,7 @@ $stripe = new StripeClient(config('services.stripe.secret'));
 - Placeholders and examples (`.env.example`, `'your-api-key-here'`, `'xxxxx'`).
 - **Public** keys / publishable keys (`pk_live_…`, public certificates) — not secret by design.
 - Non-secret config defaults (timeouts, URLs without credentials).
+- **High-entropy values that aren't credentials** — SHA/MD5 hashes, checksums, idempotency or cache keys, migration/UUID literals, encoded data payloads — even when the variable name matches `*key*` / `*token*` / `*auth*`. A matching name alone is not enough; flag only when the value is actually used to authenticate or sign.
 
 ---
 
@@ -1018,20 +1062,20 @@ Business logic beyond label, color, or helper methods on the enum itself is 🟡
 
 ### 7. Correctness
 
-- Null dereferences: `$model->relation->attribute` where `relation` could be `null`.
-- Off-by-one, wrong conditional, inverted boolean.
-- `firstOrCreate` vs separate `exists() + create()` — the latter is a race condition.
-- Missing guard after a refactor.
-- Incorrect HTTP status codes (`200` for created, `200` for not-found).
-- Return type mismatches across code paths.
+- Null dereferences: `$model->relation->attribute` where `relation` could be `null` — 🔴 on a request path (uncaught 500), 🟡 if guarded or non-fatal.
+- Off-by-one, wrong conditional, inverted boolean — 🟡 (🔴 if it causes data loss or corruption).
+- Check-then-act races (`exists()` + `create()`) — see §8 (canonical).
+- A value the **removed** lines null-checked, bounds-checked, or early-returned on is now used unchecked in the **added** lines — 🔴 if it can crash or corrupt, else 🟡. (Anchor to the removed guard; don't speculate about guards you can't see.)
+- Semantically wrong HTTP status — `200` on a not-found or error path — 🟡. (The `201`-vs-`200`-on-create convention lives in §14.)
+- Return type mismatches across code paths — 🟡.
 
 ---
 
 ### 8. Data Integrity
 
 - Multiple Eloquent writes without `DB::transaction()` — see §4g (canonical rule, 🟡 Warning).
-- Check-then-act race conditions: `->exists()` + `->create()` → use `firstOrCreate()`.
-- Missing `->lockForUpdate()` on rows read-then-modified concurrently.
+- Check-then-act race conditions (canonical): `->exists()` + `->create()` → use `firstOrCreate()` / `updateOrCreate()` — 🟡 Warning.
+- Missing `->lockForUpdate()` on rows read-then-modified — 🟡 Warning.
 
 ---
 
@@ -1155,7 +1199,7 @@ Same rule as §4b — accessing a relation inside a loop without prior eager loa
 
 - `{!! $var !!}` with user-supplied content — 🔴 Critical (also §3f).
 - `href="{{ $url }}"` or `src="{{ $url }}"` where the value is a user-supplied URL — 🟡 Warning. `{{ }}` escapes HTML but `javascript:foo()` still executes. Validate the scheme or whitelist URLs.
-- Inline JS event handlers carrying user data (`onclick="doThing('{{ $msg }}')"`) — 🟡 Warning. Use unobtrusive JS or pass via a data attribute with `@json($msg)`.
+- Inline JS event handlers carrying user data (`onclick="doThing('{{ $msg }}')"`) — 🟡 Warning. Use unobtrusive JS. To hand data to JS safely, use `Js::from($msg)` **inside a `<script>` block**, or an HTML-escaped data attribute (`data-msg="{{ json_encode($msg) }}"`, which `{{ }}` escapes). Do **not** put raw `@json($msg)` in an HTML attribute — `@json` is not attribute-escaped, so `"` in the value breaks out of the attribute and is itself an XSS vector.
 - `style="{{ $userValue }}"` — 🔵 Suggestion. Style injection can leak data (`background-image: url(...)`) or break layout.
 
 #### 15d. CSRF on state-changing forms
