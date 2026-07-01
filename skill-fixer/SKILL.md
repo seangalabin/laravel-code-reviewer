@@ -567,22 +567,22 @@ class UserService {
 When an `if` has an `else` branch, the `if` should test the **positive/truthy** case, not a negation — the reader shouldn't have to mentally invert the condition and then read the `else` as "the normal case". Flag `if (<negated>) { … } else { … }` as 🔵 Suggestion: swap the branches and drop the negation.
 
 ```php
-// BAD — negated if with an else
+// BAD — negated if with an else (neither branch exits)
 if (! $user->isActive()) {
-    return $this->reject();
+    $badge = 'inactive';
 } else {
-    return $this->grant();
+    $badge = 'active';
 }
 
-// GOOD — positive if; and since the branch returns, drop the else entirely (§2f)
+// GOOD — positive if, branches swapped
 if ($user->isActive()) {
-    return $this->grant();
+    $badge = 'active';
+} else {
+    $badge = 'inactive';
 }
-
-return $this->reject();
 ```
 
-**Precedence:** when the `if` branch already exits (`return`/`throw`/`continue`/`break`), prefer §2f — drop the `else` — over swapping-and-keeping it; raise §2f, not §2e, and emit one combined finding. (§2g's deep-nesting rule only applies at ≥3 levels, so it doesn't compete here.)
+**Precedence:** this rule is for an if/else where **neither branch exits**. When the `if` branch already exits (`return`/`throw`/`continue`/`break`), don't swap-and-keep the `else` — prefer §2f (drop the `else` altogether); raise §2f, not §2e, and emit one combined finding. (§2g's deep-nesting rule only applies at ≥3 levels, so it doesn't compete here.)
 
 **Strictly scoped — do NOT flag:**
 - **Guard clauses / early returns with no `else`** — `if (! $user) { return; }`, `if (! $ok) { abort(404); }`. These are the *preferred* idiom (they avoid nesting); a negation here is correct and good. The rule applies **only** when a real `else` (or `elseif`) branch exists.
@@ -684,8 +684,8 @@ A negatively-named variable then tested negatively — `$notReady` with `if (! $
 - (Vague/opaque **method** names — `process()`, `doStuff()`, `getData()`, `run2()` — are covered in §2p, not here.)
 
 ```php
-// BAD
-public function process($d): array {
+// BAD — opaque variables (method name is a §2p concern, left unchanged here)
+public function applyGstToLineTotals(array $d): array {
     $tmp = [];
     foreach ($d as $x) {
         $tmp[] = $x->total * 1.1;
@@ -693,7 +693,7 @@ public function process($d): array {
     return $tmp;
 }
 
-// GOOD
+// GOOD — names convey role
 public function applyGstToLineTotals(array $lineItems): array {
     $totalsWithGst = [];
     foreach ($lineItems as $lineItem) {
@@ -737,7 +737,7 @@ $amount = (int) floor($cents);
 - **Intentional markers** — `// TODO`, `// FIXME`, `// HACK`. These are signals, not noise.
 - **Licence / file headers.**
 
-#### 2p. Method names are verb phrases — 🔵 Suggestion
+#### 2p. Method names — verb phrases (🔵) and name-matches-behaviour (🟡)
 
 A method *does* something, so its name should start with a verb: `calculateTotal()`, `sendInvoice()`, `markAsPaid()`, `syncTags()` — not a bare noun like `total()`, `invoiceData()`, or `tags()` (for a method that performs work). Flag a method whose name is a noun/adjective with no verb as 🔵 Suggestion, suggesting a verb-led rename. A **vague/opaque action name** that has a verb but says nothing — `process()`, `doStuff()`, `handle2()`, `getData()`, `manage()` — is worse: 🟡 Warning; name the action and its subject (`calculateInvoiceTotal()`, `markOrderShipped()`).
 
