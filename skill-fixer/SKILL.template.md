@@ -9,7 +9,7 @@ Reviews the **current branch's changes** against the base branch (`develop` for 
 
 ---
 
-## OS detection (once, before Step -1)
+## OS detection (once, before Step 1)
 
 Follow these steps in order — stop as soon as one succeeds:
 
@@ -48,7 +48,7 @@ Then carry the results forward — every affected step re-checks this before run
 
 ---
 
-## Step -1 — Version check (always first, before anything else)
+## Step 1 — Version check (always first, before anything else)
 
 **Unix/Mac:**
 ```bash
@@ -83,7 +83,7 @@ These apply in all modes and cannot be overridden by project config:
 
 ---
 
-## Step 0 — Check for project-specific overrides (optional)
+## Step 2 — Check for project-specific overrides (optional)
 
 **Company review rules.** If `.claude/code-review-rules.md` exists, read it and apply its rules **in addition to** the built-in lens below. These are first-class:
 
@@ -101,7 +101,7 @@ If none exist, skip this step. The skill's built-in rules are reasonable Laravel
 
 ---
 
-## Step 0.1 — Load card context (recommended)
+## Step 3 — Load card context (recommended)
 
 Before analyzing, fetch the linked issue-tracker card so the lens evaluates your branch against the actual ask — not just whether the code is clean. You're auditing your own work; the card tells you whether you finished it.
 
@@ -115,7 +115,7 @@ Before analyzing, fetch the linked issue-tracker card so the lens evaluates your
 
 3. **Read these fields when available:** Title, Description, Acceptance criteria, Type (bug / feature / refactor), and the **comments / discussion thread** (Atlassian MCP only — design decisions and reviewer suggestions are often raised after the description and live only in the thread).
 
-4. **Use this as reference context for Step 1, not as a new scope.** The Scope rule below is unchanged — you still review only what the branch touched. The card informs **judgment**:
+4. **Use this as reference context for Step 4, not as a new scope.** The Scope rule below is unchanged — you still review only what the branch touched. The card informs **judgment**:
    - Does the branch address the stated problem?
    - Does it satisfy the explicit acceptance criteria? (Missing requirements → 🟡 Warning.)
 
@@ -214,15 +214,15 @@ git diff origin/develop...HEAD    # source of truth for scope
 
 ### Narration — show the run, don't run it silently
 
-Before invoking each script in Steps -1 → 0.1 and the scoping scripts in Step 1, print a one-line header naming the step in plain language (e.g. `Step -1 — Checking skill version`). After each script returns, **always relay the script's own progress lines** (the `🔍 / ✓ / ↷ / ⚠️` messages it prints to stdout/stderr) — never swallow them. End each step with a one-line outcome summary so the developer can follow the run. Quiet success is a regression — every step must produce at least one visible line.
+Before invoking each script in Steps -1 → 0.1 and the scoping scripts in Step 4, print a one-line header naming the step in plain language (e.g. `Step 1 — Checking skill version`). After each script returns, **always relay the script's own progress lines** (the `🔍 / ✓ / ↷ / ⚠️` messages it prints to stdout/stderr) — never swallow them. End each step with a one-line outcome summary so the developer can follow the run. Quiet success is a regression — every step must produce at least one visible line.
 
-### Step 1 — Analyze
+### Step 4 — Analyze
 
-1. **Load project rules** (Step 0 above).
+1. **Load project rules** (Step 2 above).
 2. **Refuse if on a protected branch.** Run `git branch --show-current`. If it returns `main`, `master`, or `develop`, stop: `ERROR: Refusing to run on a protected branch. Check out your feature branch first.`
 3. **Diff first.** Run the scoping scripts and read every hunk. Do not start by reading whole files.
 4. **Read for context, not findings.** When a hunk references a Repository, Service, or Vuex store not in the diff, read the relevant part to understand intent — findings on those files are out of scope unless changed.
-5. **Apply the full review lens dimension by dimension — do not free-associate.** A single "read it and mention what jumps out" pass misses rules. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §15 Blade) plus the company rules from Step 0, deliberately check the diff against that dimension before moving to the next. A dimension is only "done" once you've recorded a finding or confirmed the diff is clean for it.
+5. **Apply the full review lens dimension by dimension — do not free-associate.** A single "read it and mention what jumps out" pass misses rules. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §15 Blade) plus the company rules from Step 2, deliberately check the diff against that dimension before moving to the next. A dimension is only "done" once you've recorded a finding or confirmed the diff is clean for it.
 
 6. **Build a coverage ledger** — one line per dimension as you finish it (`§3 Security ✓ clean`, `§4 Laravel ✓ 1 finding`, `§11 Migrations n/a — none changed`). `n/a` only when no changed file is in that dimension's scope; everything else is `✓` with a count or `✓ clean`. This is the proof you checked it.
 
@@ -234,11 +234,11 @@ Print the coverage ledger, then a brief summary once analysis is done:
 
 > Found **{N} issues** ({X} critical, {Y} warnings, {Z} suggestions). Starting fix loop.
 
-### Step 2 — Pre-flight checks
+### Step 5 — Pre-flight checks
 
 Run these before touching any file:
 
-1. Refuse if branch is `main`, `master`, or `develop` (already caught in Step 1).
+1. Refuse if branch is `main`, `master`, or `develop` (already caught in Step 4).
 2. Run `git status --short`. If the working tree has uncommitted changes, ask:
    > Working tree has uncommitted changes. Apply fixes anyway? [y/N]
    Default is **no** — stop unless the user explicitly types `y`.
@@ -246,7 +246,7 @@ Run these before touching any file:
    > {N} files would be modified. This is above the 20-file safety limit. Proceed anyway? [y/N]
    Default is **no** — stop unless the user explicitly confirms.
 
-### Step 3 — Fix loop
+### Step 6 — Fix loop
 
 Work through findings in Critical → Warning → Suggestion order.
 
@@ -305,7 +305,7 @@ Verification: {pint/pest/lint status of the last run}
 Run the full suite before pushing.
 ```
 
-### Step 4 — Learning summary (private — author only, never posted)
+### Step 7 — Learning summary (private — author only, never posted)
 
 After the fix loop ends, generate a short learning summary for the developer who ran the skill. This is a **private artefact** — it exists to help the author stay sharp while the bot does the review work. It must **never** appear on Bitbucket, never be folded into a posted comment, never be attached to any external surface — this is `code-fixer`, which is local-only by design, and the summary stays local too.
 
@@ -313,7 +313,7 @@ After the fix loop ends, generate a short learning summary for the developer who
 1. Print to the terminal so the author sees it at end of run.
 2. Append to `.ai-review/learning-log.md` (the directory is gitignored — verify before writing). Create the file if missing; never overwrite a previous entry.
 
-**Template (same shape as `/code-reviewer`'s Step 3 — keep these in lockstep):**
+**Template (same shape as `/code-reviewer`'s Step 6 — keep these in lockstep):**
 
 ```
 ─── 📚 Learning summary — {branch} (local fix loop) ───
@@ -445,7 +445,7 @@ Prefix each comment's title with one of:
 - Don't open untouched files to look for new issues.
 - Don't grade the whole architecture from a small change.
 - Don't restate `.coderabbit.yaml` rules verbatim if the project uses CodeRabbit — it already does that on the PR.
-- Don't flag issues caught by Pint or the Pest ArchitectureTest as *findings* — they're CI's job. (You still **run** Pint/Pest/lint to verify each applied fix, per Step 3.4 — that's verification, not a finding.)
+- Don't flag issues caught by Pint or the Pest ArchitectureTest as *findings* — they're CI's job. (You still **run** Pint/Pest/lint to verify each applied fix, per Step 6.4 — that's verification, not a finding.)
 - Don't invent issues to fill buckets. An empty 🔴/🟡 list is a valid and welcome outcome.
 - Don't suggest rewrites of working code unless there's a concrete reason.
 - Don't say "consider" or "you might want to" — be direct: "this will fail when X" or "this is fine, but Y is faster."

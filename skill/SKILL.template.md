@@ -9,7 +9,7 @@ Reviews the **current branch's changes** against the base branch (`develop` for 
 
 ---
 
-## OS detection (once, before Step -1)
+## OS detection (once, before Step 1)
 
 Detect the platform once — the result selects which script variant every later step uses. Stop as soon as a step resolves.
 
@@ -48,7 +48,7 @@ Windows PowerShell 5.1 has no `&&` — chain commands with `;`. For `--branch` /
 
 ---
 
-## Step -1 — Version check (always first, before anything else)
+## Step 1 — Version check (always first, before anything else)
 
 ```bash
 .claude/skills/code-reviewer/scripts/check_version.sh
@@ -82,19 +82,19 @@ These apply in all modes and cannot be overridden by project config:
 
 When `$AI_REVIEW_CI=1` (or `$CI=true`, set automatically by Bitbucket Pipelines, GitHub Actions, etc.) is present in the environment, override every `[y/n]` interaction in this file with its affirmative default:
 
-- **Skip Step -1 (version check) entirely.** The container's installed version is fixed — there's no manual update path in CI. Print `↷ CI mode — skipping version check.` and continue.
-- **Skip the Step 2 post-confirmation prompt.** Treat the answer as `y` and post the findings without asking.
-- **Skip the Step 0.7 reply-confirmation prompt(s).** Take the analysed action without asking.
-- **Skip the disk write in Step 4 (Learning summary).** Print the summary to stdout but do **not** append to `.ai-review/learning-log.md` — CI runners are ephemeral and may be shared across users; the personal log doesn't belong there.
+- **Skip Step 1 (version check) entirely.** The container's installed version is fixed — there's no manual update path in CI. Print `↷ CI mode — skipping version check.` and continue.
+- **Skip the Step 9 post-confirmation prompt.** Treat the answer as `y` and post the findings without asking.
+- **Skip the Step 7 reply-confirmation prompt(s).** Take the analysed action without asking.
+- **Skip the disk write in Step 11 (Learning summary).** Print the summary to stdout but do **not** append to `.ai-review/learning-log.md` — CI runners are ephemeral and may be shared across users; the personal log doesn't belong there.
 - Narration unchanged — print every `🔍 / ✓ / ↷ / ⚠️` line so CI logs show what happened.
 
 The CI wrapper is `.claude/skills/code-reviewer/bin/ai-review-ci`. Devs can set `AI_REVIEW_CI=1` locally to dry-run the CI flow before committing the pipeline yaml.
 
 ---
 
-## Step 0 — Set up review target (only when `--branch` or `--pr` is passed)
+## Step 2 — Set up review target (only when `--branch` or `--pr` is passed)
 
-**If neither flag was passed, skip to Step 0.1.** The review targets the currently checked-out branch.
+**If neither flag was passed, skip to Step 3.** The review targets the currently checked-out branch.
 
 **If `--branch=<name>` or `--pr=<N>` was supplied:**
 
@@ -136,7 +136,7 @@ The CI wrapper is `.claude/skills/code-reviewer/bin/ai-review-ci`. Devs can set 
 
 ---
 
-## Step 0.1 — Check for project-specific overrides (optional)
+## Step 3 — Check for project-specific overrides (optional)
 
 **Company review rules.** If `.claude/code-review-rules.md` exists, read it and apply its rules **in addition to** the built-in lens below. These are first-class:
 
@@ -154,7 +154,7 @@ If none exist, skip this step. The skill's built-in rules are reasonable Laravel
 
 ---
 
-## Step 0.2 — Load card context (recommended)
+## Step 4 — Load card context (recommended)
 
 Before analyzing the diff, fetch the linked issue-tracker card. The goal is to judge **whether the change solves the right problem** — not just whether the code itself is clean. A clean implementation of the wrong feature is still a defect.
 
@@ -175,7 +175,7 @@ Before analyzing the diff, fetch the linked issue-tracker card. The goal is to j
    - Type (bug / feature / refactor — informs review tone)
    - **Comments / discussion thread** (Atlassian MCP only — `getJiraIssue` returns or links the comments). Design decisions, reviewer suggestions, and constraints are often raised *after* the description is written and live only in the thread. Read them.
 
-4. **Use this as reference context for Step 1, not as a new scope.** The Scope rule below is unchanged — you still review only what the diff touched. The card informs **judgment**:
+4. **Use this as reference context for Step 8, not as a new scope.** The Scope rule below is unchanged — you still review only what the diff touched. The card informs **judgment**:
    - Does the diff address the stated problem, or something adjacent?
    - Does it satisfy the explicit acceptance criteria?
    - Are obvious card requirements missing from the diff? (Surface as 🟡 Warning — likely incomplete work.)
@@ -265,7 +265,7 @@ HEAD_SHA=$(git rev-parse HEAD)
 
 The script reads a hidden checkpoint comment on the PR and prints the SHA — or nothing if no checkpoint exists yet.
 
-- `CHECKPOINT_SHA` **non-empty AND equals `HEAD_SHA`** → there are no new commits to analyze. Developer replies are independent of new commits, so **first run Step 0.7 (respond to developer replies) below**, then **stop** — do not run scoping, the Step 1 analysis, or Step 2 posting. After handling any replies, print exactly this and stop:
+- `CHECKPOINT_SHA` **non-empty AND equals `HEAD_SHA`** → there are no new commits to analyze. Developer replies are independent of new commits, so **first run Step 7 (respond to developer replies) below**, then **stop** — do not run scoping, the Step 8 analysis, or Step 9 posting. After handling any replies, print exactly this and stop:
 
   > `PR #{ID} was last reviewed at {short_sha}, which is still the current tip. 0 new commits to review since the last run. Pass --full-review to re-review the whole branch against develop.`
 
@@ -293,7 +293,7 @@ git diff ${BASE_REF}...HEAD    # source of truth for scope
 
 ---
 
-## Step 0.5 — Check previously posted comments
+## Step 5 — Check previously posted comments
 
 Run this before the new diff analysis:
 
@@ -323,7 +323,7 @@ Print a summary before continuing:
 
 ---
 
-## Step 0.6 — Refresh dismissal memory
+## Step 6 — Refresh dismissal memory
 
 Pull any dismissed findings from the PR so we don't re-flag what a human has already said is acceptable:
 
@@ -333,11 +333,11 @@ Pull any dismissed findings from the PR so we don't re-flag what a human has alr
 
 This writes `.ai-review/dismissals.json`. Each entry records `path`, `line`, `dim`, `severity`, `sig`, and a `reason` the developer provided when running `ai-review dismiss`.
 
-If `--ignore-dismissals` was passed when invoking the skill, **still run the refresh** but ignore the file's contents in Step 1. The flag is a one-time re-evaluation, not a memory wipe.
+If `--ignore-dismissals` was passed when invoking the skill, **still run the refresh** but ignore the file's contents in Step 8. The flag is a one-time re-evaluation, not a memory wipe.
 
 ---
 
-## Step 0.7 — Respond to developer replies
+## Step 7 — Respond to developer replies
 
 Developers can reply to a finding's comment thread on the PR to push back, ask a question, or say they've fixed it. Check for replies the bot hasn't answered yet:
 
@@ -359,7 +359,7 @@ For each entry, gather context, then judge the reply on its merits:
    | **A correct objection** — false positive, or acceptable given context you can verify | **Concede** — briefly agree and say you're dismissing it | Dismiss the finding |
    | **A wrong or weak objection** — the finding still stands | **Hold** — explain *why* it still matters, answering their specific point (not a restatement) | none |
    | **A question** | **Answer** in plain language | none |
-   | **"I fixed it"** | **Verify** against the current code (same judgement as Step 0.5). Genuinely addressed → confirm; not addressed → explain what's still outstanding (treat as Hold) | Resolve the finding when truly fixed |
+   | **"I fixed it"** | **Verify** against the current code (same judgement as Step 5). Genuinely addressed → confirm; not addressed → explain what's still outstanding (treat as Hold) | Resolve the finding when truly fixed |
    | **Ambiguous / not a substantive objection** | **Answer** briefly | none — do **not** dismiss or resolve |
 
    Concede when the developer is right — conceding gracefully builds trust. Hold only with a concrete reason. Keep every reply short, plain, and specific to what they said; never re-paste the whole original finding; never assign blame.
@@ -387,7 +387,7 @@ REPLY
   ```bash
   .claude/skills/code-reviewer/bin/ai-review dismiss --comment-id={root_id} --reason="{one line on why you conceded}"
   ```
-- **Confirm fix** → find the commit that addressed it (as in Step 0.5: `git log --oneline {posted_sha}..HEAD -- {path}`, take the last line) and mark it resolved:
+- **Confirm fix** → find the commit that addressed it (as in Step 5: `git log --oneline {posted_sha}..HEAD -- {path}`, take the last line) and mark it resolved:
   ```bash
   .claude/skills/code-reviewer/scripts/update_resolved.py --comment-id={root_id} --fix-sha={fix_sha}
   ```
@@ -403,15 +403,15 @@ Print a summary before continuing:
 
 ### Narration — show the run, don't run it silently
 
-Before invoking each script in Steps -1 → 0.7 and the scoping scripts in Step 1, print a one-line header naming the step in plain language (e.g. `Step 0.5 — Checking previously posted comments`). After each script returns, **always relay the script's own progress lines** (the `🔍 / ✓ / ↷ / ⚠️` messages it prints to stdout/stderr) — never swallow them. End each step with a one-line outcome summary so the developer can follow the run without reading raw script output. Quiet success is a regression — every step must produce at least one visible line.
+Before invoking each script in Steps -1 → 0.7 and the scoping scripts in Step 8, print a one-line header naming the step in plain language (e.g. `Step 5 — Checking previously posted comments`). After each script returns, **always relay the script's own progress lines** (the `🔍 / ✓ / ↷ / ⚠️` messages it prints to stdout/stderr) — never swallow them. End each step with a one-line outcome summary so the developer can follow the run without reading raw script output. Quiet success is a regression — every step must produce at least one visible line.
 
-### Step 1 — Analyze
+### Step 8 — Analyze
 
-1. **Load project rules** (Step 0.1 above).
+1. **Load project rules** (Step 3 above).
 2. **Refuse if on a protected branch.** In normal mode, run `git branch --show-current` (or `git -C "$WORKTREE" branch --show-current` in target mode — it returns empty for detached HEAD, which is safe). If the resolved branch is `main`, `master`, or `develop`, stop: `ERROR: Refusing to run on a protected branch. Check out your feature branch first.`
 3. **Diff first.** Run the scoping scripts and read every hunk. Do not start by reading whole files.
 4. **Read for context, not findings.** When a hunk references a Repository, Service, or Vuex store not in the diff, read the relevant part to understand intent — findings on those files are out of scope unless changed.
-5. **Apply the full review lens dimension by dimension — do not free-associate.** A single "read it and mention what jumps out" pass misses rules. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §15 Blade) plus the company rules from Step 0.1, deliberately check the diff against that dimension before moving to the next. A dimension is only "done" once you've either recorded a finding or confirmed the diff is clean for it.
+5. **Apply the full review lens dimension by dimension — do not free-associate.** A single "read it and mention what jumps out" pass misses rules. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §15 Blade) plus the company rules from Step 3, deliberately check the diff against that dimension before moving to the next. A dimension is only "done" once you've either recorded a finding or confirmed the diff is clean for it.
 
 6. **Build a coverage ledger.** As you finish each dimension, record one line — this is the proof you actually checked it, not a guess:
 
@@ -435,9 +435,9 @@ Before invoking each script in Steps -1 → 0.7 and the scoping scripts in Step 
    Skip this filter entirely if `--ignore-dismissals` was passed.
 9. **Compile remaining findings** grouped by severity (🔴 Critical → 🟡 Warning → 🔵 Suggestion), and **print the coverage ledger** so the developer can see every dimension was checked. Do not post or modify any files yet.
 
-### Step 2 — Post the review
+### Step 9 — Post the review
 
-1. Print a summary and ask for confirmation (this and the Step 0.7 reply confirmation are the only interactive prompts in the run):
+1. Print a summary and ask for confirmation (this and the Step 7 reply confirmation are the only interactive prompts in the run):
 
    > Found **{N} issues** ({X} critical, {Y} warnings, {Z} suggestions) on branch `{branch}`.
    > Post to PR #{ID}? [y/n]
@@ -449,13 +449,13 @@ Do not run any Bitbucket posting scripts until the user confirms **y**.
 
 ---
 
-### Step 3 — Sync Jira card status (idempotent, soft-fails)
+### Step 10 — Sync Jira card status (idempotent, soft-fails)
 
 After all the comment-state work in Steps 0.5 / 0.6 / 2 is done, transition the linked Jira card based on the **current state of the PR** — not just what this run produced. A clean diff or a fully-addressed PR should move the card back to `Code Review`; remaining open findings should move it to `Failed Code Review`.
 
 1. **Compute `has_open_findings`** — `true` if any of:
    - This run posted ≥1 new finding (and the user said `y`).
-   - There are pre-existing open findings from prior runs that weren't marked resolved this run (i.e. `check_resolved.py`'s output minus what Step 0.5 just resolved).
+   - There are pre-existing open findings from prior runs that weren't marked resolved this run (i.e. `check_resolved.py`'s output minus what Step 5 just resolved).
    - **Dismissed findings do NOT count as open** — they're explicit accepts.
 
    Otherwise → `false` (clean PR, or all findings now resolved/dismissed).
@@ -480,7 +480,7 @@ After all the comment-state work in Steps 0.5 / 0.6 / 2 is done, transition the 
 
 ---
 
-### Step 4 — Learning summary (private — author only, never posted)
+### Step 11 — Learning summary (private — author only, never posted)
 
 After the review is posted (or skipped), generate a short learning summary for the developer who ran the skill. This is a **private artefact** — it exists to help the author stay sharp while the bot does the review work. It must **never** appear on Bitbucket, never be folded into the disclaimer, never be attached to a finding comment, never be emailed, never be exposed in any channel that another person sees.
 
@@ -669,7 +669,7 @@ Each `.sh` script below has a matching `.ps1` Windows variant (same name, same a
 - **`branch_summary.sh [base]`** — one-glance overview of what changed vs `origin/develop`.
 - **`scan_diff.py [--base REF] [--no-snippets]`** — pre-pass pattern scanner. Only scans `+` lines. False positives filtered by the agent.
 - **`post_review.sh`** — posts the compiled review as inline Bitbucket PR comments. Reads findings from a JSON file path (first arg, preferred) or stdin. Requires `BITBUCKET_EMAIL` and `BITBUCKET_API_TOKEN` env vars.
-- **`check_replies.py`** — prints a JSON array of open findings whose thread ends with an unanswered developer reply (see Step 0.7). Empty `[]` when nothing awaits a response.
+- **`check_replies.py`** — prints a JSON array of open findings whose thread ends with an unanswered developer reply (see Step 7). Empty `[]` when nothing awaits a response.
 - **`post_reply.py --parent-id=<ID>`** — posts a threaded reply (body on stdin) under a PR comment and tags it with a hidden `ai-review:reply` marker so the bot won't answer its own reply.
 - **`setup_target.sh --branch=<name>|--pr=<N>`** — fetches a branch and creates a detached git worktree for reviewing without checkout. Writes `.ai-review/target.json` inside the worktree. Prints the worktree path to stdout.
 - **`cleanup_target.sh <worktree-path>`** — removes a worktree created by `setup_target.sh`.
