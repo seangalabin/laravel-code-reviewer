@@ -22,7 +22,7 @@ Controllers are HTTP adapters only. They must:
 - Return an API Resource or a paginated collection Resource
 
 Controllers must NOT:
-- Contain business logic (conditionals, calculations, multi-step workflows)
+- Contain **non-trivial branching or calculation that decides a business outcome** — multi-step workflows, business rules, domain math — 🟡 Warning. Do **not** flag guard clauses / route-state checks (`if (! $order) abort(404)`), null/existence checks, presentational branching (`$class = $active ? 'on' : 'off'`), or defaulting a request param (`$page = $request->page ?? 1`).
 - Issue Eloquent queries or call Model static methods directly — 🟡 Warning
 - Call `$request->validate(...)` inline — use a `FormRequest` — 🟡 Warning
 - Contain `if ($user->role === ...)` or any manual authorization — use Policies/Gates — 🟡 Warning
@@ -309,7 +309,7 @@ if ($user->role === Role::Admin) { ... }
 
 #### 2j. Boolean flag arguments
 
-A boolean literal passed at a call site (`$service->generate($data, true, false)`) is unreadable — the reader can't tell what `true` means without opening the signature. 🔵 Suggestion. Prefer two intention-revealing methods, a named enum, or (last resort) a named argument (`generate($data, force: true)`). Judgement rule — a single, obvious boolean on a well-named method is acceptable.
+A boolean literal passed at a call site (`$service->generate($data, true, false)`) is unreadable — the reader can't tell what `true` means without opening the signature. 🔵 Suggestion. Prefer two intention-revealing methods, a named enum, or (last resort) a named argument (`generate($data, force: true)`). Judgement rule — a single, obvious boolean on a well-named method is acceptable. When the call is into a **framework/vendor method the author can't change** (`->paginate(15, ['*'], 'page', false)`), suggest only a **named argument** — not splitting or an enum.
 
 #### 2k. Long parameter lists
 
@@ -363,7 +363,7 @@ public function applyGstToLineTotals(array $lineItems): array {
 A comment should explain **why** (a non-obvious constraint, a workaround, a business/regulatory reason), not **what** the code already says. The first fix for unclear code is a clearer name or an extracted method — not a comment. Flag three things:
 
 - **Redundant / obvious comments** that merely restate the code — `$i++; // increment i`, `// loop over users`, `// return the result`. Delete them; they add noise and drift out of date.
-- **Commented-out code** left in the diff — delete it. Git history preserves anything you might want back; dead code in the file is just clutter.
+- **Commented-out code this change added** — delete it. Git history preserves anything you might want back; dead code in the file is just clutter. (Only flag commented-out code on the diff's added lines — don't flag pre-existing commented code sitting on a context line.)
 - **A genuinely hard-to-follow block with no explanatory comment** — when logic is unavoidably dense (a tricky algorithm, a non-obvious edge-case guard, a deliberate deviation from the obvious approach), a short *why* comment is warranted. Suggest adding one, or refactoring so it isn't needed.
 
 ```php
@@ -446,7 +446,7 @@ $this->authorize('update', $user);
 Gate::authorize('update-user', $user);
 ```
 
-Every `FormRequest::authorize()` that unconditionally returns `true` without a comment explaining why (e.g., genuinely public endpoint) is 🔵 Suggestion.
+A `FormRequest::authorize()` that unconditionally returns `true` without a comment explaining why is 🔵 Suggestion — but only for a request that plausibly needs authorization (mutating an owned resource, an admin action). Don't flag it on a genuinely public, read-only endpoint. A short comment (`// public endpoint`) is a valid escape hatch.
 
 **Missing auth guard on a newly-added route.** When the diff **adds** a mutating route (`POST` / `PUT` / `PATCH` / `DELETE`) that is not inside an authenticated/authorized route group and carries no `->middleware(...)` / `->can(...)`, flag it 🟡 — confirm-not-accuse: "confirm authz is applied (route group, controller `__construct`, or a Policy) or this endpoint is intentionally public." Only fire on a **route registration** the diff adds; do **not** flag a bare controller-method addition (its guard usually lives in the route group or constructor you may not see).
 
@@ -468,16 +468,20 @@ $user->update($request->safe()->only(['name', 'email', 'phone']));
 
 #### 3c. SQL injection in raw queries
 
-🔴 Critical:
+🔴 Critical — **a variable interpolated into any raw-SQL sink**: `whereRaw` / `orderByRaw` / `havingRaw` / `groupByRaw` / `selectRaw`, `DB::raw()`, `DB::statement()`, and `DB::select/update/delete($sql)`. The trigger is string **interpolation**; a static string or an already-parameterised call does not fire.
 
 ```php
-// BAD — injectable
+// BAD — value injected
 ->whereRaw("name = '$name'")
 DB::statement("DELETE FROM users WHERE id = $id")
+// BAD — column/direction injected (bindings can't fix this one)
+->orderByRaw("$column $direction")
 
-// GOOD
+// GOOD — bind values with ?
 ->whereRaw('name = ?', [$name])
 ```
+
+Values bind with `?` placeholders. **Identifiers (column/table/direction) cannot be bound** — validate them against an allow-list before interpolating; never pass a request value straight into `orderByRaw`.
 
 #### 3d. Insecure direct object reference (IDOR)
 
@@ -505,14 +509,20 @@ $order = auth()->user()->orders()->findOrFail($request->order_id);
 // BAD
 'photo' => 'required|file'
 
-// GOOD — either form is acceptable
+// GOOD — string rules
 'photo' => 'required|image|mimes:jpeg,png,webp|max:5120'
 'photo' => 'required|image|mimetypes:image/jpeg,image/png|max:5120'
+
+// GOOD — fluent File rule objects satisfy both controls despite no mimes:/max: tokens
+'photo' => ['required', File::image()->max(5 * 1024)],
+'doc'   => ['required', File::types(['pdf','docx'])->max(10 * 1024)],
 ```
+
+Don't assume the controls are absent when the rules come from a shared/base FormRequest or a custom `Rule` object you can't see — confirm rather than assert. Note: bare `image` alone is **not** a sufficient type allow-list (it permits SVG, an XSS vector) — require `mimes:`/`mimetypes:` or `File::types()`.
 
 #### 3f. Sensitive data leaks
 
-- `{!! $var !!}` in Blade or `v-html` in Vue where value could be user-supplied — 🔴 Critical.
+- `{!! $var !!}` in Blade or `v-html` in Vue where value could be user-supplied — 🔴 Critical (also §12, §15c). Carve-out: raw echoes of clearly trusted, constant, or server-generated HTML (`{!! Form::open() !!}`, known-sanitizer output, config-constant markup) are not findings. When the value's provenance is unclear, still flag 🔴 but confirm-not-accuse ("confirm `$var` is sanitized/trusted HTML").
 - API Resources that return `password`, `remember_token`, `api_token`, or raw pivot data — 🟡 Warning.
 - `Log::info()` / `Log::error()` that logs a full request body, password, or token — 🟡 Warning.
 
@@ -531,7 +541,7 @@ $key = config('services.stripe.secret');
 #### 3h. Global forbidden patterns (🟡 Warning in all files)
 
 - `dd()`, `dump()`, `die()` — forbidden in committed code.
-- `error_log()`, `var_dump()`, `print_r()`, `echo` used for logging — use `Log::info()` / `Log::error()` / `Log::debug()`.
+- `error_log()`, `var_dump()`, `print_r()`, `echo` used for logging — use `Log::info()` / `Log::error()` / `Log::debug()`. Exempt `print_r($x, true)` / `var_export($x, true)` whose string result is passed into a real `Log::*()` call. (`echo` in a Console Command is §1f, not this.)
 - `$_SERVER`, `$_ENV`, `$_GET`, `$_POST`, `$_REQUEST` — use Laravel helpers (`request()`, `config()`).
 - Magic numbers/strings that belong in `config/` or an enum — see §2i.
 
@@ -580,7 +590,7 @@ return new UserResource($user);
 return UserResource::collection($users);
 ```
 
-Inside an API Resource's `toArray()`: no DB queries, no Service calls — 🟡 Warning (Resources transform already-loaded data only). Use `$this->whenLoaded('relation')` for related models — omitting it causes N+1 queries when the relation was not eager-loaded — 🟡 Warning (same gravity as §4b).
+Inside an API Resource's `toArray()`: no DB queries, no Service calls — 🟡 Warning (Resources transform already-loaded data only). Use `$this->whenLoaded('relation')` for a related model **that may not be eager-loaded** — accessing it directly then triggers a lazy query — 🟡 Warning. If the relation is guaranteed loaded (the controller/`$with` always eager-loads it) `whenLoaded` isn't required; when you can't tell the load-state from the change, treat a bare relation access as 🔵, not 🟡.
 
 FormRequest validation: flag raw string rules where a `Rule` object would be safer (e.g. `Rule::unique()`, `Rule::exists()`) — 🔵 Suggestion.
 
@@ -651,13 +661,11 @@ Repeated query chains belong in a named local scope. Flag duplicated filter chai
 
 #### 4e. Jobs, Events, Listeners, Observers — when to require them
 
-Flag as 🟡 Warning when inline Controller/Service code should be extracted:
+**Use a Job — 🟡 Warning** when the change does slow work **synchronously in a request path**, anchored to observable signals (not an unmeasurable time threshold): a synchronous `Mail::send()` / `Notification::send()`, inline PDF/image/report generation, or a loop making external HTTP calls. A single inline `Http::` call — flag only when it's fire-and-forget (the response is unused). **Exempt** Mailables/Notifications that implement `ShouldQueue`, and `Mail::queue()` / `->queue()`. "Needs retry" is a soft cue, not a trigger on its own.
 
-**Use a Job when:** work takes >~500ms, needs retry logic, or blocks the web request (email, PDF, external API calls).
+**Use an Event + Listener — 🔵 Suggestion** when one action triggers multiple unrelated side effects (altitude improvement, not a defect).
 
-**Use an Event + Listener when:** one action triggers multiple unrelated side effects.
-
-**Use an Observer when:** the same Model lifecycle hook is handled in multiple places.
+**Use an Observer — 🔵 Suggestion**, and only on a diff-visible signal: the change adds a **second** handler for the same Model lifecycle hook within the changed file. Don't infer "handled in multiple places" from code you can't see.
 
 ```php
 // BAD — synchronous email blocks the request
@@ -675,7 +683,7 @@ event(new UserRegistered($user));
 
 #### 4g. `DB::transaction()` for multi-write paths (canonical)
 
-Any code path that issues two or more write queries must be wrapped in `DB::transaction()`. A missing transaction on a Service multi-write path is 🟡 Warning — without it, the second write failing leaves the first committed and the dataset in an inconsistent state:
+Two or more writes that **must commit or roll back together** — a parent plus its children, a debit plus its credit — belong in `DB::transaction()`. A missing transaction on such a path is 🟡 Warning: if the second write fails, the first stays committed and related rows are left inconsistent. A single Eloquent call that happens to issue several statements (e.g. `create()` with a `creating` hook) is **one logical write** — don't flag it; and genuinely independent writes with no consistency relationship don't need wrapping. When in doubt — if a partial failure would leave related rows inconsistent — still flag 🟡.
 
 ```php
 // GOOD
@@ -699,7 +707,7 @@ DB::transaction(function () use ($data, $items) {
 
 ### 6. Enums (`app/Enums/`)
 
-Business logic beyond label, color, or helper methods on the enum itself is 🟡 Warning. Enums are value descriptors only.
+Enums are value descriptors. Pure value-derivation on the enum is fine and encouraged — labels, colors, `canTransitionTo()`, grouping, `values()` / `labels()`, mapping helpers. Flag 🟡 Warning **only** side-effecting or cross-layer logic on the enum: a DB query, HTTP / `Auth` / `session` / `request` access, dispatching an event or job, or persistence. Those belong in a Service, not on the enum.
 
 ---
 
@@ -718,17 +726,17 @@ Business logic beyond label, color, or helper methods on the enum itself is 🟡
 
 - Multiple Eloquent writes without `DB::transaction()` — see §4g (canonical rule, 🟡 Warning).
 - Check-then-act race conditions (canonical): `->exists()` + `->create()` → use `firstOrCreate()` / `updateOrCreate()` — 🟡 Warning.
-- Missing `->lockForUpdate()` on rows read-then-modified — 🟡 Warning.
+- Read-modify-write on lost-update-prone data (balances, counters, inventory, seat/quota — illustrative) without `->lockForUpdate()` inside a transaction — 🟡 Warning. For a plain counter bump prefer an atomic `->increment()` / `->decrement()`; a *conditional* update still needs the lock or a DB constraint.
 
 ---
 
 ### 9. Performance
 
-- **N+1** — §4b. Always 🟡 Warning.
-- **`->get()` then `->isEmpty()`** — use `->exists()` or `->count()` on the query builder.
+- **N+1** — §4b (🟡 Warning).
+- **`->get()` then `->isEmpty()` / `->count()`** — 🔵 Suggestion — use `->exists()` / `->count()` on the builder **only when the result is used solely for the emptiness test and then discarded**. If the collection is iterated or returned afterwards, `->get()` + `->isEmpty()` is correct — don't flag it (swapping would force a redundant re-query).
 - **`Http::` without `->timeout(N)`** — 🟡 Warning. Without a timeout the request can hang indefinitely under network issues, blocking the worker/request thread. Suggest `->timeout(30)`.
-- **Full-table loads** — `Model::all()` on unbounded tables; use `->chunk()` or `->cursor()`.
-- **Unnecessary re-fetch** — re-querying something already in scope.
+- **Full-table loads** — `Model::all()` on an **unbounded, growing** table (users, orders, events, logs) — 🟡 Warning; use `->chunk()` / `->cursor()` / pagination. Don't flag `all()` on an obviously small reference table (roles, statuses, countries, config) — absence of a growth signal is not a finding.
+- **Unnecessary re-fetch** — re-querying something already in scope — 🔵 Suggestion.
 
 ---
 
@@ -742,7 +750,7 @@ Business logic beyond label, color, or helper methods on the enum itself is 🟡
 
 ### 11. Migrations (`database/migrations/`)
 
-- **Non-null column added to an existing table without a default value or a two-step migration** (add nullable → backfill → make non-null) — 🔴 Critical. This will lock the table on large datasets.
+- **Non-null column added to an *existing* table without a default value or a two-step migration** (add nullable → backfill → make non-null) — 🔴 Critical. This will lock the table / fail on rows already present. Does **not** apply to columns inside a `Schema::create` (or a table created earlier in the same PR) — a brand-new table has no rows to break.
 - **Model class referenced inside a migration** — 🔵 Suggestion. Prefer `DB::` or raw table names so the migration doesn't break if the Model is later renamed.
 - **No `down()` method, or `down()` is empty** — 🔵 Suggestion. Rollback must be possible.
 - **Missing index on a foreign key column** — 🔵 Suggestion.
