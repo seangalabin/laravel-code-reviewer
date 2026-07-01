@@ -462,6 +462,8 @@ DTOs live under `app/Data/`. They must be pure value containers — no DB writes
 
 Every Controller method that accepts user input must type-hint a dedicated `FormRequest` subclass. Inline `$request->validate([...])` in a Controller or Service is 🟡 Warning (this is the canonical rule for inline validation — the Controller case is also listed in §1a's checklist). A `FormRequest` with an empty `rules()` method is also 🟡 Warning.
 
+Use a `Rule` object where a string rule can't express the constraint — `Rule::unique()->ignore()` / `->where()`, or a dynamic `Rule::in([...])` — 🔵 Suggestion. Plain string rules (`required|email`, unqualified `unique:`/`exists:`) are the default and are **not** flaggable.
+
 #### 1f. Console Commands
 
 `handle()` in a Console Command is a thin CLI adapter — it must delegate to a Service or Repository. Direct Eloquent queries or business logic inside `handle()` is 🟡 Warning. Use `$this->info()` / `$this->error()` for output (not `echo`) — 🔵 Suggestion.
@@ -505,7 +507,7 @@ Suggest OOP structure **only when the code shows a concrete need** — all 🔵 
 
 #### 2a. `declare(strict_types=1)`
 
-All new PHP files under `app/` must open with `declare(strict_types=1)` as the first statement after `<?php`. Flag as 🔵 Suggestion.
+All new PHP files under `app/` must open with `declare(strict_types=1)` as the first statement after `<?php`. Flag as 🔵 Suggestion. The `app/` scope is deliberate — migrations, config, and route files are out of scope.
 
 ```php
 <?php
@@ -527,6 +529,7 @@ namespace App\Http\Controllers;
 - Eloquent relation types: `BelongsTo`, `HasMany`, `MorphMany`, etc. on Model relationship methods
 
 **Exemptions:**
+- `__construct` / `__destruct` cannot declare a return type — don't flag one as missing.
 - Closures passed to Pest's `it()`, `test()`, `describe()`, `beforeEach()` do not need return types.
 - Magic methods (`__get`, `__set`, `__call`) follow PHP's required signature.
 
@@ -571,13 +574,15 @@ if (! $user->isActive()) {
     return $this->grant();
 }
 
-// GOOD — positive if, branches swapped
+// GOOD — positive if; and since the branch returns, drop the else entirely (§2f)
 if ($user->isActive()) {
     return $this->grant();
-} else {
-    return $this->reject();
 }
+
+return $this->reject();
 ```
+
+**Precedence:** when the `if` branch already exits (`return`/`throw`/`continue`/`break`), prefer §2f — drop the `else` — over swapping-and-keeping it; raise §2f, not §2e, and emit one combined finding. (§2g's deep-nesting rule only applies at ≥3 levels, so it doesn't compete here.)
 
 **Strictly scoped — do NOT flag:**
 - **Guard clauses / early returns with no `else`** — `if (! $user) { return; }`, `if (! $ok) { abort(404); }`. These are the *preferred* idiom (they avoid nesting); a negation here is correct and good. The rule applies **only** when a real `else` (or `elseif`) branch exists.
@@ -911,6 +916,8 @@ $stripe = new StripeClient(config('services.stripe.secret'));
 
 **When you flag a real (non-placeholder) secret, say so explicitly:** the value must be **rotated/revoked**, not just deleted — it remains exposed in git history. Note that in the finding.
 
+This applies equally to secrets committed in **front-end/JS/Vue or config assets** — a real secret shipped in the browser bundle is *worse* (publicly served), so don't soften it for being client-side. But do **not** flag intentionally-public values: framework-exposed env (`VITE_*`, `NEXT_PUBLIC_*`), publishable keys, or public JWKS. A bare JWT (`eyJ…`) is a finding only when it's a long-lived or signing token, not a short-lived example.
+
 **Exempt — do NOT flag:**
 - Obvious dummy/test values in tests, factories, and seeders (`'password'`, `bcrypt('password')`, `'secret'`, `'test-token'`).
 - Placeholders and examples (`.env.example`, `'your-api-key-here'`, `'xxxxx'`).
@@ -936,8 +943,6 @@ return UserResource::collection($users);
 ```
 
 Inside an API Resource's `toArray()`: no DB queries, no Service calls — 🟡 Warning (Resources transform already-loaded data only). Use `$this->whenLoaded('relation')` for a related model **that may not be eager-loaded** — accessing it directly then triggers a lazy query — 🟡 Warning. If the relation is guaranteed loaded (the controller/`$with` always eager-loads it) `whenLoaded` isn't required; when you can't tell the load-state from the change, treat a bare relation access as 🔵, not 🟡.
-
-FormRequest validation: flag raw string rules where a `Rule` object would be safer (e.g. `Rule::unique()`, `Rule::exists()`) — 🔵 Suggestion.
 
 #### 4b. Eloquent N+1 queries
 
@@ -1060,6 +1065,9 @@ Enums are value descriptors. Pure value-derivation on the enum is fine and encou
 - A value the **removed** lines null-checked, bounds-checked, or early-returned on is now used unchecked in the **added** lines — 🔴 if it can crash or corrupt, else 🟡. (Anchor to the removed guard; don't speculate about guards you can't see.)
 - Semantically wrong HTTP status — `200` on a not-found or error path — 🟡. (The `201`-vs-`200`-on-create convention lives in §14.)
 - Return type mismatches across code paths — 🟡.
+- Loose comparison on identity-bearing values — `in_array()` / `array_search()` without strict `true`, or `==` / `!=` on a user- or DB-derived id, token, or hash — 🟡 (type-juggling / auth-bypass risk). Don't flag ordinary loose `==` on plainly same-typed values.
+- Non-exhaustive `match` / `switch` over an enum with no `default` arm — 🟡 (a new case throws `UnhandledMatchError`; 🔴 on a hot path). Don't flag an already-exhaustive match.
+- Native float arithmetic on currency/money values — 🔵 (use integer cents or a decimal type).
 
 ---
 
@@ -1068,6 +1076,7 @@ Enums are value descriptors. Pure value-derivation on the enum is fine and encou
 - Multiple Eloquent writes without `DB::transaction()` — see §4g (canonical rule, 🟡 Warning).
 - Check-then-act race conditions (canonical): `->exists()` + `->create()` → use `firstOrCreate()` / `updateOrCreate()` — 🟡 Warning.
 - Read-modify-write on lost-update-prone data (balances, counters, inventory, seat/quota — illustrative) without `->lockForUpdate()` inside a transaction — 🟡 Warning. For a plain counter bump prefer an atomic `->increment()` / `->decrement()`; a *conditional* update still needs the lock or a DB constraint.
+- A queued job / event dispatched **inside** a `DB::transaction()` closure without `afterCommit` (or the queue's `after_commit` config) — 🟡 Warning. The worker can pick up the job before the transaction commits and read stale/absent rows; use `->afterCommit()` or dispatch after the closure.
 
 ---
 
@@ -1076,7 +1085,8 @@ Enums are value descriptors. Pure value-derivation on the enum is fine and encou
 - **N+1** — §4b (🟡 Warning).
 - **`->get()` then `->isEmpty()` / `->count()`** — 🔵 Suggestion — use `->exists()` / `->count()` on the builder **only when the result is used solely for the emptiness test and then discarded**. If the collection is iterated or returned afterwards, `->get()` + `->isEmpty()` is correct — don't flag it (swapping would force a redundant re-query).
 - **`Http::` without `->timeout(N)`** — 🟡 Warning. Without a timeout the request can hang indefinitely under network issues, blocking the worker/request thread. Suggest `->timeout(30)`.
-- **Full-table loads** — `Model::all()` on an **unbounded, growing** table (users, orders, events, logs) — 🟡 Warning; use `->chunk()` / `->cursor()` / pagination. Don't flag `all()` on an obviously small reference table (roles, statuses, countries, config) — absence of a growth signal is not a finding.
+- **Full-table loads** — `Model::all()`, or an unbounded `->get()` / `->pluck()` with no `where` / `limit` / pagination, on an **unbounded, growing** table (users, orders, events, logs) — 🟡 Warning; use `->chunk()` / `->cursor()` / pagination. Don't flag it on an obviously small reference table (roles, statuses, countries, config) — absence of a growth signal is not a finding.
+- **Per-row writes in a loop** — a `save()` / `update()` / `delete()` executed once per iteration where a single mass `update()` / `delete()` / `upsert()` would do — 🟡 Warning. Exempt when each row genuinely needs its own logic or must fire model events.
 - **Unnecessary re-fetch** — re-querying something already in scope — 🔵 Suggestion.
 
 ---
@@ -1084,8 +1094,9 @@ Enums are value descriptors. Pure value-derivation on the enum is fine and encou
 ### 10. Error Handling & Resilience
 
 - External HTTP calls with no `$response->successful()` check or try/catch — 🟡 Warning.
-- Swallowed exceptions: bare `catch (\Exception $e) {}` — 🔵 Suggestion.
-- Missing fallback when a collection is empty but the next line assumes at least one element.
+- A `catch` that neither logs, rethrows, nor handles the error — silent swallowing — 🟡 Warning. A catch that logs or genuinely handles is fine even if broad.
+- Missing fallback when a collection is empty but the next line assumes at least one element — 🟡 Warning.
+- Decoding an external response with `->json()` / `json_decode()` and then indexing or iterating it without handling a malformed or empty body — 🟡 Warning (both return `null`, so `->json()['data']` then crashes).
 
 ---
 
@@ -1095,6 +1106,8 @@ Enums are value descriptors. Pure value-derivation on the enum is fine and encou
 - **Model class referenced inside a migration** — 🔵 Suggestion. Prefer `DB::` or raw table names so the migration doesn't break if the Model is later renamed.
 - **No `down()` method, or `down()` is empty** — 🔵 Suggestion. Rollback must be possible.
 - **Missing index on a foreign key column** — 🔵 Suggestion.
+- **Dropping a column/table or renaming a column on an existing table** (`dropColumn`, `dropTable`/`drop`, `renameColumn`) — 🟡 Warning. `down()` can recreate the structure but not the rows; confirm the data is expendable and the deploy is sequenced.
+- **Narrowing a column type** — shortening a length, `text`→`string`, `bigInteger`→`integer`, cutting decimal precision — 🟡 Warning (silent truncation / mid-deploy failure on existing data).
 
 ```php
 // BAD — will lock table during deploy on large datasets
@@ -1113,10 +1126,12 @@ $table->string('phone')->nullable()->after('email');
 - **Missing `:key` in `v-for`** — 🟡 Warning.
 - **`:key="index"`** in a list that can reorder — 🔵 Suggestion.
 - **`v-if` + `v-for` on the same element** — 🔵 Suggestion.
-- **Direct Vuex state mutation** (`this.$store.state.x = y`) — 🟡 Warning.
+- **Bypassing the store's defined action to write state** — a Vuex `state.x = y` mutation outside a mutation, or a Pinia store patched directly where an action exists — 🟡 Warning.
 - **`v-html` with unsanitised input** — 🔴 Critical (also §3f, §15c).
-- **`addEventListener` without `removeEventListener` in `beforeUnmount`** — 🔵 Suggestion.
-- **Direct DOM manipulation** (`document.querySelector`) — 🔵 Suggestion; use `this.$refs`.
+- **Mutating a prop** inside a component (`this.prop = …` / assigning to a `defineProps` value) — 🟡 Warning; emit an event or use a local copy.
+- **`addEventListener` without a matching `removeEventListener` in `beforeUnmount` / `onUnmounted`** — 🔵 Suggestion.
+- **Losing reactivity by destructuring a `reactive()` object** (`const { x } = reactive(...)`) — 🔵 Suggestion; use `toRefs()` or access via the object.
+- **Direct DOM manipulation** (`document.querySelector`) — 🔵 Suggestion; use a template ref.
 - **Axios without error handling** — 🟡 Warning.
 - **Missing loading/error state** for async operations — 🔵 Suggestion.
 - **Unscoped `<style>`** — 🔵 Suggestion.
@@ -1133,25 +1148,28 @@ $table->string('phone')->nullable()->after('email');
 
 #### Test quality
 
-- **Outbound HTTP in a test without `Http::fake()` or `fakeHttpResponse()`** — 🟡 Warning. Stray requests make tests flaky and environment-dependent.
+- **Outbound HTTP in a test without `Http::fake()`** (or the project's HTTP-fake helper) — 🟡 Warning. Stray requests make tests flaky and environment-dependent.
 - **Testing a private/protected method via reflection** — 🟡 Warning (test observable behaviour through the public API).
 - **Test with no assertions** — 🔵 Suggestion (passes vacuously).
+- **Tautological / constant assertions** — `assertTrue(true)`, `assertEquals($x, $x)` — 🔵 Suggestion (proves nothing).
+- **Unconditional `markTestSkipped()` / `markTestIncomplete()`** with no reason — 🔵 Suggestion (a permanently green skip).
 - **`assertStatus(200)` with no body assertion** — 🔵 Suggestion.
-- **DB records created without `Tests\RefreshDatabase`** (use the project trait, not Laravel's built-in) — 🔵 Suggestion (risks test pollution).
-- **`Mockery::mock()` used directly** instead of `mock(ClassName::class)` from `tests/Helpers.php` — 🔵 Suggestion (plain Mockery doesn't bind into the container).
-- **Controller test that doesn't call `signIn()`** on a protected route — 🔵 Suggestion.
+- **DB records created without `RefreshDatabase`** (or the project's equivalent trait) — 🔵 Suggestion (risks test pollution).
+- **`Mockery::mock()` used directly** instead of Laravel's `mock(ClassName::class)` — 🔵 Suggestion (plain Mockery doesn't bind into the container).
+- **Protected-route test with no authenticated user** — no `actingAs()` / `Sanctum::actingAs()` (or a project `signIn()` helper if present) — 🔵 Suggestion.
 - **No unauthenticated path test** for a protected route — 🔵 Suggestion.
 
-**Feature test vs Unit test:** Feature tests when the path touches HTTP, database, or external services. Unit tests for pure logic in a Service, DTO, or utility. A test that should be a Feature test written as a Unit test with a mocked repository may mask a real query bug.
+**Feature test vs Unit test:** feature tests when the path touches HTTP, database, or external services; unit tests for pure logic in a Service, DTO, or utility. If flagged, 🔵 Suggestion: a unit test that mocks the repository for logic that really exercises a query can hide a query bug — a feature test would catch it.
 
 ---
 
 ### 14. API Design
 
 - `POST` creating a resource returning `200` instead of `201` — 🔵 Suggestion.
-- Collection endpoint with no pagination on an unbounded table — 🟡 Warning.
+- A `GET` route whose handler mutates state — persists, updates, deletes, or dispatches a job (a `store`/`update`/`destroy`-style action behind `GET`) — 🟡 Warning. GET must be safe/idempotent; it's CSRF-exempt and prefetch/cache-unsafe. Only flag when the mutation is observable at the route/handler.
+- Collection endpoint returning the full result set with no `paginate()` / `limit` — 🔵 Suggestion ("add pagination unless the set is bounded"); escalate to 🟡 on a concrete unbounded-growth signal (results filtered/ordered by user input, or an append-only/log/comment model). (Perf angle in §9.)
 - API Resource over-exposing internal design detail — `created_at`, pivot columns, internal auto-increment IDs — 🟡 Warning. (Credential/session fields like `password`/`remember_token` are the 🔴 case in §3f, not here.)
-- Inconsistent response envelope shape — 🔵 Suggestion.
+- A new/changed Resource whose envelope shape (`data` / `meta` / `errors` wrapping) differs from a **sibling Resource also in the diff** — 🔵 Suggestion. Don't guess the canonical envelope from unchanged code.
 
 ---
 
@@ -1190,7 +1208,7 @@ Same rule as §4b — accessing a relation inside a loop without prior eager loa
 #### 15c. XSS — beyond `{!! !!}`
 
 - `{!! $var !!}` with user-supplied content — 🔴 Critical (also §3f).
-- `href="{{ $url }}"` or `src="{{ $url }}"` where the value is a user-supplied URL — 🟡 Warning. `{{ }}` escapes HTML but `javascript:foo()` still executes. Validate the scheme or whitelist URLs.
+- `href="{{ $url }}"` or `src="{{ $url }}"` where the value is a user-supplied URL — 🟡 Warning. `{{ }}` escapes HTML but `javascript:foo()` still executes. Validate the scheme or whitelist URLs. Do not flag framework-derived URLs (`route()`, `asset()`, `url()`, config values).
 - Inline JS event handlers carrying user data (`onclick="doThing('{{ $msg }}')"`) — 🟡 Warning. Use unobtrusive JS. To hand data to JS safely, use `Js::from($msg)` **inside a `<script>` block**, or an HTML-escaped data attribute (`data-msg="{{ json_encode($msg) }}"`, which `{{ }}` escapes). Do **not** put raw `@json($msg)` in an HTML attribute — `@json` is not attribute-escaped, so `"` in the value breaks out of the attribute and is itself an XSS vector.
 - `style="{{ $userValue }}"` — 🔵 Suggestion. Style injection can leak data (`background-image: url(...)`) or break layout.
 
