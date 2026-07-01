@@ -371,6 +371,8 @@ The repo enforces a **Controller → Service → Repository → Model** call gra
 
 Every violation of the layering rules below is at minimum 🟡 Warning.
 
+When one changed line matches several §1/§4 rules at once (e.g. an inline Eloquent query in a controller trips §1a, §1c, and §4b), post a **single comment anchored to the outermost layering violation**, folding in any distinct remedy (e.g. §4b's eager-load fix) rather than emitting three overlapping findings.
+
 #### 1a. Controller responsibilities
 
 Controllers are HTTP adapters only. They must:
@@ -382,8 +384,8 @@ Controllers must NOT:
 - Contain **non-trivial branching or calculation that decides a business outcome** — multi-step workflows, business rules, domain math — 🟡 Warning. Do **not** flag guard clauses / route-state checks (`if (! $order) abort(404)`), null/existence checks, presentational branching (`$class = $active ? 'on' : 'off'`), or defaulting a request param (`$page = $request->page ?? 1`).
 - Issue Eloquent queries or call Model static methods directly — 🟡 Warning
 - Call `$request->validate(...)` inline — use a `FormRequest` — 🟡 Warning
-- Contain `if ($user->role === ...)` or any manual authorization — use Policies/Gates — 🟡 Warning
-- Return `$model->toArray()`, `response()->json($model)`, or a raw array — use an API Resource — 🟡 Warning
+- Contain manual authorization (e.g. `if ($user->role === ...)`) — use Policies/Gates; see §3a (canonical) — 🟡 Warning
+- Return `$model->toArray()`, `response()->json($model)`, or a raw array instead of an API Resource; see §4a (canonical) — 🟡 Warning
 - Have a constructor injecting more than 5 dependencies — 🔵 Suggestion (God controller smell)
 
 ```php
@@ -412,8 +414,8 @@ Controller method length: flag at **40+ lines** as 🔵 Suggestion (suggest extr
 Services own all business logic. They must:
 - Accept plain values or typed DTOs — never a `Request` object — 🟡 Warning
 - Delegate all Eloquent/query work to a Repository — 🟡 Warning
-- Be HTTP-agnostic: no `auth()`, `Auth::`, `redirect()`, `response()`, `session()` — 🟡 Warning
-- Be injectable via the service container — `new ServiceClass()` inside another Service is 🔵 Suggestion
+- Be HTTP-agnostic: no `auth()`, `request()`, `Auth::`, `redirect()`, `response()`, `session()` — 🟡 Warning (canonical list of HTTP helpers banned in Services)
+- Be injectable via the service container — `new ServiceClass()` inside another Service — see §4f (canonical)
 
 Service method length: flag at **30+ lines** as 🔵 Suggestion.
 
@@ -423,26 +425,13 @@ Repositories own all Eloquent/query logic. They must:
 - Return typed objects (`Model`, `Collection`, `?Model`) — returning a plain `array` is 🔵 Suggestion
 - Contain no business logic, no HTTP concerns — 🟡 Warning
 - Use Eloquent scopes for reusable filter chains — a very long query chain where a named scope would help readability is 🔵 Suggestion
-- Avoid eager-loading constraints inside relationship methods — those belong in the Repository query, not on the Model
+- Avoid eager-loading constraints inside relationship methods — those belong in the Repository query, not on the Model; see §5 (canonical)
 
 **Repository granularity — one per aggregate root, not one per Model.** A Repository owns an entire domain aggregate. Models that exist only as children of another aggregate root (data / details / items / attachments / metadata rows with a FK to a parent and no independent lifecycle outside it) belong inside the parent's Repository — do **not** create a separate Repository for them.
 
 - Adding a new `XYRepository` when `XRepository` already exists, and `XY` is a child of `X` (FK to `X`, no standalone use) — 🔵 Suggestion. The queries belong in `XRepository`; this is a structural refactor, not a runtime bug.
 - A Service or Controller querying a child Model directly (via the Model facade or bypassing the parent Repository entirely) when the parent Repository exists — 🟡 Warning. This is a real layering violation — add the method to the parent Repository instead.
-- Naming-heuristic guidance for the reviewer: if a new Repository's name shares a prefix with an existing Repository (e.g. `Appraisal`/`AppraisalData`, `Order`/`OrderItem`, `Property`/`PropertyMedia`), consider whether it should be folded. Apply judgement — many shared-prefix pairs are genuinely independent (`Product`/`ProductCategory`, `Payment`/`PaymentMethod`, `User`/`UserGroup`).
-
-```php
-// BAD — fragments the Appraisal aggregate across two repositories
-class AppraisalDataRepository {
-    public function forAppraisal(int $appraisalId): Collection { ... }
-}
-
-// GOOD — AppraisalData lives on the Appraisal aggregate
-class AppraisalRepository {
-    public function dataFor(int $appraisalId): Collection { ... }
-    public function withData(int $appraisalId): ?Appraisal { ... }
-}
-```
+- Naming-heuristic guidance for the reviewer: if a new Repository's name shares a prefix with an existing one (e.g. `Appraisal`/`AppraisalData`, `Order`/`OrderItem`), consider folding it — `AppraisalData` queries belong in `AppraisalRepository`, not a new `AppraisalDataRepository`. Apply judgement: many shared-prefix pairs are genuinely independent (`Product`/`ProductCategory`, `Payment`/`PaymentMethod`, `User`/`UserGroup`).
 
 **Exceptions** — a "child" Model gets its own Repository when it is genuinely its own aggregate: it has an independent lifecycle, is referenced from multiple unrelated aggregates, or belongs to its own bounded context (`User`, `Address`, `Tag`, `Currency`).
 
@@ -471,7 +460,7 @@ DTOs live under `app/Data/`. They must be pure value containers — no DB writes
 
 #### 1e. Form Request classes for all validation
 
-Every Controller method that accepts user input must type-hint a dedicated `FormRequest` subclass. Inline `$request->validate([...])` in a Controller or Service is 🟡 Warning. A `FormRequest` with an empty `rules()` method is also 🟡 Warning.
+Every Controller method that accepts user input must type-hint a dedicated `FormRequest` subclass. Inline `$request->validate([...])` in a Controller or Service is 🟡 Warning (this is the canonical rule for inline validation — the Controller case is also listed in §1a's checklist). A `FormRequest` with an empty `rules()` method is also 🟡 Warning.
 
 #### 1f. Console Commands
 
@@ -670,7 +659,7 @@ A boolean literal passed at a call site (`$service->generate($data, true, false)
 
 #### 2k. Long parameter lists
 
-A method/constructor with **more than 5** parameters — 🔵 Suggestion. Group related params into a DTO (see §1d) or a value object. (Distinct from §1a's controller-constructor DI cap, which is about *dependency* count.)
+A method/constructor with **more than 5** parameters — 🔵 Suggestion. Group related params into a DTO (see §1d) or a value object. A controller constructor whose parameters are injected dependencies is judged under §1a's DI cap, **not** here — don't also raise §2k for it.
 
 #### 2l. Double negatives
 
@@ -682,12 +671,12 @@ A negatively-named variable then tested negatively — `$notReady` with `if (! $
 
 #### 2n. Descriptive, meaningful names — 🔵 Suggestion
 
-§2d governs *casing*; this rule governs whether the name actually says what the thing is. A name that is correctly `camelCase` but opaque (`$tmp`, `$d`, `handle2()`) is worth a nudge. It's 🔵 — an opaque-but-honest name is a readability suggestion; a name that actively *misleads* about behaviour is the 🟡 case in §2p. Flag identifiers — variables, properties, parameters, methods — whose name does not convey their role:
+§2d governs *casing*; this rule governs whether the name actually says what the thing is. A name that is correctly `camelCase` but opaque (`$tmp`, `$d`) is worth a nudge. It's 🔵 — an opaque-but-honest name is a readability suggestion; a name that actively *misleads* about behaviour is the 🟡 case in §2p. Flag identifiers — variables, properties, parameters — whose name does not convey their role (**method** names are governed by §2p):
 
 - **Cryptic / single-letter variables** outside the idioms below — `$d`, `$x`, `$a2`, `$str`, `$obj`.
 - **Vague placeholder names** that carry no meaning — `$data`, `$data2`, `$tmp`, `$temp`, `$val`, `$arr`, `$res`, `$info`, `$thing`, `$stuff`, `$foo`. (`$result` is fine when it genuinely *is* the result of the method.) **Judge by role, not spelling:** a short-lived local whose meaning is obvious from the adjacent line — e.g. `$data` passed straight into `Model::create($data)` — is acceptable; don't flag a name the surrounding context already explains.
 - **Unclear abbreviations** that aren't well-known — `$usrRepo` → `$userRepository`, `$calcAmt` → `$calculatedAmount`, `$ctr` → `$counter`.
-- **Vague method names** that don't state what they do — `process()`, `doStuff()`, `doIt()`, `manage()`, `getData()`, `run2()`. Name the action and its subject — `calculateInvoiceTotal()`, `markOrderShipped()`.
+- (Vague/opaque **method** names — `process()`, `doStuff()`, `getData()`, `run2()` — are covered in §2p, not here.)
 
 ```php
 // BAD
@@ -745,7 +734,7 @@ $amount = (int) floor($cents);
 
 #### 2p. Method names are verb phrases — 🔵 Suggestion
 
-A method *does* something, so its name should start with a verb: `calculateTotal()`, `sendInvoice()`, `markAsPaid()`, `syncTags()` — not a bare noun like `total()`, `invoiceData()`, or `tags()` (for a method that performs work). Flag a method whose name is a noun/adjective with no verb as 🔵 Suggestion, suggesting a verb-led rename.
+A method *does* something, so its name should start with a verb: `calculateTotal()`, `sendInvoice()`, `markAsPaid()`, `syncTags()` — not a bare noun like `total()`, `invoiceData()`, or `tags()` (for a method that performs work). Flag a method whose name is a noun/adjective with no verb as 🔵 Suggestion, suggesting a verb-led rename. A **vague/opaque action name** that has a verb but says nothing — `process()`, `doStuff()`, `handle2()`, `getData()`, `manage()` — is worse: 🟡 Warning; name the action and its subject (`calculateInvoiceTotal()`, `markOrderShipped()`).
 
 ```php
 // BAD — noun names for methods that do work
@@ -880,7 +869,7 @@ Don't assume the controls are absent when the rules come from a shared/base Form
 #### 3f. Sensitive data leaks
 
 - `{!! $var !!}` in Blade or `v-html` in Vue where value could be user-supplied — 🔴 Critical (also §12, §15c). Carve-out: raw echoes of clearly trusted, constant, or server-generated HTML (`{!! Form::open() !!}`, known-sanitizer output, config-constant markup) are not findings. When the value's provenance is unclear, still flag 🔴 but confirm-not-accuse ("confirm `$var` is sanitized/trusted HTML").
-- API Resources that return `password`, `remember_token`, `api_token`, or raw pivot data — 🟡 Warning.
+- API Resources / responses that surface **credential or session fields** — `password`, `remember_token`, `api_token`, hashed secrets — 🔴 Critical (canonical for credential exposure; §14 covers benign over-exposure). Raw pivot data or other internal columns — 🟡 Warning. Only flag fields actually surfaced in the output, not ones behind a `when()` / `whenLoaded` guard.
 - `Log::info()` / `Log::error()` that logs a full request body, password, or token — 🟡 Warning.
 
 #### 3g. `env()` outside config files
@@ -900,7 +889,6 @@ $key = config('services.stripe.secret');
 - `dd()`, `dump()`, `die()` — forbidden in committed code.
 - `error_log()`, `var_dump()`, `print_r()`, `echo` used for logging — use `Log::info()` / `Log::error()` / `Log::debug()`. Exempt `print_r($x, true)` / `var_export($x, true)` whose string result is passed into a real `Log::*()` call. (`echo` in a Console Command is §1f, not this.)
 - `$_SERVER`, `$_ENV`, `$_GET`, `$_POST`, `$_REQUEST` — use Laravel helpers (`request()`, `config()`).
-- Magic numbers/strings that belong in `config/` or an enum — see §2i.
 
 #### 3i. Hardcoded secrets and credentials — 🔴 Critical
 
@@ -936,7 +924,7 @@ $stripe = new StripeClient(config('services.stripe.secret'));
 
 #### 4a. API Resources — no raw `toArray()` or model-to-JSON
 
-Every JSON response must use a dedicated API Resource. Raw `->toArray()`, `response()->json($model)`, or `$model->toJson()` in a Controller are 🟡 Warning:
+A JSON response that returns an **Eloquent model or collection** must use a dedicated API Resource. Raw `->toArray()`, `response()->json($model)`, or `$model->toJson()` in a Controller are 🟡 Warning. This does **not** apply to non-entity payloads — a status/ack (`{status: 'ok'}`), a health check, a webhook 200, or a plain computed array — those need no Resource.
 
 ```php
 // BAD
@@ -977,13 +965,9 @@ foreach ($orders as $order) {
     // ...
 }
 
-// BAD — same shape outside a loop, any parent/child pair
+// BAD — same shape outside a loop, any parent/child pair (either direction)
 $invoice = Invoice::find($id);
 $client  = Client::find($invoice->client_id);
-
-// BAD — child-side: looking up the parent by FK
-$post   = Post::find($id);
-$author = User::find($post->author_id);
 
 // BAD — manually querying children instead of using the relation
 $user      = User::find($id);
@@ -1004,9 +988,9 @@ $user      = User::with('addresses')->findOrFail($id);
 $addresses = $user->addresses;
 ```
 
-The rule applies to **every** Eloquent model and relationship in the codebase — `Order`/`Customer`, `Invoice`/`Item`, `Post`/`Comment`, `Project`/`Task`, `Tenant`/`Booking`, anything. Treat the BAD/GOOD pairs above as the *shape* to recognise, not as an exhaustive whitelist of models.
+**If the relationship isn't defined on the Model yet, the fix is to define it** (`public function customer(): BelongsTo`, `public function items(): HasMany`, …) — not to keep manually joining via `Model::find($fk)` or `Model::where('fk_column', …)`.
 
-**If the relationship isn't defined on the Model yet, the fix is to define it** — `public function customer(): BelongsTo`, `public function items(): HasMany`, `public function author(): BelongsTo`, etc. — not to keep manually joining via `Model::find($fk)` or `Model::where('fk_column', …)`.
+**Report each logical N+1 once**, at its root cause (the missing eager-load), not at every site that consumes the relation.
 
 #### 4c. Eloquent scopes
 
@@ -1130,7 +1114,7 @@ $table->string('phone')->nullable()->after('email');
 - **`:key="index"`** in a list that can reorder — 🔵 Suggestion.
 - **`v-if` + `v-for` on the same element** — 🔵 Suggestion.
 - **Direct Vuex state mutation** (`this.$store.state.x = y`) — 🟡 Warning.
-- **`v-html` with unsanitised input** — 🔴 Critical.
+- **`v-html` with unsanitised input** — 🔴 Critical (also §3f, §15c).
 - **`addEventListener` without `removeEventListener` in `beforeUnmount`** — 🔵 Suggestion.
 - **Direct DOM manipulation** (`document.querySelector`) — 🔵 Suggestion; use `this.$refs`.
 - **Axios without error handling** — 🟡 Warning.
@@ -1143,8 +1127,8 @@ $table->string('phone')->nullable()->after('email');
 
 #### Untestable patterns (flag on the code, not on missing tests)
 
-- `new ClassName()` inside business logic — 🔵 Suggestion (prevents mocking).
-- `auth()`, `request()`, `session()` inside Services — 🟡 Warning (§1b).
+- `new ClassName()` inside business logic — 🔵 Suggestion, prevents mocking (see §4f).
+- HTTP helpers inside Services — 🟡 Warning (see §1b for the canonical list).
 - `$this->withoutExceptionHandling()` committed — 🟡 Warning (debugging aid must not be merged).
 
 #### Test quality
@@ -1166,7 +1150,7 @@ $table->string('phone')->nullable()->after('email');
 
 - `POST` creating a resource returning `200` instead of `201` — 🔵 Suggestion.
 - Collection endpoint with no pagination on an unbounded table — 🟡 Warning.
-- API Resource exposing `created_at`, pivot columns, `password`, `remember_token`, or internal IDs — 🟡 Warning.
+- API Resource over-exposing internal design detail — `created_at`, pivot columns, internal auto-increment IDs — 🟡 Warning. (Credential/session fields like `password`/`remember_token` are the 🔴 case in §3f, not here.)
 - Inconsistent response envelope shape — 🔵 Suggestion.
 
 ---
@@ -1226,7 +1210,7 @@ If the project uses `__()` / `trans()` elsewhere, hardcoded user-facing strings 
 
 #### 15g. Component extraction
 
-A single Blade file over ~200 lines, or a `@foreach` body of complex markup over ~25 lines — 🔵 Suggestion. Extract a Blade component (`<x-…>`) or partial via `@include`.
+A single Blade file over ~200 lines, or a `@foreach` body of **complex** markup over ~40 lines — 🔵 Suggestion. Extract a Blade component (`<x-…>`) or partial via `@include`. Don't flag a long but flat table/list; flag when the body has meaningful nesting or conditionals.
 
 #### 15h. Dynamic `@include` paths
 
