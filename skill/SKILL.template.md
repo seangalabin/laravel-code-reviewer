@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Diff-scoped code review for the current branch. Reviews ONLY the lines changed since the base branch (develop) — not entire files. Covers architecture & layering, PSR-12, security, Laravel best practices, testability, and Vue/JS quality.
+description: Diff-scoped code review for the current branch. Reviews ONLY the lines changed since the base branch (develop) — not entire files. Covers architecture & layering, PSR-12, security, Laravel best practices, testability, and front-end quality (auto-detects Vue, React, or other JS/TS frameworks).
 ---
 
 # Code Reviewer

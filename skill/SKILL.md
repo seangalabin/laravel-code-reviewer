@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Diff-scoped code review for the current branch. Reviews ONLY the lines changed since the base branch (develop) — not entire files. Covers architecture & layering, PSR-12, security, Laravel best practices, testability, and Vue/JS quality.
+description: Diff-scoped code review for the current branch. Reviews ONLY the lines changed since the base branch (develop) — not entire files. Covers architecture & layering, PSR-12, security, Laravel best practices, testability, and front-end quality (auto-detects Vue, React, or other JS/TS frameworks).
 ---
 
 # Code Reviewer
@@ -1293,20 +1293,45 @@ $table->string('phone')->nullable()->after('email');
 
 ---
 
-### 12. Vue / JavaScript Quality
+### 12. Front-end framework quality (JS / TS)
+
+**Detect the framework per changed front-end file first, then apply that framework's checklist plus the framework-agnostic checks (§12a).** Don't apply one framework's rules to another's file. Detection signals:
+
+- **Vue** — `.vue` files, `<template>` / `<script setup>`, `defineComponent`, `ref()` / `reactive()`.
+- **React** — `.jsx` / `.tsx` with JSX, `useState` / `useEffect` / other hooks, `import React`.
+- **Angular** — `*.component.ts`, `@Component` / `@Injectable` decorators, `@angular/*` imports, `*ngIf` / `*ngFor` templates.
+- **Svelte** — `.svelte` files.
+- **Vanilla / unknown** — plain `.js` / `.ts` with none of the above.
+
+For a framework **not enumerated below** (Angular, Svelte, Solid, Alpine, …), apply **that framework's own well-known best practices** at the appropriate severity — component-lifecycle cleanup, state immutability, list-key/tracking, effect/reactive-dependency correctness, XSS sinks, subscription/listener leaks — alongside §12a. The team's `.claude/code-review-rules.md` can add framework-specific rules.
+
+#### 12a. Framework-agnostic (any JS / TS)
+
+- **Unsanitised HTML injection** — `el.innerHTML =`, Vue `v-html`, React `dangerouslySetInnerHTML`, Angular `[innerHTML]` — with user-supplied input — 🔴 Critical (also §3f, §15c).
+- **Listener / subscription / timer added without matching cleanup** on teardown — 🔵 Suggestion (memory leak).
+- **Direct DOM manipulation** (`document.querySelector`, manual node mutation) inside a component — 🔵 Suggestion; use the framework's ref mechanism.
+- **`fetch` / `axios` / HTTP call with no error handling** — 🟡 Warning.
+- **Missing loading / error state** for an async operation surfaced in the UI — 🔵 Suggestion.
+- **Secrets committed in front-end/bundle code** — see §3i.
+
+#### 12b. Vue
 
 - **Missing `:key` in `v-for`** — 🟡 Warning.
 - **`:key="index"`** in a list that can reorder — 🔵 Suggestion.
 - **`v-if` + `v-for` on the same element** — 🔵 Suggestion.
 - **Bypassing the store's defined action to write state** — a Vuex `state.x = y` mutation outside a mutation, or a Pinia store patched directly where an action exists — 🟡 Warning.
-- **`v-html` with unsanitised input** — 🔴 Critical (also §3f, §15c).
 - **Mutating a prop** inside a component (`this.prop = …` / assigning to a `defineProps` value) — 🟡 Warning; emit an event or use a local copy.
-- **`addEventListener` without a matching `removeEventListener` in `beforeUnmount` / `onUnmounted`** — 🔵 Suggestion.
-- **Losing reactivity by destructuring a `reactive()` object** (`const { x } = reactive(...)`) — 🔵 Suggestion; use `toRefs()` or access via the object.
-- **Direct DOM manipulation** (`document.querySelector`) — 🔵 Suggestion; use a template ref.
-- **Axios without error handling** — 🟡 Warning.
-- **Missing loading/error state** for async operations — 🔵 Suggestion.
+- **Losing reactivity by destructuring a `reactive()` object** (`const { x } = reactive(...)`) — 🔵 Suggestion; use `toRefs()`.
 - **Unscoped `<style>`** — 🔵 Suggestion.
+
+#### 12c. React
+
+- **Missing `key`, or `key={index}` in a reorderable list**, on elements rendered from `.map(...)` — 🟡 Warning for missing, 🔵 for index-as-key.
+- **`useEffect` with a missing/incorrect dependency array**, or an effect that subscribes / adds a listener / starts a timer with no cleanup return — 🟡 Warning.
+- **Directly mutating state** — `state.x = …`, `arr.push()` on a state value — instead of `setState` / an immutable update — 🟡 Warning.
+- **Hooks called conditionally or inside a loop/nested function** (violates the Rules of Hooks) — 🟡 Warning.
+- **New inline object / array / function passed as a prop on a hot path** forcing child re-renders — 🔵 Suggestion (memoize with `useMemo` / `useCallback`).
+- **Deriving state into `useState` + `useEffect`** where it could be computed during render — 🔵 Suggestion.
 
 ---
 
