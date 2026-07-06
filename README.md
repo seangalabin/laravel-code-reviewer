@@ -6,7 +6,7 @@ For developers who want to fix issues on their own branch before pushing (instea
 
 ## Background
 
-Generic AI reviewers (CodeRabbit and friends) are good at spotting universal bugs but don't know *your team's* conventions — your layering rules, your naming, the package you standardised on, the decision someone made in the ticket thread last week. This skill is the opposite: an **opinionated reviewer that encodes one team's standards** and applies them consistently to every PR, so review quality doesn't depend on which senior dev happened to look.
+Generic AI reviewers are good at spotting universal bugs but don't know *your team's* conventions — your layering rules, your naming, the package you standardised on, the decision someone made in the ticket thread last week. This skill is the opposite: an **opinionated reviewer that encodes one team's standards** and applies them consistently to every PR, so review quality doesn't depend on which senior dev happened to look.
 
 It is built around a few deliberate choices:
 
@@ -23,8 +23,6 @@ Two skills share the same lens:
 |---|---|---|
 | **`code-reviewer`** | Reviewing someone's PR | Posts inline findings to the Bitbucket PR, syncs the Jira card |
 | **`code-fixer`** | Cleaning up your own branch | Same analysis, no posting — walks you through applying fixes locally |
-
-> **Where it's heading:** the goal is to run automatically in CI on every PR (like CodeRabbit, but on your standards and your key). A headless mode and `bin/ai-review-ci` wrapper exist today (see [CI / headless mode](#ci--headless-mode-preview)); a turnkey Bitbucket Pipe is in progress.
 
 ## What it does
 
@@ -67,15 +65,13 @@ Run `/code-reviewer` in Claude Code and it will:
 | 🟡 | **Warning** | Likely problem, performance, maintainability. |
 | 🔵 | **Suggestion** | Style, readability, minor improvement. |
 
-Each finding contains: what's wrong in plain language, a copy-pasteable Claude Code prompt to fix it, a suggested diff, and an explanation of why the fix works.
-
 ## Requirements
 
 - Node.js 16+
 - Laravel project with [PestPHP](https://pestphp.com/) and [Laravel Pint](https://laravel.com/docs/pint)
 - [Claude Code](https://claude.ai/code) CLI
 - A Bitbucket repository with an open PR on the current branch
-- **Shell:** Linux, macOS, or WSL/Git Bash run the `.sh` scripts. On native **Windows**, `code-reviewer` runs PowerShell (`pwsh` 7+, or Windows PowerShell 5.1) variants and additionally needs **Python 3** and **curl** on `PATH` (curl ships with Windows 10 1803+). The skill auto-detects the OS and runs the matching `.sh`/`.ps1` scripts.
+- **Shell:** Linux, macOS, or WSL/Git Bash (`.sh` scripts). Native **Windows** is supported via PowerShell variants and additionally needs **Python 3** and **curl** on `PATH`; the skill auto-detects the OS.
 
 ## Installation
 
@@ -189,7 +185,7 @@ If a developer replies to one of the bot's review comments — to push back, ask
 - **A question** → answers inline.
 - **"I fixed it"** → verifies against the current code and, if genuinely addressed, replies and marks the finding resolved.
 
-It shows you the drafted replies and asks before posting. Because a reply doesn't add a commit, the bot answers on the next run — including a re-run with no new commits to review. (Live, reply-time responses arrive with the hosted/CI version.)
+It shows you the drafted replies and asks before posting; because a reply doesn't add a commit, the bot answers on the next run.
 
 ### Review a branch without checking it out
 
@@ -220,10 +216,6 @@ The checkpoint is stored as a hidden PR comment — shared across machines, CI, 
 
 Each run prints a digest of how many findings were resolved, are still open, or have gone stale (>14 days). A snapshot is saved to `.ai-review/stats.json` so you can track signal-vs-noise per dimension over time.
 
-### Want to fix locally instead?
-
-If you're the developer cleaning up your own branch (rather than reviewing someone else's PR), use the `code-fixer` skill instead — see [below](#code-fixer-developer-skill).
-
 ### CI / headless mode (preview)
 
 `code-reviewer` can run non-interactively for CI, driven by `skill/bin/ai-review-ci`. It invokes the skill via `claude --print --bare`, auto-confirming every prompt (set by `AI_REVIEW_CI=1`), and posts findings + syncs the Jira card with no human in the loop.
@@ -238,25 +230,11 @@ BITBUCKET_PR_ID=42             # auto-set by Bitbucket Pipelines on PR steps
 
 Optional knobs: `AI_REVIEW_MAX_USD` (spend cap, default 5.00), `AI_REVIEW_MODEL` (e.g. `sonnet`), `AI_REVIEW_OUTPUT` (JSON output path). Exit codes: `0` ran, `1` infra failure (missing env / no `claude` CLI), `2` the run errored.
 
-> **Preview:** the wrapper works on any host with the `claude` CLI on `PATH` and is good for local dry-runs (`AI_REVIEW_CI=1`). A turnkey Bitbucket Pipe (Docker image + `bitbucket-pipelines.yml` template) is still in progress — until then you supply the `claude` CLI and pipeline yaml yourself.
+> **Preview:** works on any host with the `claude` CLI on `PATH`; a turnkey Bitbucket Pipe is still in progress.
 
 ## Updating
 
-Each time you run `/code-reviewer` or `/code-fixer`, the skill checks its installed version against the latest on GitHub. If it's out of date, it asks before continuing:
-
-```
-⚠️  code-reviewer is out of date (installed: 1.0.0, latest: 1.1.0).
-   Update before continuing:
-
-     npx github:seangalabin/laravel-code-reviewer
-
-Update now? [y/n]
-```
-
-- **y** — runs the update and stops; run `/code-reviewer` again to use the latest version
-- **n** — stops; update manually and re-run
-
-The check is skipped silently if GitHub is unreachable.
+Each run of `/code-reviewer` or `/code-fixer` checks its installed version against GitHub and, if out of date, offers to update before continuing — `y` updates and stops (re-run to use it), `n` continues so you can update manually. Skipped silently if GitHub is unreachable.
 
 ---
 
