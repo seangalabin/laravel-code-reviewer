@@ -5,6 +5,33 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.28.0 / code-fixer 1.24.0 — 2026-07-06
+
+### Added
+- **§16 Scalability & Large Dataset Processing** — a new top-level review section applying
+  an enterprise-scale lens (10M+ rows, millions of queued jobs, many concurrent workers
+  across many servers, horizontal scaling) over data-touching changes. Deliberately
+  **non-duplicative**: single-line smells already covered stay canonical elsewhere and §16
+  just points at them (full-dataset loads & per-row writes → §9, N+1 → §4b, queue offload →
+  §4e, transactions/races → §4g/§8). The section adds only the large-dataset / queued-workload
+  rules that had no home:
+  - **§16a `chunkById()` over `chunk()` on mutable tables** (🟡 Warning) — `chunk()`'s
+    OFFSET pagination skips/duplicates rows under concurrent inserts/deletes or self-mutating
+    loops; `chunkById()` keyset pagination is immune. §9's full-table-load bullet now points here.
+  - **§16b Chunk-and-queue; avoid monolithic commands** (🔵 Suggestion) — separate
+    orchestration from execution (discover → dispatch → process → aggregate → finalise);
+    pass IDs/ID ranges, not serialised Eloquent collections; scale by adding workers.
+  - **§16c Job idempotency** (🟡 Warning) — at-least-once delivery means jobs re-run; guard
+    against duplicate rows/emails/charges with `updateOrCreate()` / `upsert()` / unique keys /
+    dedupe markers.
+  - **§16d Retry safety** (🔵 Suggestion) — small, independently-retryable units that don't
+    lose committed progress on partial failure.
+  - **§16e Concurrency under many workers** (🟡 Warning) — non-atomic read-modify-write races;
+    recommend atomic DB ops, `lockForUpdate()` / optimistic locking, `ShouldBeUnique`,
+    `Cache::lock()`, `Http::pool()` (extends §8).
+- Rules live in the shared `src/review-lens.md` fragment, so both **code-reviewer** and
+  **code-fixer** gain the section (code-fixer uses the same lens to know what to fix).
+
 ## code-reviewer 1.22.0 / code-fixer 1.18.0 — 2026-06-24
 
 ### Changed
