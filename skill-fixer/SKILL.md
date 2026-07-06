@@ -1085,7 +1085,7 @@ Enums are value descriptors. Pure value-derivation on the enum is fine and encou
 - **N+1** — §4b (🟡 Warning).
 - **`->get()` then `->isEmpty()` / `->count()`** — 🔵 Suggestion — use `->exists()` / `->count()` on the builder **only when the result is used solely for the emptiness test and then discarded**. If the collection is iterated or returned afterwards, `->get()` + `->isEmpty()` is correct — don't flag it (swapping would force a redundant re-query).
 - **`Http::` without `->timeout(N)`** — 🟡 Warning. Without a timeout the request can hang indefinitely under network issues, blocking the worker/request thread. Suggest `->timeout(30)`.
-- **Full-table loads** — `Model::all()`, or an unbounded `->get()` / `->pluck()` with no `where` / `limit` / pagination, on an **unbounded, growing** table (users, orders, events, logs) — 🟡 Warning; use `->chunk()` / `->cursor()` / pagination. Don't flag it on an obviously small reference table (roles, statuses, countries, config) — absence of a growth signal is not a finding.
+- **Full-table loads** — `Model::all()`, or an unbounded `->get()` / `->pluck()` with no `where` / `limit` / pagination, on an **unbounded, growing** table (users, orders, events, logs) — 🟡 Warning; use `->chunk()` / `->cursor()` / pagination. On a **mutable** table prefer `->chunkById()` over `->chunk()` (§16a); for very large workloads, chunk-and-queue (§16b). Don't flag it on an obviously small reference table (roles, statuses, countries, config) — absence of a growth signal is not a finding.
 - **Per-row writes in a loop** — a `save()` / `update()` / `delete()` executed once per iteration where a single mass `update()` / `delete()` / `upsert()` would do — 🟡 Warning. Exempt when each row genuinely needs its own logic or must fire model events.
 - **Unnecessary re-fetch** — re-querying something already in scope — 🔵 Suggestion.
 
@@ -1258,6 +1258,114 @@ A single Blade file over ~200 lines, or a `@foreach` body of **complex** markup 
 #### 15h. Dynamic `@include` paths
 
 `@include($var)` where `$var` could be influenced by request input — 🔴 Critical. Path-traversal / arbitrary view rendering risk.
+
+---
+
+### 16. Scalability & Large Dataset Processing
+
+Review every data-touching change as if it will run in production against **10M+ rows**, millions of queued jobs, and **multiple queue workers across multiple app servers executing concurrently**. Code that is correct and fast against a dev seed of 100 rows can exhaust memory, lock a table, or corrupt state at scale. Before approving, ask: *would this hold at 10M rows? Will it exhaust memory? Can it run safely on concurrent workers? Is it idempotent and retry-safe? Does it needlessly block a web request? Does it scale horizontally by just adding workers?*
+
+When you flag something here, don't just cite the rule — in plain language name **at what scale it starts to bite** and **the trade-off of the fix**, so the developer understands why it matters (correctness first, then scalability).
+
+Most single-line scalability smells already have canonical rules — apply the scale lens and point at them rather than re-flagging:
+- **Full-dataset loads into memory** — `Model::all()` / unbounded `->get()` / `->pluck()` on a growing table — §9 (canonical, 🟡). Recommend `->chunkById()` / `->cursor()` / `->lazy()` / pagination; `cursor()`/`lazy()` stream one hydrated model at a time when you must touch every row but not mutate the driving table.
+- **Per-row writes in a loop** — batch with `insert()` / `upsert()` / mass `update()` — §9 (canonical, 🟡).
+- **N+1 reads** — §4b.
+- **Heavy synchronous work on a request path** — imports, exports, PDF/image generation, email, notifications, external API calls, report generation, search/index sync, cache warming/rebuilds — belongs on a queue: §4e (canonical). Moving it off the request improves responsiveness, fault tolerance (retries without user re-submit), and scalability (throughput scales with workers, not web nodes).
+- **Multi-write transactions** — §4g / §8. **Check-then-act races / `lockForUpdate`** — §8. **`Http::` timeouts** — §9.
+
+The rules below are the large-dataset / queued-workload cases **not** covered above.
+
+#### 16a. `chunkById()` over `chunk()` on mutable tables — 🟡 Warning
+
+`chunk()` paginates with `LIMIT`/`OFFSET` and re-runs the query per page. If rows are **inserted or deleted** in the range while iterating — likely when other workers/requests write the same table, or when the loop body itself mutates the driving rows — the OFFSET shifts and records get **skipped or processed twice**. `chunkById()` keyset-paginates on the primary key (`WHERE id > lastId`) and is immune. Prefer it whenever the table is mutable during processing, and **always** when the loop body updates or deletes the rows it is iterating.
+
+```php
+// BAD — deleting rows shifts the OFFSET → later rows get skipped
+User::where('active', false)->chunk(1000, function ($users) {
+    foreach ($users as $user) { $user->delete(); }
+});
+
+// GOOD — keyset pagination, unaffected by inserts/deletes
+User::where('active', false)->chunkById(1000, function ($users) {
+    foreach ($users as $user) { $user->delete(); }
+});
+```
+
+Judgement: `chunk()` over an append-only / immutable snapshot, or one fully isolated in a transaction, is acceptable — 🔵 Suggestion at most.
+
+#### 16b. Chunk-and-queue for large workloads; avoid monolithic commands — 🔵 Suggestion
+
+A scheduled command or Service that discovers **and** processes a large dataset in one synchronous pass can't scale past a single process, loses all progress on failure, and can't parallelise. Separate **orchestration from execution**: read IDs in chunks and dispatch one small, independent Job per chunk — the fleet then scales horizontally just by adding workers. Structure long-running workflows as: **1) discover work → 2) dispatch work → 3) process work → 4) aggregate results → 5) finalise.**
+
+```php
+// BAD — monolithic: one process does everything, no retry granularity
+public function handle(): void
+{
+    foreach (User::all() as $user) {     // also §9 full-table load
+        $this->reindex($user);           // dies at row 4M → restart from zero
+    }
+}
+
+// GOOD — orchestrator dispatches per-chunk jobs; workers process in parallel
+User::select('id')->chunkById(1000, function ($users) {
+    ReindexUsers::dispatch($users->pluck('id')->all());
+});
+```
+
+Pass **IDs or ID ranges**, never a serialised Eloquent collection — serialising models bloats the payload, freezes a stale attribute snapshot, and worsens as the row count grows. Keep jobs small and independently retryable; use `Bus::batch()` when you need completion/aggregation callbacks across the chunks.
+
+#### 16c. Job idempotency — 🟡 Warning
+
+Queues guarantee *at-least-once*, not exactly-once, delivery: any Job can run **more than once** (retry after timeout, worker crash after the work but before ack, manual replay). A Job whose re-execution creates **duplicate rows, duplicate emails, duplicate external charges/API calls, or double-applied state** is a correctness bug. Make the effect idempotent:
+- `updateOrCreate()` / `firstOrCreate()` / `upsert()` instead of `create()` (see also §7 check-then-act).
+- a unique constraint / unique key so a replay collides instead of duplicating.
+- a processed-marker or dedupe key checked before any non-transactional side effect (emails, payments, webhooks).
+
+```php
+// BAD — a retry inserts a second payment row and re-sends the receipt
+public function handle(): void
+{
+    Payment::create(['order_id' => $this->orderId, /* ... */]);
+    Mail::to($this->order->user)->send(new ReceiptMail($this->order));
+}
+
+// GOOD — replay-safe: unique-keyed upsert + guarded side effect
+public function handle(): void
+{
+    $payment = Payment::updateOrCreate(
+        ['idempotency_key' => $this->key],
+        ['order_id' => $this->orderId, /* ... */],
+    );
+
+    if ($payment->wasRecentlyCreated) {
+        Mail::to($this->order->user)->send(new ReceiptMail($this->order));
+    }
+}
+```
+
+#### 16d. Retry safety — small, independently-retryable units — 🔵 Suggestion
+
+Assume every Job, command, and external call can fail partway. A failure should require retrying **one small unit of work**, not restarting a whole batch — and a retry must not discard progress already committed. Flag designs where a mid-run failure re-does or loses large amounts of work: split the work (§16b), make each unit idempotent (§16c), and commit progress incrementally (e.g. mark each chunk done) so a retry resumes rather than restarts. Set `$tries` / `backoff` / `retryUntil` and a `failed()` handler where transient failures are expected.
+
+#### 16e. Concurrency — assume many workers run at once — 🟡 Warning
+
+Every Job and request may execute **simultaneously across many workers and servers**. Read-modify-write in PHP is not atomic and races under concurrency (canonical check-then-act / `lockForUpdate`: §8). Flag non-atomic updates and shared-resource races, and recommend the fitting primitive:
+- **atomic DB operations** — `->increment()` / `->decrement()`, `whereIn(...)->update([...])`, `DB::raw('col + 1')` — instead of read-into-PHP-then-save.
+- **transaction + `lockForUpdate()`** (pessimistic) or a `version`-column check (optimistic) for read-then-modify on a row.
+- **`ShouldBeUnique`** on a Job that must not run twice concurrently for the same key.
+- **`Cache::lock()`** (a distributed lock) to serialise a critical section across workers.
+- **`Http::pool()`** to fan out independent external calls concurrently instead of serially.
+
+```php
+// BAD — lost update: two workers read 10, both write 11
+$product = Product::find($id);
+$product->stock = $product->stock - 1;
+$product->save();
+
+// GOOD — atomic decrement, no race, guards against overselling
+Product::where('id', $id)->where('stock', '>', 0)->decrement('stock');
+```
 
 ---
 
