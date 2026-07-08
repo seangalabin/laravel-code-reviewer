@@ -785,7 +785,7 @@ Use judgement and read the body before flagging — this requires understanding 
 
 #### 3a. Authorization — Policies and Gates
 
-Manual role/permission checks in Controllers or Services are 🟡 Warning:
+Authorization for a model action should go through a **Policy or Gate** — `$this->authorize('update', $model)`, `authorizeResource()`, `Gate::authorize()`, `@can`, or `->can:` route middleware — not inline conditionals. Manual role/permission checks in Controllers or Services are 🟡 Warning:
 
 ```php
 // BAD
@@ -796,6 +796,8 @@ if ($request->user()->is_admin) { ... }
 $this->authorize('update', $user);
 Gate::authorize('update-user', $user);
 ```
+
+**A Policy exists for the model but the action doesn't call it** — if `app/Policies/{Model}Policy.php` defines the relevant ability and a controller action on that model performs no `authorize` / Gate / `can` check, flag 🟡 Warning, confirm-not-accuse: "a `{Model}Policy` exists — wire it up (`$this->authorize(...)`) or confirm authz is applied via route middleware." **If applicable** only: don't demand a Policy for genuinely public/global or read-only lookups, trivial reference data, or where a route-level `can:` already covers the action.
 
 A `FormRequest::authorize()` that unconditionally returns `true` without a comment explaining why is 🔵 Suggestion — but only for a request that plausibly needs authorization (mutating an owned resource, an admin action). Don't flag it on a genuinely public, read-only endpoint. A short comment (`// public endpoint`) is a valid escape hatch.
 
