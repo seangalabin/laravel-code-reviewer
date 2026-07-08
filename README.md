@@ -11,7 +11,7 @@ Generic AI reviewers are good at spotting universal bugs but don't know *your te
 It is built around a few deliberate choices:
 
 - **Diff-scoped, not file-scoped.** It reviews only the lines a branch changed — it won't drown you in findings about pre-existing code.
-- **An opinionated 15-dimension lens** (architecture & layering, security, Laravel/Eloquent best practices, readability, Blade, front-end frameworks — Vue/React/etc., testing, …) maintained in one place and shared by both skills. Teams can extend or override it with a committed `.claude/code-review-rules.md`.
+- **An opinionated 16-dimension lens** (architecture & layering, security, Laravel/Eloquent best practices, readability, Blade, front-end frameworks — Vue/React/etc., testing, …) maintained in one place and shared by both skills. Teams can extend or override it with a committed `.claude/code-review-rules.md`.
 - **Findings you can act on** — each one is plain-language *what's wrong*, a copy-pasteable fix prompt, a suggested diff, and *why* it matters. Severity is 🔴 / 🟡 / 🔵 so the signal isn't buried.
 - **It reads the task, not just the code** — pulls the linked Jira card (title, acceptance criteria, **and the comment thread**) to judge whether the change solves the *right* problem, flags files unrelated to the task, and surfaces decisions raised in discussion that the code ignored.
 - **It has a memory** — tracks which findings were addressed (and resolves them), remembers what a developer dismissed as won't-fix, responds to replies on its comments, and can sync the Jira card status (`Failed Code Review` / `Code Review`).
@@ -33,7 +33,7 @@ Run `/code-reviewer` in Claude Code and it will:
 3. Refresh dismissal memory — skip findings a developer has already marked won't-fix
 4. Diff the current branch against `develop`
 5. Run a mechanical pre-pass (`scan_diff.py`) over the changed lines to surface red flags
-6. Apply a 15-dimension review lens to every hunk
+6. Apply a 16-dimension review lens to every hunk
 7. Ask: **Post {N} findings to PR #{ID}? [y/n]** — the only interactive prompt
 8. Post each finding as an inline Bitbucket PR comment with a copy-pasteable fix prompt
 
@@ -56,6 +56,7 @@ Run `/code-reviewer` in Claude Code and it will:
 | 13 | Testing | Stray HTTP, reflection, `withoutExceptionHandling()`, missing assertions |
 | 14 | API Design | Status codes, pagination, Resource field exposure |
 | 15 | Blade views | Business logic in views, N+1 in `@foreach`, URL/attr XSS, CSRF, dynamic `@include` |
+| 16 | Scalability & Large Data | `chunkById` over `chunk`, chunk-and-queue orchestration, job idempotency, retry safety, worker concurrency |
 
 ## Severity
 
@@ -240,7 +241,7 @@ Each run of `/code-reviewer` or `/code-fixer` checks its installed version again
 
 ## code-fixer (developer skill)
 
-Use `code-fixer` when you want to clean up your **own** branch before pushing — it runs the same 15-dimension analysis as `code-reviewer` but instead of posting comments to Bitbucket, it walks you through applying fixes interactively on your local machine. No credentials needed.
+Use `code-fixer` when you want to clean up your **own** branch before pushing — it runs the same 16-dimension analysis as `code-reviewer` but instead of posting comments to Bitbucket, it walks you through applying fixes interactively on your local machine. No credentials needed.
 
 ### When to use it
 
@@ -277,7 +278,7 @@ The skill will:
 
 1. Check its version is up to date
 2. Diff your branch against `develop`
-3. Scan for issues across all 15 review dimensions
+3. Scan for issues across all 16 review dimensions
 4. Print a summary: `Found 5 issues (1 critical, 3 warnings, 1 suggestion). Starting fix loop.`
 5. Check for uncommitted changes — if any exist, ask whether to proceed
 6. Walk through each issue one at a time, Critical → Warning → Suggestion
@@ -333,7 +334,7 @@ Every fix you accept is logged to `.ai-review/applied-{timestamp}.log` so you ca
 
 **`skill/SKILL.md` and `skill-fixer/SKILL.md` are generated. Never edit them by hand.** Edit the inputs and rebuild:
 
-- The 15-dimension review lens (shared by both skills) lives in `src/review-lens.md`.
+- The 16-dimension review lens (shared by both skills) lives in `src/review-lens.md`.
 - Everything else lives in the per-skill templates: `skill/SKILL.template.md` and `skill-fixer/SKILL.template.md` (each pulls in the lens via `<!-- include:src/review-lens.md -->`).
 
 After editing a template or the lens, regenerate:
