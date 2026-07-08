@@ -200,7 +200,17 @@ Before analyzing the diff, fetch the linked issue-tracker card. The goal is to j
 
    Skip this check when comments weren't available (PR-body / branch-name fallback, or no MCP).
 
-5. **No ticket detected** → print `No ticket reference detected — reviewing diff against develop only.` and continue. The skill still works without a card; it just loses the "right problem", file-relatedness, and discussion-decision signals.
+4c. **Implementation context — the developer's "why".** The developer's own session held the reasoning the diff can't show — decisions, assumptions, trade-offs, rejected alternatives, constraints. When they've captured it, it lives in one of the two sources you already read: the **PR description body**, or a **Jira card comment** (Atlassian MCP). Look for a rationale block — a section headed *Implementation notes* / *AI review context* / *Context for review*, or a comment/section carrying a `<!-- ai-review:context -->` marker. Read it and fold it into your judgment.
+
+   **The discipline — this reduces false positives; it must NOT launder real defects:**
+   - Use it to **avoid flagging a deliberate, explained trade-off** as a mistake. A choice the diff makes that looks wrong in isolation but is justified by the context → don't raise it (or soften a 🔵/🟡 you'd otherwise raise), and reference the stated reason.
+   - It **cannot suppress a genuine defect.** A 🔴 (security, data-loss, correctness) stands even if the note calls it intentional — say so, and explain why the rationale doesn't cover the risk.
+   - **Verify the rationale, don't rubber-stamp it.** If the stated reasoning is itself wrong ("skipped server validation because the frontend validates"), challenge *the reasoning*, at the appropriate severity — the note is a claim to check, not a waiver.
+   - **Anchor to the actual diff.** If the context is stale or contradicts the code, trust the code and note the mismatch.
+
+   When no rationale block is present, continue normally — this is a bonus signal, never required.
+
+5. **No ticket detected** → print `No ticket reference detected — reviewing diff against develop only.` and continue. The skill still works without a card; it just loses the "right problem", file-relatedness, discussion-decision, and implementation-context signals.
 
 6. **Read-only.** Never edit the card, post comments on it, transition its status, or write back any state.
 

@@ -13,7 +13,7 @@ It is built around a few deliberate choices:
 - **Diff-scoped, not file-scoped.** It reviews only the lines a branch changed — it won't drown you in findings about pre-existing code.
 - **An opinionated 16-dimension lens** (architecture & layering, security, Laravel/Eloquent best practices, readability, Blade, front-end frameworks — Vue/React/etc., testing, …) maintained in one place and shared by both skills. Teams can extend or override it with a committed `.claude/code-review-rules.md`.
 - **Findings you can act on** — each one is plain-language *what's wrong*, a copy-pasteable fix prompt, a suggested diff, and *why* it matters. Severity is 🔴 / 🟡 / 🔵 so the signal isn't buried.
-- **It reads the task, not just the code** — pulls the linked Jira card (title, acceptance criteria, **and the comment thread**) to judge whether the change solves the *right* problem, flags files unrelated to the task, and surfaces decisions raised in discussion that the code ignored.
+- **It reads the task, not just the code** — pulls the linked Jira card (title, acceptance criteria, **and the comment thread**) to judge whether the change solves the *right* problem, flags files unrelated to the task, surfaces decisions raised in discussion that the code ignored, and weighs the developer's own **implementation rationale** when it's provided (see [below](#giving-the-reviewer-your-implementation-context)) — so a deliberate trade-off isn't mistaken for a bug.
 - **It has a memory** — tracks which findings were addressed (and resolves them), remembers what a developer dismissed as won't-fix, responds to replies on its comments, and can sync the Jira card status (`Failed Code Review` / `Code Review`).
 - **Bring-your-own-key.** It runs on your own Anthropic + Bitbucket credentials; your code is never sent to a third-party reviewing service.
 
@@ -187,6 +187,20 @@ If a developer replies to one of the bot's review comments — to push back, ask
 - **"I fixed it"** → verifies against the current code and, if genuinely addressed, replies and marks the finding resolved.
 
 It shows you the drafted replies and asks before posting; because a reply doesn't add a commit, the bot answers on the next run.
+
+### Giving the reviewer your implementation context
+
+The reviewer starts cold — it sees the diff, not the reasoning from your development session (the decisions, assumptions, trade-offs, and rejected alternatives behind the code). That context gap is the main reason a reviewer flags something you did on purpose. To close it, drop a short rationale where the reviewer already looks — the **PR description**, or a **Jira card comment**:
+
+```markdown
+<!-- ai-review:context -->
+## Implementation notes
+- Skipped the cache layer here — this path runs once per import, not per request.
+- Chose a raw upsert over the Repository: 200k rows, the ORM path timed out.
+- Left the legacy column in place; a follow-up card (B20-1234) removes it after backfill.
+```
+
+The reviewer reads it and weighs it: a deliberate, explained trade-off won't be flagged as a mistake. It does **not** override correctness or security — a real 🔴 still stands even if the note calls it intentional, and a flawed rationale ("the frontend validates it") gets challenged rather than accepted. The block is optional; without it the review runs as normal.
 
 ### Review a branch without checking it out
 
