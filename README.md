@@ -190,7 +190,7 @@ It shows you the drafted replies and asks before posting; because a reply doesn'
 
 ### Giving the reviewer your implementation context
 
-The reviewer starts cold — it sees the diff, not the reasoning from your development session (the decisions, assumptions, trade-offs, and rejected alternatives behind the code). That context gap is the main reason a reviewer flags something you did on purpose. To close it, drop a short rationale where the reviewer already looks — the **PR description**, or a **Jira card comment**:
+The reviewer starts cold — it sees the diff, not the reasoning from your development session (the decisions, assumptions, trade-offs, and rejected alternatives behind the code). That context gap is the main reason a reviewer flags something you did on purpose. To close it, **paste** a short rationale as text where the reviewer already looks — the **PR description**, or a **comment** (Bitbucket PR comment or Jira card comment). Paste it inline as text or markdown; **don't attach a file** — the reviewer reads comment/PR text, it can't download attachments.
 
 ```markdown
 <!-- ai-review:context -->

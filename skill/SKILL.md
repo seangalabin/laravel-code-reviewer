@@ -200,15 +200,23 @@ Before analyzing the diff, fetch the linked issue-tracker card. The goal is to j
 
    Skip this check when comments weren't available (PR-body / branch-name fallback, or no MCP).
 
-4c. **Implementation context — the developer's "why".** The developer's own session held the reasoning the diff can't show — decisions, assumptions, trade-offs, rejected alternatives, constraints. When they've captured it, it lives in one of the two sources you already read: the **PR description body**, or a **Jira card comment** (Atlassian MCP). Look for a rationale block — a section headed *Implementation notes* / *AI review context* / *Context for review*, or a comment/section carrying a `<!-- ai-review:context -->` marker. Read it and fold it into your judgment.
+4c. **Implementation context — the developer's "why". MANDATORY: you MUST check for it before analyzing; do not skip this.** The developer's own session held the reasoning the diff can't show — decisions, assumptions, trade-offs, rejected alternatives, constraints. Actively search **every source you can reach** for a rationale block and read it in full:
+   - the **PR description body**,
+   - the **PR comment section** (the comments fetched in Step 5),
+   - and the **Jira card comments** (Atlassian MCP).
+
+   A rationale block is **inline text** — a section/comment headed *Implementation notes* / *AI review context* / *Context for review*, or one carrying a `<!-- ai-review:context -->` marker. It must be pasted as text (markdown or plain — format is irrelevant); a **file attachment cannot be read** and is not a context source, so never expect to download one. **Print exactly one result line** so the check is auditable:
+   - Found → `✓ Loaded implementation context from {PR body | PR comment | card comment}.` — then read it in full and fold it into your judgment.
+   - Genuinely none in any reachable source → `↷ No implementation-context block found (PR body / comments / card).`
+   - A source you couldn't reach (no MCP, no creds) → say which; that is the *only* acceptable reason to not check a source.
+
+   Reading the block is **not optional** when one exists — a review that ignores a present context block is a defect in the review. But the block itself may legitimately be absent (many PRs won't have one); absence is fine, *not looking* is not.
 
    **The discipline — this reduces false positives; it must NOT launder real defects:**
    - Use it to **avoid flagging a deliberate, explained trade-off** as a mistake. A choice the diff makes that looks wrong in isolation but is justified by the context → don't raise it (or soften a 🔵/🟡 you'd otherwise raise), and reference the stated reason.
    - It **cannot suppress a genuine defect.** A 🔴 (security, data-loss, correctness) stands even if the note calls it intentional — say so, and explain why the rationale doesn't cover the risk.
    - **Verify the rationale, don't rubber-stamp it.** If the stated reasoning is itself wrong ("skipped server validation because the frontend validates"), challenge *the reasoning*, at the appropriate severity — the note is a claim to check, not a waiver.
    - **Anchor to the actual diff.** If the context is stale or contradicts the code, trust the code and note the mismatch.
-
-   When no rationale block is present, continue normally — this is a bonus signal, never required.
 
 5. **No ticket detected** → print `No ticket reference detected — reviewing diff against develop only.` and continue. The skill still works without a card; it just loses the "right problem", file-relatedness, discussion-decision, and implementation-context signals.
 
@@ -418,12 +426,13 @@ Before invoking each script in Steps -1 → 0.7 and the scoping scripts in Step 
 ### Step 8 — Analyze
 
 1. **Load project rules** (Step 3 above).
-2. **Refuse if on a protected branch.** In normal mode, run `git branch --show-current` (or `git -C "$WORKTREE" branch --show-current` in target mode — it returns empty for detached HEAD, which is safe). If the resolved branch is `main`, `master`, or `develop`, stop: `ERROR: Refusing to run on a protected branch. Check out your feature branch first.`
-3. **Diff first.** Run the scoping scripts and read every hunk. Do not start by reading whole files.
-4. **Read for context, not findings.** When a hunk references a Repository, Service, or Vuex store not in the diff, read the relevant part to understand intent — findings on those files are out of scope unless changed.
-5. **Apply the full review lens dimension by dimension — do not free-associate.** A single "read it and mention what jumps out" pass misses rules. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §15 Blade) plus the company rules from Step 3, deliberately check the diff against that dimension before moving to the next. A dimension is only "done" once you've either recorded a finding or confirmed the diff is clean for it.
+2. **Confirm context was loaded (Step 4).** You must have already printed the Step 4c result line. If you have not checked the PR body / PR comments / card comments for an implementation-context block, do it now before going further — do not analyze the diff without having looked.
+3. **Refuse if on a protected branch.** In normal mode, run `git branch --show-current` (or `git -C "$WORKTREE" branch --show-current` in target mode — it returns empty for detached HEAD, which is safe). If the resolved branch is `main`, `master`, or `develop`, stop: `ERROR: Refusing to run on a protected branch. Check out your feature branch first.`
+4. **Diff first.** Run the scoping scripts and read every hunk. Do not start by reading whole files.
+5. **Read for context, not findings.** When a hunk references a Repository, Service, or Vuex store not in the diff, read the relevant part to understand intent — findings on those files are out of scope unless changed.
+6. **Apply the full review lens dimension by dimension — do not free-associate.** A single "read it and mention what jumps out" pass misses rules. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §16 Scalability) plus the company rules from Step 3, deliberately check the diff against that dimension before moving to the next. A dimension is only "done" once you've either recorded a finding or confirmed the diff is clean for it.
 
-6. **Build a coverage ledger.** As you finish each dimension, record one line — this is the proof you actually checked it, not a guess:
+7. **Build a coverage ledger.** As you finish each dimension, record one line — this is the proof you actually checked it, not a guess:
 
    | Dim | Status |
    |---|---|
@@ -435,15 +444,15 @@ Before invoking each script in Steps -1 → 0.7 and the scoping scripts in Step 
 
    Use `n/a` only when no changed file is in that dimension's scope (e.g. §11 Migrations when no migration changed, §15 Blade when no `.blade.php` changed). Every other dimension must be `✓` with a count or `✓ clean`.
 
-7. **Completeness critic — second pass over the gaps.** Before compiling, re-scan the diff **once more, focused only on the dimensions you marked `✓ clean`**. Ask: "did I clear this because the code is genuinely fine, or because I skimmed past it?" This catches the rules a first pass forgets. Adjust the ledger if the second pass surfaces anything. Pay special attention to the easily-missed: §2i magic literals, §2m `count()` emptiness, §2p name-matches-behaviour, §3i hardcoded secrets, §4b N+1, §10 `report()` on caught exceptions.
+8. **Completeness critic — second pass over the gaps.** Before compiling, re-scan the diff **once more, focused only on the dimensions you marked `✓ clean`**. Ask: "did I clear this because the code is genuinely fine, or because I skimmed past it?" This catches the rules a first pass forgets. Adjust the ledger if the second pass surfaces anything. Pay special attention to the easily-missed: §2i magic literals, §2m `count()` emptiness, §2p name-matches-behaviour, §3i hardcoded secrets, §4b N+1, §10 `report()` on caught exceptions.
 
-8. **Filter dismissals.** For every candidate finding, read `.ai-review/dismissals.json` and skip the finding if any entry matches:
+9. **Filter dismissals.** For every candidate finding, read `.ai-review/dismissals.json` and skip the finding if any entry matches:
    - same `path`, AND
    - same `dim` (from the dismissal `dim` field), AND
    - candidate line is within ±5 of the dismissal `line`
 
    Skip this filter entirely if `--ignore-dismissals` was passed.
-9. **Compile remaining findings** grouped by severity (🔴 Critical → 🟡 Warning → 🔵 Suggestion), and **print the coverage ledger** so the developer can see every dimension was checked. Do not post or modify any files yet.
+10. **Compile remaining findings** grouped by severity (🔴 Critical → 🟡 Warning → 🔵 Suggestion), and **print the coverage ledger** so the developer can see every dimension was checked. Do not post or modify any files yet.
 
 ### Step 9 — Post the review
 
