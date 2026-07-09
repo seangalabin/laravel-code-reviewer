@@ -162,6 +162,25 @@ if (!fs.existsSync(rulesPath)) {
     }
 }
 
+// ── Scaffold company engineering standards (CLAUDE.md) ───────────────────────
+// Authoring guidance read by every Claude Code session AND by the skills as
+// project overrides. NEVER overwrite an existing CLAUDE.md — many repos have one;
+// in that case drop a CLAUDE.example.md alongside for the team to merge.
+const claudeTemplate = path.join(__dirname, '..', 'assets', 'CLAUDE.example.md');
+if (fs.existsSync(claudeTemplate)) {
+    const claudePath = path.join(target, 'CLAUDE.md');
+    if (!fs.existsSync(claudePath)) {
+        fs.copyFileSync(claudeTemplate, claudePath);
+        console.log(`✓ Created starter engineering standards at CLAUDE.md — edit {COMPANY} / your stack.`);
+    } else {
+        const examplePath = path.join(target, 'CLAUDE.example.md');
+        if (!fs.existsSync(examplePath)) {
+            fs.copyFileSync(claudeTemplate, examplePath);
+            console.log(`↷ CLAUDE.md already exists — wrote CLAUDE.example.md for reference; merge what you want.`);
+        }
+    }
+}
+
 if (isFixer) {
     console.log(`
 ✓ Installed to ${dest}

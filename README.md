@@ -86,7 +86,10 @@ To install into a specific directory:
 npx github:seangalabin/laravel-code-reviewer /path/to/project
 ```
 
-The installer copies the skill files into `.claude/skills/code-reviewer/` and writes `allowedTools` entries to `.claude/settings.json` so the review scripts run without per-command confirmation prompts.
+The installer copies the skill files into `.claude/skills/code-reviewer/` and writes `allowedTools` entries to `.claude/settings.json` so the review scripts run without per-command confirmation prompts. It also scaffolds two starter files, **only if they don't already exist** (an existing `CLAUDE.md` is never overwritten — you get a `CLAUDE.example.md` to merge instead):
+
+- **`CLAUDE.md`** — company engineering standards that steer any Claude Code session to write compliant code, and that the skills read as project overrides. Edit the `{COMPANY}` placeholder and stack.
+- **`.claude/code-review-rules.md`** — a starter for review-only custom rules (disable a check, change a severity, add a project rule).
 
 ## Setup
 
