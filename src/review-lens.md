@@ -591,6 +591,27 @@ return UserResource::collection($users);
 
 Inside an API Resource's `toArray()`: no DB queries, no Service calls — 🟡 Warning (Resources transform already-loaded data only). Use `$this->whenLoaded('relation')` for a related model **that may not be eager-loaded** — accessing it directly then triggers a lazy query — 🟡 Warning. If the relation is guaranteed loaded (the controller/`$with` always eager-loads it) `whenLoaded` isn't required; when you can't tell the load-state from the change, treat a bare relation access as 🔵, not 🟡.
 
+**No business logic in a Resource** — a Resource shapes a response; it doesn't decide business outcomes — 🟡 Warning. Fires on domain calculations or business rules computed inside `toArray()` (or private methods on the Resource): pricing/tax/total math, deriving a status or entitlement from multiple fields, permission/eligibility decisions, workflow-state branching. Move the logic to the Service (pass the computed value in), a model accessor, or a DTO — where it's testable and reusable — and let the Resource output the precomputed result. **Presentation transforms are the Resource's job — don't flag them:** renaming/nesting keys, formatting dates/numbers for display, `when()` / `whenLoaded()` / `mergeWhen()` conditionals, casting, enum `->label()` / `->value`, trivial concatenation (`full_name`), and null-safe fallbacks. The line: *deciding* a value from business rules = logic (flag); *reformatting* an already-decided value = presentation (fine). A **single-field derivation** (`'is_overdue' => $this->due_at->isPast()`, a null-check boolean) sits on the line — treat it as presentation, 🔵 at most. Route the value to the right home: a simple derivation fits a model accessor; **branching business rules (tiered tax, eligibility trees) belong in a Service/DTO, not an accessor** (§5 flags complex logic in models too). If the offending line is *also* a DB query or Service call (previous paragraph), report it **once** — as this rule — not twice.
+
+```php
+// BAD — business rule decided in the Resource
+public function toArray($request): array {
+    return [
+        'total' => $this->price * $this->qty * (1 + ($this->resource->isExport() ? 0 : 0.1)),
+        'can_renew' => $this->expires_at->isFuture() && $this->payments_count > 0 && ! $this->suspended_at,
+    ];
+}
+
+// GOOD — Resource outputs precomputed values
+public function toArray($request): array {
+    return [
+        'total' => $this->total_with_gst,        // branching tax rule → computed by Service
+        'can_renew' => $this->can_renew,          // eligibility tree → Service / Policy
+        'expires_at' => $this->expires_at->toIso8601String(),  // formatting is fine
+    ];
+}
+```
+
 #### 4b. Eloquent N+1 queries
 
 Any Eloquent query or relationship access inside a loop body without prior eager loading is 🟡 Warning. `->load()` inside a loop is the same violation — lift it above the loop.
