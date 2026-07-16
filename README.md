@@ -32,10 +32,9 @@ Run `/code-reviewer` in Claude Code and it will:
 2. Check previously posted comments — mark any that have been addressed, and respond to developer replies on them
 3. Refresh dismissal memory — skip findings a developer has already marked won't-fix
 4. Diff the current branch against `develop`
-5. Run a mechanical pre-pass (`scan_diff.py`) over the changed lines to surface red flags
-6. Apply a 16-dimension review lens to every hunk
-7. Ask: **Post {N} findings to PR #{ID}? [y/n]** — the only interactive prompt
-8. Post each finding as an inline Bitbucket PR comment with a copy-pasteable fix prompt
+5. Reviews run as a three-phase engine: (1) a mechanical pre-pass (`scan_diff.py`) greps the diff's added lines for ~40 known red-flag patterns; (2) on diffs of 25+ changed lines, six parallel read-only subagents each sweep one slice of the lens (~20 rules of full attention instead of ~150); (3) the main context adjudicates every pre-pass hit (confirm or reject with a reason — silent drops forbidden), merges and dedups agent findings, and prints a coverage ledger showing every dimension's status and source. Small diffs use a single inline pass.
+6. Ask: **Post {N} findings to PR #{ID}? [y/n]** — the only interactive prompt
+7. Post each finding as an inline Bitbucket PR comment with a copy-pasteable fix prompt
 
 ## Review dimensions
 
