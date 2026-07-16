@@ -426,21 +426,45 @@ Before invoking each script in Steps -1 → 0.7 and the scoping scripts in Step 
 3. **Refuse if on a protected branch.** In normal mode, run `git branch --show-current` (or `git -C "$WORKTREE" branch --show-current` in target mode — it returns empty for detached HEAD, which is safe). If the resolved branch is `main`, `master`, or `develop`, stop: `ERROR: Refusing to run on a protected branch. Check out your feature branch first.`
 4. **Diff first.** Run the scoping scripts and read every hunk. Do not start by reading whole files.
 5. **Read for context, not findings.** When a hunk references a Repository, Service, or Vuex store not in the diff, read the relevant part to understand intent — findings on those files are out of scope unless changed.
-6. **Apply the full review lens dimension by dimension — do not free-associate.** A single "read it and mention what jumps out" pass misses rules. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §16 Scalability) plus the company rules from Step 3, deliberately check the diff against that dimension before moving to the next. A dimension is only "done" once you've either recorded a finding or confirmed the diff is clean for it.
+6. **Choose the analysis mode.** Count the diff's changed lines (`git diff --shortstat` insertions + deletions, or the scoping script's total). **Under 25 changed lines** → run the *inline walk* described in 7a. **25 or more** → run the *fan-out* described in 7b. Either way, the `scan_diff.py` pre-pass output from the scoping step is Phase 1 input to item 8.
 
-7. **Build a coverage ledger.** As you finish each dimension, record one line — this is the proof you actually checked it, not a guess:
+7a. **Inline walk (small diffs).** Apply the full review lens dimension by dimension — do not free-associate. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §16 Scalability) plus the company rules from Step 3, deliberately check the diff against that dimension before moving on. A dimension is only "done" once you've recorded a finding or confirmed the diff is clean for it. Then run a completeness-critic pass: re-scan the diff once more focused only on dimensions you marked clean — "genuinely fine, or did I skim?" Watch the easily-missed: §2i magic literals, §2m `count()` emptiness, §2p name-matches-behaviour, §3i hardcoded secrets, §4b N+1, §10 `report()` on caught exceptions. Ledger `Source` column: `inline`.
 
-   | Dim | Status |
-   |---|---|
-   | §1 Architecture & layering | ✓ 2 findings |
-   | §2 Code standards (2a–2p) | ✓ clean |
-   | §3 Security (3a–3i) | ✓ 1 finding |
-   | … | … |
-   | §15 Blade | n/a — no Blade files changed |
+7b. **Fan-out (25+ changed lines).** Launch **six parallel read-only subagents** with the Task/Agent tool, one per lens slice:
 
-   Use `n/a` only when no changed file is in that dimension's scope (e.g. §11 Migrations when no migration changed, §15 Blade when no `.blade.php` changed). Every other dimension must be `✓` with a count or `✓ clean`.
+   | Slice | Dimensions | Skip when |
+   |---|---|---|
+   | S1 | §1 Architecture, §4 Laravel, §5 Models | — |
+   | S2 | §3 Security, §7 Correctness, §8 Data integrity | — |
+   | S3 | §2 Standards & readability | — |
+   | S4 | §9 Performance, §10 Error handling, §16 Scalability | — |
+   | S5 | §12 Front-end, §15 Blade | no JS/TS/Vue/Blade file in the diff |
+   | S6 | §6 Enums, §11 Migrations, §13 Testing, §14 API design | mark individual dims n/a when no file in scope |
 
-8. **Completeness critic — second pass over the gaps.** Before compiling, re-scan the diff **once more, focused only on the dimensions you marked `✓ clean`**. Ask: "did I clear this because the code is genuinely fine, or because I skimmed past it?" This catches the rules a first pass forgets. Adjust the ledger if the second pass surfaces anything. Pay special attention to the easily-missed: §2i magic literals, §2m `count()` emptiness, §2p name-matches-behaviour, §3i hardcoded secrets, §4b N+1, §10 `report()` on caught exceptions.
+   Each subagent prompt MUST contain, verbatim where applicable:
+   - the working directory (worktree path in target mode) and the changed-file list;
+   - the instruction: *"Read the diff hunks first (`git diff {BASE}...HEAD -- {files}`); read surrounding code only for context. Findings are only valid on changed lines or their direct blast radius."*;
+   - **only that slice's lens sections**, copied from this skill's lens below, plus any project CLAUDE.md rules touching those dimensions;
+   - the implementation-context block from Step 4c if one exists, with the discipline: context may downgrade style-level doubts, it never dismisses a 🔴;
+   - the output contract: *"Return ONLY a JSON array of findings `[{file, line, dim, severity, title, body}]` followed by a ledger line per dimension: `§N <name> — ✓ clean | ✓ K findings | n/a — no files in scope`. No prose."*
+   - the constraint: read-only — no edits, no posting, no writes.
+
+   If the Agent tool is unavailable or a slice agent errors, **fall back to the inline walk (7a) for that slice's dimensions only** and mark its ledger rows `inline fallback`.
+
+8. **Arbitrate (main context is the judge).**
+   - **Adjudicate every `scan_diff.py` line.** Each pre-pass hit must end as either a confirmed finding or a rejection with a stated reason (e.g. "env() hit is in config/ — exempt", "print_r has `true` second arg into Log — exempt"). Silent drops are forbidden; if the pre-pass printed 12 hits, your arbitration must account for 12.
+   - **Merge agent findings.** Dedup: same file, same dimension, lines within ±5 → keep the more specific / higher-severity finding. Where an agent finding duplicates a confirmed pre-pass hit, keep one (the better-worded).
+   - Re-check each surviving finding's severity against the lens — subagents sometimes inflate; the lens severity wins.
+   - **Build the coverage ledger v2** — one row per dimension with its source:
+
+     | Dim | Status | Source |
+     |---|---|---|
+     | §1 Architecture & layering | ✓ 2 findings | S1 agent |
+     | §2 Code standards | ✓ clean | S3 agent |
+     | §3 Security | ✓ 1 finding | S2 agent + scan |
+     | §15 Blade | n/a — no Blade files changed | — |
+
+     `n/a` only when no changed file is in that dimension's scope. Every dimension must appear.
 
 9. **Filter dismissals.** For every candidate finding, read `.ai-review/dismissals.json` and skip the finding if any entry matches:
    - same `path`, AND
