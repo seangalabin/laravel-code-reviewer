@@ -120,6 +120,14 @@ ALWAYS_RULES = [
     ("MUST", "no-debug-output",
      re.compile(r"\b(?:error_log|var_dump|print_r)\s*\("),
      "error_log/var_dump/print_r — use Log::info/error/debug instead", None),
+
+    ("MUST", "secret-literal",
+     re.compile(
+         r"AKIA[0-9A-Z]{16}"
+         r"|-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY"
+         r"|(?i:secret|api[_-]?key|token|passwd|password)\w*['\"]?\s*(?:=|=>|:)\s*['\"][A-Za-z0-9+/_\-]{20,}['\"]"
+     ),
+     "possible hardcoded secret/credential — move it to config/credential storage; rotate if already committed", None),
 ]
 
 # ─── PHP-wide (all .php files) ──────────────────────────────────────────────
@@ -140,6 +148,22 @@ PHP_RULES = [
     ("WARN", "http-without-timeout",
      re.compile(r"\bHttp::(get|post|put|patch|delete|send|withHeaders|withToken|withBasicAuth|withBody|asForm|asJson)\s*\("),
      "Http:: call — verify ->timeout(N) is chained; without it the request can hang indefinitely", None),
+
+    ("WARN", "select-star",
+     re.compile(r"->select\s*\(\s*['\"]\*['\"]|DB::raw\s*\(\s*['\"](?i:select\s+\*)"),
+     "explicit select('*') — redundant; list only the columns actually used (keep id + FKs + accessor/cast sources)", None),
+
+    ("WARN", "get-then-pluck",
+     re.compile(r"->get\s*\(\s*\)\s*->pluck\s*\("),
+     "->get()->pluck() loads every column then plucks — call ->pluck() on the builder instead", None),
+
+    ("WARN", "log-getmessage",
+     re.compile(r"Log::(?:error|warning|critical|info)\s*\(\s*\$\w+->getMessage\s*\("),
+     "Log::*($e->getMessage()) flattens the exception and drops the trace — prefer report($e), or pass ['exception' => $e]", None),
+
+    ("MUST", "exception-in-response",
+     re.compile(r"(?:response\s*\(\s*\)->json|abort)\s*\(.*->get(?:Message|TraceAsString|File|Line)\s*\("),
+     "raw exception detail in an HTTP response — leaks internals to the client; return a generic message and report($e) instead", None),
 ]
 
 # ─── Controllers ────────────────────────────────────────────────────────────
@@ -238,9 +262,9 @@ FORM_REQUEST_RULES = [
      "authorize() returns true unconditionally — add a Policy/Gate check or acknowledge the intent", None),
 ]
 
-# ─── Vue / JS ───────────────────────────────────────────────────────────────
+# ─── JS / Vue ───────────────────────────────────────────────────────────────
 
-VUE_RULES = [
+JS_RULES = [
     ("WARN", "no-console-log",
      re.compile(r"\bconsole\.(?:log|debug)\s*\("),
      "console.log/debug in committed code", None),
@@ -249,6 +273,12 @@ VUE_RULES = [
      re.compile(r"\bdebugger\s*[;\n]"),
      "debugger statement in committed code", None),
 
+    ("WARN", "add-event-listener",
+     re.compile(r"\baddEventListener\s*\("),
+     "addEventListener — verify a matching removeEventListener exists in beforeUnmount()/destroyed() to prevent memory leaks", None),
+]
+
+VUE_RULES = JS_RULES + [
     ("MUST", "v-html",
      re.compile(r"\bv-html\s*="),
      "v-html — XSS risk if the value is not sanitised before assignment (DOMPurify or trusted internal source only)", None),
@@ -264,10 +294,6 @@ VUE_RULES = [
     ("WARN", "direct-dom",
      re.compile(r"\bdocument\.(querySelector|getElementById|getElementsBy)\s*\("),
      "direct DOM manipulation in Vue — use this.$refs.name instead so Vue controls the element lifecycle", None),
-
-    ("WARN", "add-event-listener",
-     re.compile(r"\baddEventListener\s*\("),
-     "addEventListener — verify a matching removeEventListener exists in beforeUnmount()/destroyed() to prevent memory leaks", None),
 ]
 
 # ─── API Resources ──────────────────────────────────────────────────────────
@@ -375,6 +401,9 @@ def select_rules(path: str):
         elif path.startswith("tests/"):
             rules += TEST_RULES
 
+    if path.endswith((".js", ".jsx", ".ts", ".tsx")):
+        rules += JS_RULES
+
     if path.endswith(".vue"):
         rules += VUE_RULES
 
@@ -420,16 +449,10 @@ def parse_diff(diff_text: str):
             new_line_no += 1
 
 
-def scan(base_ref: str):
-    cmd = ["git", "diff", f"{base_ref}...HEAD"]
-    try:
-        diff = subprocess.check_output(cmd, text=True, stderr=subprocess.PIPE)
-    except subprocess.CalledProcessError as e:
-        print(f"error: {' '.join(cmd)} failed:\n{e.stderr}", file=sys.stderr)
-        sys.exit(1)
-
+def scan_text(diff_text: str):
+    """Pure scanner over a unified-diff string — no git, no exit()."""
     findings: list[Finding] = []
-    for path, lineno, content in parse_diff(diff):
+    for path, lineno, content in parse_diff(diff_text):
         if any(s in path for s in ("vendor/", "storage/", "node_modules/")):
             continue
         if has_ignore_marker_above(path, lineno):
@@ -445,6 +468,16 @@ def scan(base_ref: str):
                 message=message, snippet=content.strip()[:160],
             ))
     return findings
+
+
+def scan(base_ref: str):
+    cmd = ["git", "diff", f"{base_ref}...HEAD"]
+    try:
+        diff = subprocess.check_output(cmd, text=True, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        print(f"error: {' '.join(cmd)} failed:\n{e.stderr}", file=sys.stderr)
+        sys.exit(1)
+    return scan_text(diff)
 
 
 def render(findings, show_snippets: bool):

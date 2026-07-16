@@ -562,5 +562,108 @@ class TestReviewerWindowsParity(unittest.TestCase):
                                 f'missing Windows variant skill/scripts/{name}.ps1')
 
 
+# ── scan_diff — hybrid-recall rules ───────────────────────────────────────────
+
+def _mkdiff(path: str, *added_lines: str) -> str:
+    """Minimal unified diff adding the given lines to `path`."""
+    body = '\n'.join('+' + l for l in added_lines)
+    return (
+        f'diff --git a/{path} b/{path}\n'
+        f'--- a/{path}\n'
+        f'+++ b/{path}\n'
+        f'@@ -0,0 +{len(added_lines)} @@\n'
+        f'{body}\n'
+    )
+
+
+class TestScanDiffHybridRules(unittest.TestCase):
+
+    def rules_hit(self, diff_text):
+        return {f.rule for f in scan_diff.scan_text(diff_text)}
+
+    # scan_text is a pure function over the diff string
+    def test_scan_text_exists_and_returns_findings(self):
+        diff = _mkdiff('app/Services/Foo.php', '        dd($x);')
+        hits = self.rules_hit(diff)
+        self.assertIn('no-dd-dump-die', hits)
+
+    # secret-literal (§3i)
+    def test_secret_literal_aws_key(self):
+        diff = _mkdiff('app/Services/S3.php', "$key = 'AKIAIOSFODNN7EXAMPLE';")
+        self.assertIn('secret-literal', self.rules_hit(diff))
+
+    def test_secret_literal_private_key_block(self):
+        diff = _mkdiff('config/keys.php', "'pem' => '-----BEGIN RSA PRIVATE KEY-----',")
+        self.assertIn('secret-literal', self.rules_hit(diff))
+
+    def test_secret_literal_named_secret_assignment(self):
+        diff = _mkdiff('app/Services/Pay.php',
+                       "$apiSecret = 'sk_live_51Hx9aBcDeFgH1234567890';")
+        self.assertIn('secret-literal', self.rules_hit(diff))
+
+    def test_secret_literal_ignores_short_and_unnamed(self):
+        diff = _mkdiff('app/Services/Pay.php', "$mode = 'live';")
+        self.assertNotIn('secret-literal', self.rules_hit(diff))
+
+    # select-star (§9)
+    def test_select_star_quoted(self):
+        diff = _mkdiff('app/Repositories/R.php', "->select('*')")
+        self.assertIn('select-star', self.rules_hit(diff))
+
+    def test_select_star_db_raw(self):
+        diff = _mkdiff('app/Repositories/R.php', 'DB::raw("SELECT * FROM users")')
+        self.assertIn('select-star', self.rules_hit(diff))
+
+    def test_select_columns_not_flagged(self):
+        diff = _mkdiff('app/Repositories/R.php', "->select(['id', 'name'])")
+        self.assertNotIn('select-star', self.rules_hit(diff))
+
+    # get-then-pluck (§9)
+    def test_get_then_pluck(self):
+        diff = _mkdiff('app/Repositories/R.php', "$ids = $q->get()->pluck('id');")
+        self.assertIn('get-then-pluck', self.rules_hit(diff))
+
+    def test_builder_pluck_not_flagged(self):
+        diff = _mkdiff('app/Repositories/R.php', "$ids = $q->pluck('id');")
+        self.assertNotIn('get-then-pluck', self.rules_hit(diff))
+
+    # log-getmessage (§10)
+    def test_log_getmessage(self):
+        diff = _mkdiff('app/Services/S.php', 'Log::error($e->getMessage());')
+        self.assertIn('log-getmessage', self.rules_hit(diff))
+
+    def test_log_with_exception_context_not_flagged(self):
+        diff = _mkdiff('app/Services/S.php',
+                       "Log::error('charge failed', ['exception' => $e]);")
+        self.assertNotIn('log-getmessage', self.rules_hit(diff))
+
+    # exception-in-response (§3f)
+    def test_exception_in_json_response(self):
+        diff = _mkdiff('app/Http/Controllers/C.php',
+                       "return response()->json(['error' => $e->getMessage()], 500);")
+        self.assertIn('exception-in-response', self.rules_hit(diff))
+
+    def test_exception_in_abort(self):
+        diff = _mkdiff('app/Http/Controllers/C.php', 'abort(500, $e->getMessage());')
+        self.assertIn('exception-in-response', self.rules_hit(diff))
+
+    def test_reported_exception_not_flagged(self):
+        diff = _mkdiff('app/Http/Controllers/C.php', 'report($e);')
+        self.assertNotIn('exception-in-response', self.rules_hit(diff))
+
+    # JS routing fix (§12)
+    def test_console_log_in_plain_js(self):
+        diff = _mkdiff('resources/js/store/modules/agents.js', "console.log(state);")
+        self.assertIn('no-console-log', self.rules_hit(diff))
+
+    def test_debugger_in_ts(self):
+        diff = _mkdiff('resources/js/helpers/date.ts', 'debugger;')
+        self.assertIn('no-debugger', self.rules_hit(diff))
+
+    def test_vue_rules_still_apply_to_vue(self):
+        diff = _mkdiff('resources/js/components/A.vue', '<div v-html="userBio">')
+        self.assertIn('v-html', self.rules_hit(diff))
+
+
 if __name__ == '__main__':
     unittest.main()
