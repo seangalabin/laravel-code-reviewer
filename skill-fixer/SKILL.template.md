@@ -220,7 +220,7 @@ Before invoking each script in Steps -1 → 0.1 and the scoping scripts in Step 
 2. **Refuse if on a protected branch.** Run `git branch --show-current`. If it returns `main`, `master`, or `develop`, stop: `ERROR: Refusing to run on a protected branch. Check out your feature branch first.`
 3. **Diff first.** Run the scoping scripts and read every hunk. Do not start by reading whole files.
 4. **Read for context, not findings.** When a hunk references a Repository, Service, or Vuex store not in the diff, read the relevant part to understand intent — findings on those files are out of scope unless changed.
-5. **Choose the analysis mode.** Count the diff's changed lines (`git diff --shortstat` insertions + deletions, or the scoping script's total). **Under 25 changed lines** → run the *inline walk* described in 6a. **25 or more** → run the *fan-out* described in 6b. Either way, the `scan_diff.py` pre-pass output from the scoping step is Phase 1 input to item 7.
+5. **Choose the analysis mode.** Count the diff's changed lines: `git diff --shortstat origin/develop...HEAD` insertions + deletions. **Under 25 changed lines** → run the *inline walk* described in 6a. **25 or more** → run the *fan-out* described in 6b. Either way, the `scan_diff.py` pre-pass output from the scoping step is Phase 1 input to item 7. If the `scan_diff.py` pre-pass failed or was skipped (no Python), continue — Phase 2/the inline walk still runs; note `scan: skipped` in the ledger.
 
 6a. **Inline walk (small diffs).** Apply the full review lens dimension by dimension — do not free-associate. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §16 Scalability) plus the company rules from Step 2, deliberately check the diff against that dimension before moving on. A dimension is only "done" once you've recorded a finding or confirmed the diff is clean for it. Then run a completeness-critic pass: re-scan the diff once more focused only on dimensions you marked clean — "genuinely fine, or did I skim?" Watch the easily-missed: §2i magic literals, §2m `count()` emptiness, §2p name-matches-behaviour, §3i hardcoded secrets, §4b N+1, §10 `report()` on caught exceptions. Ledger `Source` column: `inline`.
 
@@ -236,12 +236,12 @@ Before invoking each script in Steps -1 → 0.1 and the scoping scripts in Step 
    | S6 | §6 Enums, §11 Migrations, §13 Testing, §14 API design | mark individual dims n/a when no file in scope |
 
    Each subagent prompt MUST contain, verbatim where applicable:
-   - the working directory (worktree path in target mode) and the changed-file list;
+   - the working directory and the changed-file list;
    - the instruction: *"Read the diff hunks first (`git diff {BASE}...HEAD -- {files}`); read surrounding code only for context. Findings are only valid on changed lines or their direct blast radius."*;
    - **only that slice's lens sections**, copied from this skill's lens below, plus any project CLAUDE.md rules touching those dimensions;
    - the implementation-context block from Step 3c if one exists, with the discipline: context may downgrade style-level doubts, it never dismisses a 🔴;
    - the output contract: *"Return ONLY a JSON array of findings `[{file, line, dim, severity, title, body}]` followed by a ledger line per dimension: `§N <name> — ✓ clean | ✓ K findings | n/a — no files in scope`. No prose."*
-   - the constraint: read-only — no edits, no posting, no writes.
+   - the constraint: read-only — no edits, no posting, no writes, and do **not** read `.ai-review/dismissals.json` (dismissal filtering happens in the main context).
 
    If the Agent tool is unavailable or a slice agent errors, **fall back to the inline walk (6a) for that slice's dimensions only** and mark its ledger rows `inline fallback`.
 

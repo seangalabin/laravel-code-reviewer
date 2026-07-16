@@ -150,7 +150,7 @@ PHP_RULES = [
      "Http:: call — verify ->timeout(N) is chained; without it the request can hang indefinitely", None),
 
     ("WARN", "select-star",
-     re.compile(r"->select\s*\(\s*['\"]\*['\"]|DB::raw\s*\(\s*['\"](?i:select\s+\*)"),
+     re.compile(r"->select\s*\(\s*['\"]\*['\"]|->selectRaw\s*\(\s*['\"](?i:select\s+\*)|DB::(?:raw|select)\s*\(\s*['\"](?i:select\s+\*)"),
      "explicit select('*') — redundant; list only the columns actually used (keep id + FKs + accessor/cast sources)", None),
 
     ("WARN", "get-then-pluck",
@@ -158,11 +158,11 @@ PHP_RULES = [
      "->get()->pluck() loads every column then plucks — call ->pluck() on the builder instead", None),
 
     ("WARN", "log-getmessage",
-     re.compile(r"Log::(?:error|warning|critical|info)\s*\(\s*\$\w+->getMessage\s*\("),
+     re.compile(r"Log::(?:error|warning|critical|info|debug|notice|alert|emergency)\s*\(\s*(?:['\"][^'\"]*['\"]\s*\.\s*)?\$\w+->getMessage\s*\("),
      "Log::*($e->getMessage()) flattens the exception and drops the trace — prefer report($e), or pass ['exception' => $e]", None),
 
     ("MUST", "exception-in-response",
-     re.compile(r"(?:response\s*\(\s*\)->json|abort)\s*\(.*->get(?:Message|TraceAsString|File|Line)\s*\("),
+     re.compile(r"(?:response\s*\(\s*\)->json|abort(?:_if|_unless)?)\s*\(.*->get(?:Message|TraceAsString|File|Line)\s*\("),
      "raw exception detail in an HTTP response — leaks internals to the client; return a generic message and report($e) instead", None),
 ]
 

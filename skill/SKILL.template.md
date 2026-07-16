@@ -426,7 +426,7 @@ Before invoking each script in Steps -1 → 0.7 and the scoping scripts in Step 
 3. **Refuse if on a protected branch.** In normal mode, run `git branch --show-current` (or `git -C "$WORKTREE" branch --show-current` in target mode — it returns empty for detached HEAD, which is safe). If the resolved branch is `main`, `master`, or `develop`, stop: `ERROR: Refusing to run on a protected branch. Check out your feature branch first.`
 4. **Diff first.** Run the scoping scripts and read every hunk. Do not start by reading whole files.
 5. **Read for context, not findings.** When a hunk references a Repository, Service, or Vuex store not in the diff, read the relevant part to understand intent — findings on those files are out of scope unless changed.
-6. **Choose the analysis mode.** Count the diff's changed lines (`git diff --shortstat` insertions + deletions, or the scoping script's total). **Under 25 changed lines** → run the *inline walk* described in 7a. **25 or more** → run the *fan-out* described in 7b. Either way, the `scan_diff.py` pre-pass output from the scoping step is Phase 1 input to item 8.
+6. **Choose the analysis mode.** Count the diff's changed lines: `git diff --shortstat "$BASE_REF...HEAD"` insertions + deletions (target mode: `git -C "$WORKTREE" diff --shortstat "$BASE_REF...HEAD"`). **Under 25 changed lines** → run the *inline walk* described in 7a. **25 or more** → run the *fan-out* described in 7b. Either way, the `scan_diff.py` pre-pass output from the scoping step is Phase 1 input to item 8. If the `scan_diff.py` pre-pass failed or was skipped (no Python), continue — Phase 2/the inline walk still runs; note `scan: skipped` in the ledger.
 
 7a. **Inline walk (small diffs).** Apply the full review lens dimension by dimension — do not free-associate. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §16 Scalability) plus the company rules from Step 3, deliberately check the diff against that dimension before moving on. A dimension is only "done" once you've recorded a finding or confirmed the diff is clean for it. Then run a completeness-critic pass: re-scan the diff once more focused only on dimensions you marked clean — "genuinely fine, or did I skim?" Watch the easily-missed: §2i magic literals, §2m `count()` emptiness, §2p name-matches-behaviour, §3i hardcoded secrets, §4b N+1, §10 `report()` on caught exceptions. Ledger `Source` column: `inline`.
 
@@ -447,7 +447,7 @@ Before invoking each script in Steps -1 → 0.7 and the scoping scripts in Step 
    - **only that slice's lens sections**, copied from this skill's lens below, plus any project CLAUDE.md rules touching those dimensions;
    - the implementation-context block from Step 4c if one exists, with the discipline: context may downgrade style-level doubts, it never dismisses a 🔴;
    - the output contract: *"Return ONLY a JSON array of findings `[{file, line, dim, severity, title, body}]` followed by a ledger line per dimension: `§N <name> — ✓ clean | ✓ K findings | n/a — no files in scope`. No prose."*
-   - the constraint: read-only — no edits, no posting, no writes.
+   - the constraint: read-only — no edits, no posting, no writes, and do **not** read `.ai-review/dismissals.json` (dismissal filtering happens in the main context).
 
    If the Agent tool is unavailable or a slice agent errors, **fall back to the inline walk (7a) for that slice's dimensions only** and mark its ledger rows `inline fallback`.
 
@@ -472,7 +472,7 @@ Before invoking each script in Steps -1 → 0.7 and the scoping scripts in Step 
    - candidate line is within ±5 of the dismissal `line`
 
    Skip this filter entirely if `--ignore-dismissals` was passed.
-10. **Compile remaining findings** grouped by severity (🔴 Critical → 🟡 Warning → 🔵 Suggestion), and **print the coverage ledger** so the developer can see every dimension was checked. Do not post or modify any files yet.
+10. **Compile remaining findings** grouped by severity (🔴 Critical → 🟡 Warning → 🔵 Suggestion), and **print the coverage ledger v2 (with Source column)** so the developer can see every dimension was checked. Do not post or modify any files yet.
 
 ### Step 9 — Post the review
 

@@ -664,6 +664,40 @@ class TestScanDiffHybridRules(unittest.TestCase):
         diff = _mkdiff('resources/js/components/A.vue', '<div v-html="userBio">')
         self.assertIn('v-html', self.rules_hit(diff))
 
+    def test_abort_if_exception_message(self):
+        diff = _mkdiff('app/Http/Controllers/C.php',
+                       'abort_if($failed, 500, $e->getMessage());')
+        self.assertIn('exception-in-response', self.rules_hit(diff))
+
+    def test_log_debug_getmessage(self):
+        diff = _mkdiff('app/Services/S.php', 'Log::debug($e->getMessage());')
+        self.assertIn('log-getmessage', self.rules_hit(diff))
+
+    def test_log_concat_getmessage(self):
+        diff = _mkdiff('app/Services/S.php',
+                       "Log::error('sync failed: ' . $e->getMessage());")
+        self.assertIn('log-getmessage', self.rules_hit(diff))
+
+    def test_db_select_star(self):
+        diff = _mkdiff('app/Repositories/R.php', 'DB::select("select * from users");')
+        self.assertIn('select-star', self.rules_hit(diff))
+
+    def test_select_raw_star(self):
+        diff = _mkdiff('app/Repositories/R.php', '$q->selectRaw("SELECT * FROM x");')
+        self.assertIn('select-star', self.rules_hit(diff))
+
+    def test_add_event_listener_plain_js(self):
+        diff = _mkdiff('resources/js/helpers/bus.js', "el.addEventListener('click', fn);")
+        self.assertIn('add-event-listener', self.rules_hit(diff))
+
+    def test_vue_only_rules_not_on_plain_js(self):
+        diff = _mkdiff('resources/js/helpers/x.js', '<div v-html="user.bio">')
+        self.assertNotIn('v-html', self.rules_hit(diff))
+
+    def test_console_log_in_jsx(self):
+        diff = _mkdiff('resources/js/components/A.jsx', 'console.log(props);')
+        self.assertIn('no-console-log', self.rules_hit(diff))
+
 
 if __name__ == '__main__':
     unittest.main()
