@@ -10,20 +10,33 @@
 Step 8 (reviewer) / the analyze step (fixer) restructures into three phases:
 
 ```
-Phase 1  scripts/scan_mechanical.py  → candidate list (greppable rules, added lines only)
-Phase 2  subagent fan-out            → semantic findings (6 lens slices, parallel, read-only)
-Phase 3  main context                → adjudicate candidates + merge + dedup + dismissal filter + post
+Phase 1  scripts/scan_diff.py (extended)  → candidate list (greppable rules, added lines only)
+Phase 2  subagent fan-out                 → semantic findings (6 lens slices, parallel, read-only)
+Phase 3  main context                     → adjudicate candidates + merge + dedup + dismissal filter + post
 ```
+
+> Implementation note: the repo already ships `scripts/scan_diff.py` — a diff-scoped, added-lines-only, layer-routed pattern scanner with ignore-marker support, byte-identical in both skills and covering most of the rule table below. Phase 1 **extends it** with the missing rules rather than adding a second scanner (DRY).
 
 The main context stops being the finder and becomes the judge. Both skills get the identical restructure in the same commit; the shared-file no-drift test extends to the new script.
 
 **Fan-out gate:** total changed lines < 25 → skip Phase 2, run today's single-context dimension walk instead (Phase 1 + Phase 3 still run). 25+ → fan out. Slice-level `n/a` skips (see §3) trim cost naturally on top.
 
-## 2. Phase 1 — mechanical scan script
+## 2. Phase 1 — mechanical scan (extend `scan_diff.py`)
 
-New `scripts/scan_mechanical.py`, present in both skills, stdlib-only. Reads `git diff` itself (same scoping as the existing diff scripts, honouring target/worktree mode) and fires regex rules **only on added lines**.
+`scripts/scan_diff.py` already covers: dd/dump/die, superglobals, raw-SQL interpolation, debug output, missing return types, `env()` outside config, `Http::` without timeout, controller layering patterns, Service HTTP-agnostic patterns, `$guarded = []`, mass assignment, v-html, console.log (Vue only), Blade `{!! !!}`, migration/test rules.
 
-Initial rule table (rule_id → dim, severity, pattern intent):
+**Rules to add** (rule_id → dim, severity, pattern intent):
+
+| rule_id | Dim | Sev | Fires on |
+|---|---|---|---|
+| secret-literal | §3i | MUST | `AKIA[0-9A-Z]{16}`, `-----BEGIN … PRIVATE KEY`, long literal assigned to a secret-ish name |
+| select-star | §9 | WARN | `->select('*')`, `DB::raw('select * …')` |
+| get-then-pluck | §9 | WARN | `->get()->pluck(` |
+| log-getmessage | §10 | WARN | `Log::error($e->getMessage())` and level variants |
+| exception-in-response | §3f | MUST | `getMessage()`/`getTraceAsString()`/`getFile()`/`getLine()` inside `response()->json(` / `abort(` |
+| *(routing fix)* | §12 | — | plain `.js/.jsx/.ts/.tsx` files currently get **no** JS rules — route console.log/debugger/addEventListener to them |
+
+Full previous table (for reference — rows already covered by existing rules are struck):
 
 | rule_id | Dim | Sev | Fires on |
 |---|---|---|---|
@@ -84,8 +97,8 @@ Agents do not post, write, or read dismissals — they only report.
 
 ## 6. Testing & shipping
 
-- Unit tests for `scan_mechanical.py`: fixture diffs asserting each rule fires, plus non-fire cases for the documented exemptions (e.g. `env()` inside `config/`, `print_r($x, true)` into `Log::info`).
-- `TestSharedFilesNoDrift` covers the new script; build idempotency test unchanged.
+- Unit tests for the new `scan_diff.py` rules: fixture diffs asserting each rule fires, plus non-fire cases for the documented exemptions (e.g. `env()` inside `config/` — existing behaviour — and `Log::error('msg', ['exception' => $e])` not firing log-getmessage).
+- `TestSharedFilesNoDrift` already covers `scan_diff.py`; build idempotency test unchanged.
 - Both `SKILL.template.md` files updated in the same commit (fixer-alignment rule). `python3 build.py` regenerates both SKILL.md outputs.
 - README: new "How a review runs" phase description. Minor version bumps for both skills.
 
