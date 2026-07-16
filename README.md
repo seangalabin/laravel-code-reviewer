@@ -11,7 +11,7 @@ Generic AI reviewers are good at spotting universal bugs but don't know *your te
 It is built around a few deliberate choices:
 
 - **Diff-scoped, not file-scoped.** It reviews only the lines a branch changed — it won't drown you in findings about pre-existing code.
-- **An opinionated 16-dimension lens** (architecture & layering, security, Laravel/Eloquent best practices, readability, Blade, front-end frameworks — Vue/React/etc., testing, …) maintained in one place and shared by both skills. Teams can extend or override it with a committed `.claude/code-review-rules.md`.
+- **An opinionated 16-dimension lens** (architecture & layering, security, Laravel/Eloquent best practices, readability, Blade, front-end frameworks — Vue/React/etc., testing, …) maintained in one place and shared by both skills. Teams can extend or override it in their project `CLAUDE.md` (a legacy `.claude/code-review-rules.md` is still honoured).
 - **Findings you can act on** — each one is plain-language *what's wrong*, a copy-pasteable fix prompt, a suggested diff, and *why* it matters. Severity is 🔴 / 🟡 / 🔵 so the signal isn't buried.
 - **It reads the task, not just the code** — pulls the linked Jira card (title, acceptance criteria, **and the comment thread**) to judge whether the change solves the *right* problem, flags files unrelated to the task, surfaces decisions raised in discussion that the code ignored, and weighs the developer's own **implementation rationale** when it's provided (see [below](#giving-the-reviewer-your-implementation-context)) — so a deliberate trade-off isn't mistaken for a bug.
 - **It has a memory** — tracks which findings were addressed (and resolves them), remembers what a developer dismissed as won't-fix, responds to replies on its comments, and can sync the Jira card status (`Failed Code Review` / `Code Review`).
@@ -86,10 +86,7 @@ To install into a specific directory:
 npx github:seangalabin/laravel-code-reviewer /path/to/project
 ```
 
-The installer copies the skill files into `.claude/skills/code-reviewer/` and writes `allowedTools` entries to `.claude/settings.json` so the review scripts run without per-command confirmation prompts. It also scaffolds two starter files, **only if they don't already exist** (an existing `CLAUDE.md` is never overwritten — you get a `CLAUDE.example.md` to merge instead):
-
-- **`CLAUDE.md`** — company engineering standards that steer any Claude Code session to write compliant code, and that the skills read as project overrides. Edit the `{COMPANY}` placeholder and stack.
-- **`.claude/code-review-rules.md`** — a starter for review-only custom rules (disable a check, change a severity, add a project rule).
+The installer copies the skill files into `.claude/skills/code-reviewer/` and writes `allowedTools` entries to `.claude/settings.json` so the review scripts run without per-command confirmation prompts. It also scaffolds a starter **`CLAUDE.md`**, only if one doesn't already exist (an existing `CLAUDE.md` is never overwritten — you get a `CLAUDE.example.md` to merge instead): company engineering standards that steer any Claude Code session to write compliant code, and that the skills read as project overrides — including review-behaviour rules (disable a check, change a severity, add a project rule). Edit the `{COMPANY}` placeholder and stack.
 
 ## Setup
 

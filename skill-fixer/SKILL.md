@@ -85,17 +85,13 @@ These apply in all modes and cannot be overridden by project config:
 
 ## Step 2 — Check for project-specific overrides (optional)
 
-**Company review rules.** If `.claude/code-review-rules.md` exists, read it and apply its rules **in addition to** the built-in lens below. These are first-class:
+**Company standards live in the project's `CLAUDE.md`.** If the project root has a `CLAUDE.md`, read it and apply its conventions and rules **in addition to** the built-in lens below. These are first-class:
 
 - A company rule takes **precedence** over a built-in rule when they conflict.
 - A company rule may **disable** a built-in dimension (e.g. "Disable dimension 6") — honour that and skip the built-in check.
-- Apply company rules with the same weight as the lens — flag violations at the severity the rule states.
+- Apply company rules at the severity they state; where a convention is stated without a severity, treat a violation as 🟡 Warning.
 
-If the project also has any of these files in the root, read them first and let them override the defaults in this skill:
-
-- `CLAUDE.md` — project conventions for Claude Code
-- `.coderabbit.yaml` — CodeRabbit review rules (if present)
-- `.cursorrules` or `.github/copilot-instructions.md` — other agent rules
+Also honour, if present: `.cursorrules` / `.github/copilot-instructions.md`, and a legacy `.claude/code-review-rules.md` (older installs — same precedence as CLAUDE.md rules). Do **not** read `.coderabbit.yaml` — it's not maintained.
 
 If none exist, skip this step. The skill's built-in rules are reasonable Laravel defaults and work standalone.
 
@@ -359,7 +355,7 @@ Each run appends a new dated entry with the timestamp + the template above, sepa
 
 ## Review lens
 
-Work through these dimensions in order. If the project has `.coderabbit.yaml` or `CLAUDE.md` rules, apply those first — these dimensions extend them.
+Work through these dimensions in order. If the project has `CLAUDE.md` rules, apply those first — these dimensions extend them.
 
 ---
 
@@ -385,6 +381,7 @@ Controllers are HTTP adapters only. They must:
 Controllers must NOT:
 - Contain **non-trivial branching or calculation that decides a business outcome** — multi-step workflows, business rules, domain math — 🟡 Warning. Do **not** flag guard clauses / route-state checks (`if (! $order) abort(404)`), null/existence checks, presentational branching (`$class = $active ? 'on' : 'off'`), or defaulting a request param (`$page = $request->page ?? 1`).
 - Issue Eloquent queries or call Model static methods directly — 🟡 Warning
+- Call a Repository **write** method (`create` / `update` / `delete` / `save` / `upsert` / attach-detach) directly — 🟡 Warning. The "or a Repository for simple reads" allowance above is **read-only**; writes carry business consequences (transactions, events, side-effects) and must go through a Service. Judge write-vs-read by whether the method **mutates state**, not by substring — `getUpdatedSince()`, `findDeleted()`, `listCreatedBetween()` are reads. Don't flag controller→Repository *read* calls — they're the sanctioned pattern.
 - Call `$request->validate(...)` inline — use a `FormRequest` — 🟡 Warning
 - Contain manual authorization (e.g. `if ($user->role === ...)`) — use Policies/Gates; see §3a (canonical) — 🟡 Warning
 - Return `$model->toArray()`, `response()->json($model)`, or a raw array instead of an API Resource; see §4a (canonical) — 🟡 Warning
@@ -1054,6 +1051,8 @@ event(new UserRegistered($user));
 
 `new ClassName()` inside a Controller, Service, or Repository where the class should be injected is 🔵 Suggestion. This includes `new OtherService()` inside a Service constructor body.
 
+**Injected dependencies should be `private readonly`** — on a **new or substantially rewritten** class, promoted constructor dependencies (Services, Repositories, clients) declared without `readonly` — 🔵 Suggestion. `private readonly UserRepository $userRepository` makes the dependency immutable after construction and documents that nothing swaps it mid-lifecycle. Don't flag legacy classes the diff merely touches, properties that are genuinely reassigned (verify before suggesting), or non-dependency value properties. **Exempt queued Jobs** — a service dependency constructor-injected into a Job is its own smell (the Job is serialized; resolve dependencies in `handle()` instead), so suggest moving the dependency to `handle()`, not adding `readonly`.
+
 #### 4g. `DB::transaction()` for multi-write paths (canonical)
 
 Two or more writes that **must commit or roll back together** — a parent plus its children, a debit plus its credit — belong in `DB::transaction()`. A missing transaction on such a path is 🟡 Warning: if the second write fails, the first stays committed and related rows are left inconsistent. A single Eloquent call that happens to issue several statements (e.g. `create()` with a `creating` hook) is **one logical write** — don't flag it; and genuinely independent writes with no consistency relationship don't need wrapping. When in doubt — if a partial failure would leave related rows inconsistent — still flag 🟡.
@@ -1065,6 +1064,14 @@ DB::transaction(function () use ($data, $items) {
     $order->items()->createMany($items);
 });
 ```
+
+#### 4h. Multiple database connections
+
+**Only when the project visibly uses more than one distinct database** (models declaring `$connection`, `DB::connection('...')` calls, or multiple connections in the diff) — otherwise this whole subsection is silent. **Read/write splits and replica aliases are one connection** — a `read`/`write` array inside a single connection config, or two named connections pointing at the same database, never fire these rules.
+
+- A query or `join` that mixes tables from **different databases** — a cross-connection `join()`, or `whereHas`/`with` spanning models on different connections — 🟡 Warning. It works in dev where all databases share one host and breaks in production when they don't. Fetch from each connection separately and combine in PHP, or denormalize.
+- New code querying a table through the **default** connection when the model/table demonstrably belongs to another database (its model declares `$connection`, or existing call sites consistently use `DB::connection('x')`) — 🟡 Warning; confirm-not-accuse ("this table appears to live on the `x` connection — confirm").
+- Only flag what the diff shows — don't guess a table's home connection from its name.
 
 ---
 
@@ -1123,7 +1130,7 @@ Enums are value descriptors. Pure value-derivation on the enum is fine and encou
 
 - External HTTP calls with no `$response->successful()` check or try/catch — 🟡 Warning.
 - A `catch` that neither logs, rethrows, nor handles the error — silent swallowing — 🟡 Warning. A catch that logs or genuinely handles is fine even if broad.
-- **`report()` vs `Log` for a caught exception** — when a `catch` handles an exception locally (doesn't rethrow), prefer `report($e)` — it routes through the exception handler to the configured channels with the full stack/context — over `Log::error($e->getMessage())`, which flattens the exception to a bare string and drops the trace — 🔵 Suggestion. If you do log instead of `report()`, pass the exception rather than just its message (`Log::error('charge failed', ['exception' => $e])`) and match the level to severity (`error` for failures, `warning` / `info` for expected or diagnostic cases). Reserve plain `Log::info()` / `Log::debug()` for non-exception diagnostics. Don't flag a `catch` that rethrows or lets the exception bubble to the global handler — it's reported there already. A team that wants to **mandate** one path (e.g. always `report()`, never the `Log` facade) should encode that in its `.claude/code-review-rules.md`.
+- **`report()` vs `Log` for a caught exception** — when a `catch` handles an exception locally (doesn't rethrow), prefer `report($e)` — it routes through the exception handler to the configured channels with the full stack/context — over `Log::error($e->getMessage())`, which flattens the exception to a bare string and drops the trace — 🔵 Suggestion. If you do log instead of `report()`, pass the exception rather than just its message (`Log::error('charge failed', ['exception' => $e])`) and match the level to severity (`error` for failures, `warning` / `info` for expected or diagnostic cases). Reserve plain `Log::info()` / `Log::debug()` for non-exception diagnostics. Don't flag a `catch` that rethrows or lets the exception bubble to the global handler — it's reported there already. A team that wants to **mandate** one path (e.g. always `report()`, never the `Log` facade) should encode that in its project `CLAUDE.md`.
 - Missing fallback when a collection is empty but the next line assumes at least one element — 🟡 Warning.
 - Decoding an external response with `->json()` / `json_decode()` and then indexing or iterating it without handling a malformed or empty body — 🟡 Warning (both return `null`, so `->json()['data']` then crashes).
 - A `catch` that handles a failure but still returns a success response — HTTP `2xx`, `success: true`, or no error status at all — 🟡 Warning; return the correct `4xx` / `5xx` (throw an `HttpException`, `abort(5xx)`, or `response()->json([...], 5xx)`) so the caller can detect the failure instead of treating a broken call as OK. Exempt a catch that **genuinely recovers** — falls back to a valid value, retries successfully, or the failed step is optional — where success is the honest outcome; confirm-not-accuse when the recovery intent isn't clear from the diff. (Exposing the raw exception in the response body is the §3f half.)
@@ -1161,15 +1168,19 @@ $table->string('phone')->nullable()->after('email');
 - **Svelte** — `.svelte` files.
 - **Vanilla / unknown** — plain `.js` / `.ts` with none of the above.
 
-For a framework **not enumerated below** (Angular, Svelte, Solid, Alpine, …), apply **that framework's own well-known best practices** at the appropriate severity — component-lifecycle cleanup, state immutability, list-key/tracking, effect/reactive-dependency correctness, XSS sinks, subscription/listener leaks — alongside §12a. The team's `.claude/code-review-rules.md` can add framework-specific rules.
+For a framework **not enumerated below** (Angular, Svelte, Solid, Alpine, …), apply **that framework's own well-known best practices** at the appropriate severity — component-lifecycle cleanup, state immutability, list-key/tracking, effect/reactive-dependency correctness, XSS sinks, subscription/listener leaks — alongside §12a. The team's project `CLAUDE.md` can add framework-specific rules.
 
 #### 12a. Framework-agnostic (any JS / TS)
 
 - **Unsanitised HTML injection** — `el.innerHTML =`, Vue `v-html`, React `dangerouslySetInnerHTML`, Angular `[innerHTML]` — with user-supplied input — 🔴 Critical (also §3f, §15c).
 - **Listener / subscription / timer added without matching cleanup** on teardown — 🔵 Suggestion (memory leak).
 - **Direct DOM manipulation** (`document.querySelector`, manual node mutation) inside a component — 🔵 Suggestion; use the framework's ref mechanism.
-- **`fetch` / `axios` / HTTP call with no error handling** — 🟡 Warning.
+- **`fetch` / `axios` / HTTP call with no error handling** — 🟡 Warning. Exempt a call through the app's central configured client whose **interceptors already handle errors** — that's the pattern working as designed. When the bypass bullet below also fires on the same line, post one finding (the bypass — routing through the shared instance usually fixes both).
+- **Bypassing the app's configured HTTP client** — a fresh `axios.create()`, raw `fetch()`, or ad-hoc `XMLHttpRequest` for an **internal API call** when the codebase routes requests through a central configured instance (base URL, auth/CSRF headers, loading/error interceptors — e.g. a `bootstrap/axios.js`) — 🟡 Warning; import the shared instance, a bypass silently drops every interceptor. Only flag when a central instance demonstrably exists (visible in the repo or the diff imports one elsewhere). Exempt calls to **third-party** endpoints that must not carry the app's headers/credentials.
 - **Missing loading / error state** for an async operation surfaced in the UI — 🔵 Suggestion.
+- **Native `alert()` / `confirm()` / `prompt()` in app code** — 🔵 Suggestion (🟡 if the codebase has an established dialog/notification system the diff ignores). They block the event loop, can't be styled, and break async confirm flows — use the app's notification/dialog component (toast library, SweetAlert, modal system). Exempt `beforeunload` / navigation-guard handlers (custom modals are impossible mid-unload) and throwaway scripts that won't ship.
+- **Front-end literals duplicating backend enum values** — hardcoded status/type/role strings in JS that mirror a backend enum (`'pending'`, `'super-admin'`, `'appraisal'`) — 🔵 Suggestion **when the project has a shared constants module** (e.g. `constants/*.js` mirroring PHP enums) that the diff bypasses; add the value to the module if it's missing, then import it. If no such module exists, the literal is just §2i (magic values) — don't invent a convention.
+- **Second date-handling stack** — raw `toLocaleDateString()` / `new Date()` formatting or a newly-introduced date library in a codebase that routes date work through a central helper or a single established library — 🔵 Suggestion; use the project's wrapper (it owns nil-safety, parsing, and locale). Only flag when the central helper demonstrably exists; don't flag date *math* or non-display parsing, and don't flag test files building expected strings.
 - **Secrets committed in front-end/bundle code** — see §3i.
 
 #### 12b. Vue
@@ -1204,6 +1215,7 @@ For a framework **not enumerated below** (Angular, Svelte, Solid, Alpine, …), 
 #### Test quality
 
 - **Outbound HTTP in a test without `Http::fake()`** (or the project's HTTP-fake helper) — 🟡 Warning. Stray requests make tests flaky and environment-dependent.
+- **New outbound HTTP call in app code with no fake in its covering test** — the diff adds an `Http::` / SDK / API call on a tested path, and the test touching that path (in the diff) adds no corresponding `Http::fake()` / fake helper — 🟡 Warning. Where the suite runs `Http::preventStrayRequests()` this fails every test on the path; elsewhere it silently hits the real network from CI. If no test in the diff covers the new call, treat it as the missing-test signal instead — don't double-flag. When this and the test-side bullet above both apply to the same diff, post **one** finding, anchored to the test.
 - **Testing a private/protected method via reflection** — 🟡 Warning (test observable behaviour through the public API).
 - **Test with no assertions** — 🔵 Suggestion (passes vacuously).
 - **Tautological / constant assertions** — `assertTrue(true)`, `assertEquals($x, $x)` — 🔵 Suggestion (proves nothing).
@@ -1487,7 +1499,6 @@ Prefix each comment's title with one of:
 - Don't comment on style issues already caught by the linter (Pint, ESLint).
 - Don't open untouched files to look for new issues.
 - Don't grade the whole architecture from a small change.
-- Don't restate `.coderabbit.yaml` rules verbatim if the project uses CodeRabbit — it already does that on the PR.
 - Don't flag issues caught by Pint or the Pest ArchitectureTest as *findings* — they're CI's job. (You still **run** Pint/Pest/lint to verify each applied fix, per Step 6.4 — that's verification, not a finding.)
 - Don't invent issues to fill buckets. An empty 🔴/🟡 list is a valid and welcome outcome.
 - Don't suggest rewrites of working code unless there's a concrete reason.

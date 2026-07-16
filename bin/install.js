@@ -151,17 +151,6 @@ if (!alreadyIgnored) {
     console.log(`✓ Added ${ignoreEntry} to .gitignore`);
 }
 
-// ── Scaffold company review rules (only if absent — never overwrite) ─────────
-// Read in addition to the built-in lens by both /code-reviewer and /code-fixer.
-const rulesPath = path.join(target, '.claude', 'code-review-rules.md');
-if (!fs.existsSync(rulesPath)) {
-    const rulesTemplate = path.join(__dirname, '..', 'assets', 'code-review-rules.md');
-    if (fs.existsSync(rulesTemplate)) {
-        fs.copyFileSync(rulesTemplate, rulesPath);
-        console.log(`✓ Created starter company rules at .claude/code-review-rules.md`);
-    }
-}
-
 // ── Scaffold company engineering standards (CLAUDE.md) ───────────────────────
 // Authoring guidance read by every Claude Code session AND by the skills as
 // project overrides. NEVER overwrite an existing CLAUDE.md — many repos have one;

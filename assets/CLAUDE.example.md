@@ -1,6 +1,6 @@
 # Engineering standards — {COMPANY}
 
-> Drop this file in your Laravel project root as `CLAUDE.md`. Every Claude Code session working in this repo reads it, and so do the `/code-reviewer` and `/code-fixer` skills (as project overrides). **Write code that already follows these rules** — it should pass review the first time. For anything that only changes review *behaviour* — disabling a check, changing a severity, or adding a project-specific/framework rule — use `.claude/code-review-rules.md` instead.
+> Drop this file in your Laravel project root as `CLAUDE.md`. Every Claude Code session working in this repo reads it, and so do the `/code-reviewer` and `/code-fixer` skills (as project overrides). **Write code that already follows these rules** — it should pass review the first time. This file is also where review *behaviour* changes live — disable a check ("Disable dimension 6"), change a severity, or add a project-specific/framework rule right here, and the skills will honour it.
 
 We are a Laravel + (Vue/React) team. The base branch is `develop`. CI runs **Pint** (formatting) and **Pest** (tests) before code review — so don't hand-fix formatting; focus on the rules below.
 

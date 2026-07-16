@@ -138,17 +138,13 @@ The CI wrapper is `.claude/skills/code-reviewer/bin/ai-review-ci`. Devs can set 
 
 ## Step 3 — Check for project-specific overrides (optional)
 
-**Company review rules.** If `.claude/code-review-rules.md` exists, read it and apply its rules **in addition to** the built-in lens below. These are first-class:
+**Company standards live in the project's `CLAUDE.md`.** If the project root has a `CLAUDE.md`, read it and apply its conventions and rules **in addition to** the built-in lens below. These are first-class:
 
 - A company rule takes **precedence** over a built-in rule when they conflict.
 - A company rule may **disable** a built-in dimension (e.g. "Disable dimension 6") — honour that and skip the built-in check.
-- Apply company rules with the same weight as the lens — flag violations at the severity the rule states.
+- Apply company rules at the severity they state; where a convention is stated without a severity, treat a violation as 🟡 Warning.
 
-If the project also has any of these files in the root, read them first and let them override the defaults in this skill:
-
-- `CLAUDE.md` — project conventions for Claude Code
-- `.coderabbit.yaml` — CodeRabbit review rules (if present)
-- `.cursorrules` or `.github/copilot-instructions.md` — other agent rules
+Also honour, if present: `.cursorrules` / `.github/copilot-instructions.md`, and a legacy `.claude/code-review-rules.md` (older installs — same precedence as CLAUDE.md rules). Do **not** read `.coderabbit.yaml` — it's not maintained.
 
 If none exist, skip this step. The skill's built-in rules are reasonable Laravel defaults and work standalone.
 
@@ -670,7 +666,6 @@ If developers want to fix issues locally instead, they should use the `/code-fix
 - Don't comment on style issues already caught by the linter (Pint, ESLint).
 - Don't open untouched files to look for new issues.
 - Don't grade the whole architecture from a small change.
-- Don't restate `.coderabbit.yaml` rules verbatim if the project uses CodeRabbit — it already does that on the PR.
 - Don't flag issues caught by Pint or the Pest ArchitectureTest.
 - Don't invent issues to fill buckets. An empty 🔴/🟡 list is a valid and welcome outcome.
 - Don't run Pint, Pest, or ESLint — CI runs these before the card moves to code review.
