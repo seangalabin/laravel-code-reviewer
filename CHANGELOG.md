@@ -5,6 +5,24 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.29.0 / code-fixer 1.25.0 — 2026-07-17
+
+### Added
+- **§16f Cache hot, expensive reads in Redis** (🔵 Suggestion) — when the diff adds or reworks
+  a read that is expensive to compute *and* served repeatedly with the same result (dashboard
+  aggregates, reference/lookup data, expensive derived values, stable external API responses),
+  suggest `Cache::remember()` backed by Redis. Hotness is judged from context — the card
+  description / PR context (Step 4), not just the code. A suggestion must name the three cache
+  decisions (key parameters, TTL / staleness budget, invalidation path) and is suppressed for
+  cheap reads, read-after-write-fresh data with no invalidation hook, unbounded key cardinality,
+  rarely-hit paths, and already-cached values. Fix-first-cache-second: an underlying N+1 /
+  full-table load stays the primary finding.
+- **§2d Route URIs → `kebab-case`** — new row in the naming-conventions table
+  (`/user-profiles/{id}/payment-methods`); route URI casing previously had no rule.
+
+### Fixed
+- README review-dimensions table was missing the §16 Scalability row since 1.28.0 — backfilled.
+
 ## code-reviewer 1.28.0 / code-fixer 1.24.0 — 2026-07-06
 
 ### Added

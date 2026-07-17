@@ -56,6 +56,7 @@ Run `/code-reviewer` in Claude Code and it will:
 | 13 | Testing | Stray HTTP, reflection, `withoutExceptionHandling()`, missing assertions |
 | 14 | API Design | Status codes, pagination, Resource field exposure |
 | 15 | Blade views | Business logic in views, N+1 in `@foreach`, URL/attr XSS, CSRF, dynamic `@include` |
+| 16 | Scalability | `chunkById()`, chunk-and-queue, job idempotency, retry safety, concurrency, Redis caching for hot reads |
 
 ## Severity
 

@@ -560,6 +560,7 @@ class UserService {
 | Constants / enum cases | `SCREAMING_SNAKE_CASE` | `MAX_RETRIES` |
 | Database columns | `snake_case` | `created_at`, `user_id` |
 | Blade views | `kebab-case.blade.php` | `user-profile.blade.php` |
+| Route URIs | `kebab-case` | `/user-profiles/{id}/payment-methods` |
 | Model names | Singular | `User`, `Order` |
 
 #### 2e. Positive conditionals (if/else only)
@@ -1274,7 +1275,7 @@ Most single-line scalability smells already have canonical rules — apply the s
 - **Heavy synchronous work on a request path** — imports, exports, PDF/image generation, email, notifications, external API calls, report generation, search/index sync, cache warming/rebuilds — belongs on a queue: §4e (canonical). Moving it off the request improves responsiveness, fault tolerance (retries without user re-submit), and scalability (throughput scales with workers, not web nodes).
 - **Multi-write transactions** — §4g / §8. **Check-then-act races / `lockForUpdate`** — §8. **`Http::` timeouts** — §9.
 
-The rules below are the large-dataset / queued-workload cases **not** covered above.
+The rules below are the large-dataset / queued-workload / hot-read cases **not** covered above.
 
 #### 16a. `chunkById()` over `chunk()` on mutable tables — 🟡 Warning
 
@@ -1366,6 +1367,42 @@ $product->save();
 // GOOD — atomic decrement, no race, guards against overselling
 Product::where('id', $id)->where('stock', '>', 0)->decrement('stock');
 ```
+
+#### 16f. Cache hot, expensive reads in Redis — 🔵 Suggestion
+
+When the diff adds or reworks a read that is both **expensive to compute** and **served repeatedly with the same result**, suggest caching it in Redis via Laravel's cache (`Cache::remember()`). Judge *hot* from context, not just the code: the card description and PR context often say what the change is for — a dashboard, homepage widget, public listing, report, or navigation menu implies a high-traffic read path; an admin one-off does not. Typical candidates:
+
+- aggregate/report queries (joins + `groupBy` + aggregates) feeding dashboards or widgets;
+- reference/lookup data read on many requests (settings, menus, categories, feature flags);
+- expensive derived values recomputed per request (rankings, counts over large tables);
+- calls to slow external APIs whose response is stable over minutes.
+
+```php
+// BAD — heavy aggregate recomputed on every dashboard hit
+$stats = Order::whereYear('created_at', now()->year)
+    ->selectRaw('status, count(*) as total, sum(amount) as revenue')
+    ->groupBy('status')
+    ->get();
+
+// GOOD — computed once per 10 minutes, served from Redis after that
+$stats = Cache::remember('dashboard:order-stats:'.now()->year, 600, fn () =>
+    Order::whereYear('created_at', now()->year)
+        ->selectRaw('status, count(*) as total, sum(amount) as revenue')
+        ->groupBy('status')
+        ->get()
+);
+```
+
+A useful suggestion names the three cache decisions, not just "cache this": the **key** (include every parameter that changes the result — tenant, user, filters, date), the **TTL / staleness budget** the business can tolerate, and the **invalidation path** (TTL expiry, or `Cache::forget()` / a model observer when the underlying rows change).
+
+Judgement — do **not** suggest caching when:
+- the read is already cheap (an indexed single-row lookup) — the cache round-trip saves nothing;
+- the result must be **read-after-write fresh** (balances, stock levels, authorization state) and no invalidation hook exists — a stale cache there is a correctness bug, not an optimisation;
+- the key cardinality is unbounded (per-user × per-filter × per-page keys) — that's Redis memory pressure, not a cache;
+- the card/code indicates a rarely-hit path (admin tooling, one-off command);
+- the value is already cached upstream or wrapped in `remember()`.
+
+Fix first, cache second: caching over an N+1 or a full-table load hides the defect until the first cold miss — flag the underlying smell (§4b / §9) as the primary finding and the cache as a follow-up.
 
 ---
 
