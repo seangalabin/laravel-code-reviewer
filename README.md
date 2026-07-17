@@ -50,12 +50,12 @@ Run `/code-reviewer` in Claude Code and it will:
 | 8 | Data Integrity | Multi-write transactions, check-then-act, locking |
 | 9 | Performance | N+1, full-table loads, `Http::` timeout |
 | 10 | Error Handling | Swallowed exceptions, missing HTTP error handling |
-| 11 | Migrations | Non-null without default (table lock risk), Model refs, empty `down()` |
+| 11 | Migrations | Non-null without default (table lock risk), Model refs, empty `down()`, data-only migrations → seeders |
 | 12 | Front-end framework | Auto-detects Vue / React / other JS-TS frameworks; list keys, state mutation, HTML-injection XSS, effect/listener leaks |
 | 13 | Testing | Stray HTTP, reflection, `withoutExceptionHandling()`, missing assertions |
 | 14 | API Design | Status codes, pagination, Resource field exposure |
 | 15 | Blade views | Business logic in views, N+1 in `@foreach`, URL/attr XSS, CSRF, dynamic `@include` |
-| 16 | Scalability & Large Data | `chunkById` over `chunk`, chunk-and-queue orchestration, job idempotency, retry safety, worker concurrency |
+| 16 | Scalability & Large Data | `chunkById` over `chunk`, chunk-and-queue orchestration, job idempotency, retry safety, worker concurrency, Redis caching for hot reads, S3 over local disk |
 
 ## Severity
 

@@ -5,6 +5,39 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.40.0 / code-fixer 1.36.0 — 2026-07-17
+
+### Added
+- **§16f Cache hot, expensive reads in Redis** (🔵 Suggestion) — when the diff adds or reworks
+  a read that is expensive to compute *and* served repeatedly with the same result (dashboard
+  aggregates, reference/lookup data, expensive derived values, stable external API responses),
+  suggest `Cache::remember()` backed by Redis. Hotness is judged from context — the card
+  description / PR context, not just the code. A suggestion must name the three cache
+  decisions (key parameters, TTL / staleness budget, invalidation path) and is suppressed for
+  cheap reads, read-after-write-fresh data with no invalidation hook, unbounded key
+  cardinality, rarely-hit paths, and already-cached values. Fix-first-cache-second: an
+  underlying N+1 / full-table load stays the primary 🟡 finding.
+- **§16g Files, images, and assets belong in S3, not on the server's disk** (🟡 Warning) —
+  local-disk writes have repeatedly bloated app-server storage, and a file on one server is
+  invisible to the others (and lost on redeploy/autoscale). Flags persistent writes to the
+  `local`/`public` disk or under `public_path()`/`storage_path()`; recommends the company-wide
+  S3-backed `Asset::storage()` helper as the idiomatic fix (or `Storage::disk('s3')`), with
+  `temporaryUrl()` for private files. Legitimately-local **temp files** must live under
+  `sys_get_temp_dir()` and carry failure-safe cleanup (`finally` + delete) — a temp file with
+  no visible deletion is 🟡 on its own. Carve-outs: `Asset::storage()`/cloud-disk writes,
+  default disk that may already be S3 (confirm, don't assert), framework-managed paths,
+  ephemeral scratch with visible cleanup, `Storage::fake()` in tests. Complements §3e (upload
+  validation), which stays canonical for type/size rules.
+- **§11 Seeders over data migrations** — a **data-only migration** (rows written, no schema
+  change) is 🟡 — data belongs in an idempotent seeder (`updateOrCreate()`/`upsert()` on a
+  stable key); migrations stay schema-only. Exception: data that must run lock-step with a
+  schema change in the same deploy (backfill before a non-null constraint) legitimately stays
+  a migration. And a migration **altering a table another migration in the same branch
+  created/modified** is 🔵 — fold it into the unreleased migration instead of stacking alters
+  (never suggest editing an already-shipped migration).
+- **§2d Route URIs → `kebab-case`** — new row in the naming-conventions table
+  (`/user-profiles/{id}/payment-methods`); route URI casing previously had no rule.
+
 ## code-reviewer 1.28.0 / code-fixer 1.24.0 — 2026-07-06
 
 ### Added
