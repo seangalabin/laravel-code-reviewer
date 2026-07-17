@@ -5,6 +5,30 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.30.0 / code-fixer 1.26.0 — 2026-07-17
+
+### Added
+- **§16g Files, images, and assets belong in S3, not on the server's disk** (🟡 Warning) —
+  local-disk writes have repeatedly bloated app-server storage, and a file on one server is
+  invisible to the others (and lost on redeploy/autoscale). Flags persistent writes to the
+  `local`/`public` disk or under `public_path()`/`storage_path()` (uploads, generated PDFs/
+  exports, library output with no upload step); recommends the project's S3-backed
+  `Asset::storage()` helper as the idiomatic fix (or `Storage::disk('s3')`), with
+  `temporaryUrl()` for private files. Legitimately-local **temp files** must live under
+  `sys_get_temp_dir()` and carry failure-safe cleanup (`finally` + delete) — a temp file
+  with no visible deletion is 🟡 on its own. Carve-outs: default disk that may already be
+  S3 (confirm, don't assert), framework-managed paths (cache/sessions/logs), ephemeral
+  scratch with visible cleanup, `Storage::fake()` in tests. Complements §3e (upload
+  validation), which stays canonical for type/size rules.
+- **§11 Seeders over data migrations** — two new migration rules: a **data-only migration**
+  (rows written, no schema change) is 🟡 — data belongs in an idempotent seeder
+  (`updateOrCreate()`/`upsert()` on a stable key); migrations stay schema-only. Exception:
+  data that must run lock-step with a schema change in the same deploy (backfill before a
+  non-null constraint) legitimately stays a migration. And a migration **altering a table
+  another migration in the same branch created/modified** is 🔵 — fold it into the
+  unreleased migration instead of stacking alters (never suggest editing an already-shipped
+  migration).
+
 ## code-reviewer 1.29.0 / code-fixer 1.25.0 — 2026-07-17
 
 ### Added

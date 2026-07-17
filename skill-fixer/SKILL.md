@@ -1109,6 +1109,8 @@ Enums are value descriptors. Pure value-derivation on the enum is fine and encou
 - **Missing index on a foreign key column** — 🔵 Suggestion.
 - **Dropping a column/table or renaming a column on an existing table** (`dropColumn`, `dropTable`/`drop`, `renameColumn`) — 🟡 Warning. `down()` can recreate the structure but not the rows; confirm the data is expendable and the deploy is sequenced.
 - **Narrowing a column type** — shortening a length, `text`→`string`, `bigInteger`→`integer`, cutting decimal precision — 🟡 Warning (silent truncation / mid-deploy failure on existing data).
+- **Data-only migration — rows inserted/updated/deleted with no schema change** — 🟡 Warning. Migrations are for **schema (DDL)**; data belongs in an **idempotent seeder** (`updateOrCreate()` / `upsert()` / `firstOrCreate()` keyed on a stable identifier) — seeders are re-runnable, environment-targetable, and keep the migration history schema-only. Reference/lookup rows (roles, statuses, settings, permissions) are the classic case. **The legitimate exception:** a data change that must run **in lock-step with a schema change in the same deploy** — backfilling a new column before it's made non-null, or transforming rows into a structure a later migration depends on — belongs in the migration sequence; don't flag those.
+- **New migration altering a table another migration in this same branch created or modified** — 🔵 Suggestion. While the earlier migration is unreleased, fold the change into it instead of stacking alter-migrations the branch itself introduced. (Never suggest editing a migration that has already merged/shipped — it has run on other environments.)
 
 ```php
 // BAD — will lock table during deploy on large datasets
@@ -1118,6 +1120,20 @@ Schema::table('users', function (Blueprint $table) {
 
 // GOOD — two-step: nullable first, then backfill, then constrain
 $table->string('phone')->nullable()->after('email');
+```
+
+```php
+// BAD — data-only migration: runs once, buried in schema history
+public function up(): void
+{
+    DB::table('roles')->insert(['name' => 'auditor', 'label' => 'Auditor']);
+}
+
+// GOOD — idempotent seeder: re-runnable, safe to re-seed any environment
+public function run(): void
+{
+    Role::updateOrCreate(['name' => 'auditor'], ['label' => 'Auditor']);
+}
 ```
 
 ---
@@ -1275,7 +1291,7 @@ Most single-line scalability smells already have canonical rules — apply the s
 - **Heavy synchronous work on a request path** — imports, exports, PDF/image generation, email, notifications, external API calls, report generation, search/index sync, cache warming/rebuilds — belongs on a queue: §4e (canonical). Moving it off the request improves responsiveness, fault tolerance (retries without user re-submit), and scalability (throughput scales with workers, not web nodes).
 - **Multi-write transactions** — §4g / §8. **Check-then-act races / `lockForUpdate`** — §8. **`Http::` timeouts** — §9.
 
-The rules below are the large-dataset / queued-workload / hot-read cases **not** covered above.
+The rules below are the scale-sensitive cases — large datasets, queued workloads, hot reads, shared file storage — **not** covered above.
 
 #### 16a. `chunkById()` over `chunk()` on mutable tables — 🟡 Warning
 
@@ -1403,6 +1419,51 @@ Judgement — do **not** suggest caching when:
 - the value is already cached upstream or wrapped in `remember()`.
 
 Fix first, cache second: caching over an N+1 or a full-table load hides the defect until the first cold miss — flag the underlying smell (§4b / §9) as the primary finding and the cache as a follow-up.
+
+#### 16g. Files, images, and assets belong in S3, not on the server's disk — 🟡 Warning
+
+Persistent files written to the **local filesystem** are a standing production problem in this stack: app-server disks have repeatedly bloated toward full, and a file written to one server's disk is invisible to the other servers — and gone after a redeploy or autoscale. User uploads, images, and generated output (PDFs, exports, reports) belong in **S3** via Laravel's filesystem abstraction.
+
+Flag when the diff writes a **persistent** file to a local path:
+
+- `->store(...)` / `->storeAs(...)` / `Storage::put(...)` targeting the `local` or `public` disk for a user upload or generated output;
+- `move_uploaded_file()`, `File::put()`, `file_put_contents()`, or `->move(...)` writing under `public_path()` / `storage_path()`;
+- a file-producing library (PDF/report/image generation) configured to emit into a local directory with no upload step afterwards.
+
+```php
+// BAD — lands on one server's disk: bloats storage, invisible to other nodes
+$request->file('avatar')->store('avatars', 'public');
+
+// GOOD — object storage; serve via URL (temporaryUrl for private files)
+$path = $request->file('avatar')->store('avatars', 's3');
+$url  = Storage::disk('s3')->temporaryUrl($path, now()->addMinutes(10));
+
+// GOOD — this codebase's Asset::storage() helper returns the S3-backed disk;
+// prefer it over naming the disk inline
+Asset::storage()->putFileAs('avatars', $request->file('avatar'), $filename);
+```
+
+When suggesting the fix, recommend the project's **`Asset::storage()`** helper as the idiomatic entry point — it centralises the disk choice instead of scattering `'s3'` string literals.
+
+**Temp files are fine — if they're actually temporary.** Some work legitimately needs a local file (image manipulation, zip assembly, buffering a download before upload). Write it under `sys_get_temp_dir()` / `tempnam()` — never a persistent app path — and **guarantee cleanup on every exit path, including failure** (a `finally` block). A temp file created with no visible deletion is 🟡 on its own: leaked temp files are exactly how the disks got bloated.
+
+```php
+// GOOD — local scratch file, result uploaded to S3, cleanup guaranteed
+$tmp = tempnam(sys_get_temp_dir(), 'export_');
+try {
+    $this->generateCsv($tmp);
+    Asset::storage()->putFileAs('exports', new File($tmp), $filename);
+} finally {
+    @unlink($tmp);
+}
+```
+
+Judgement — do **not** flag:
+
+- writes through **`Asset::storage()`** (S3-backed by definition), `Storage::disk('s3')` / another cloud disk, or a diskless `->store('path')` when the **default disk** may already be S3 — check `config/filesystems.php` if visible; if not, phrase as a question ("confirm the default disk is s3") rather than an assertion;
+- framework-managed local paths — caches, compiled views, sessions, logs;
+- genuinely ephemeral scratch files with visible failure-safe cleanup;
+- test code writing to `Storage::fake()` or a local disk.
 
 ---
 
