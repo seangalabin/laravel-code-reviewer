@@ -63,6 +63,7 @@ Write self-documenting code; reach for a clearer name or an extracted method bef
 - **Queue slow or blocking work** (email, PDF, external calls, loops of HTTP) via Jobs; queue Mailables/Notifications with `ShouldQueue`.
 - **Transactions & races** — wrap multi-write paths that must succeed or fail together in `DB::transaction()`; for get-or-create use `firstOrCreate()`/`updateOrCreate()`, not `exists()`-then-`create()` (races/double-inserts).
 - **External calls** — check the result (`$response->successful()` or try/catch), set `->timeout(N)` on every outbound `Http::`, and handle a null/malformed body before indexing into it. Never swallow an exception in an empty `catch` — log, rethrow, or handle.
+- **Caught exceptions are reported with `report($e)`** — company standard. When a `catch` handles an exception locally (doesn't rethrow), call `report($e)` so it reaches the exception handler with the full stack and context; don't flatten it with `Log::error($e->getMessage())`. Reserve the `Log` facade for non-exception diagnostics.
 - **Large datasets** — `chunkById()` (not `chunk()`) on mutable tables; keep queued jobs **idempotent** (they re-run); assume many workers run at once (atomic ops / `lockForUpdate()`).
 
 ## 6. Correctness

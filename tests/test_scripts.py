@@ -627,16 +627,6 @@ class TestScanDiffHybridRules(unittest.TestCase):
         diff = _mkdiff('app/Repositories/R.php', "$ids = $q->pluck('id');")
         self.assertNotIn('get-then-pluck', self.rules_hit(diff))
 
-    # log-getmessage (§10)
-    def test_log_getmessage(self):
-        diff = _mkdiff('app/Services/S.php', 'Log::error($e->getMessage());')
-        self.assertIn('log-getmessage', self.rules_hit(diff))
-
-    def test_log_with_exception_context_not_flagged(self):
-        diff = _mkdiff('app/Services/S.php',
-                       "Log::error('charge failed', ['exception' => $e]);")
-        self.assertNotIn('log-getmessage', self.rules_hit(diff))
-
     # exception-in-response (§3f)
     def test_exception_in_json_response(self):
         diff = _mkdiff('app/Http/Controllers/C.php',
@@ -668,15 +658,6 @@ class TestScanDiffHybridRules(unittest.TestCase):
         diff = _mkdiff('app/Http/Controllers/C.php',
                        'abort_if($failed, 500, $e->getMessage());')
         self.assertIn('exception-in-response', self.rules_hit(diff))
-
-    def test_log_debug_getmessage(self):
-        diff = _mkdiff('app/Services/S.php', 'Log::debug($e->getMessage());')
-        self.assertIn('log-getmessage', self.rules_hit(diff))
-
-    def test_log_concat_getmessage(self):
-        diff = _mkdiff('app/Services/S.php',
-                       "Log::error('sync failed: ' . $e->getMessage());")
-        self.assertIn('log-getmessage', self.rules_hit(diff))
 
     def test_db_select_star(self):
         diff = _mkdiff('app/Repositories/R.php', 'DB::select("select * from users");')

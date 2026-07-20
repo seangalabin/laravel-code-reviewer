@@ -5,6 +5,17 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.41.0 / code-fixer 1.37.0 — 2026-07-17
+
+### Removed
+- **§10 `report()` vs `Log` rule moved out of the shared lens** — preferring `report($e)`
+  over `Log::error($e->getMessage())` for locally-handled exceptions is a company/repository
+  convention, not a universal defect, so it now lives where team mandates belong: the
+  scaffolded company `CLAUDE.md` (`assets/CLAUDE.example.md` §5 gains the standard, stated
+  as a mandate). Removed with it: the `log-getmessage` scanner rule from both `scan_diff.py`
+  copies, its four tests, and the templates' "easily-missed" mention. §3f
+  (exception detail in a **response**) is unaffected and stays in the lens.
+
 ## code-reviewer 1.40.0 / code-fixer 1.36.0 — 2026-07-17
 
 ### Added
