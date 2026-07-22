@@ -5,6 +5,36 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.43.0 / code-fixer 1.39.0 — 2026-07-22
+
+### Fixed
+- **Reviewer no longer re-posts findings that are already on the PR.** Previously the
+  posting path deduped only against *human* dismissals (`dismissals.json`) and in-thread
+  resolutions — never against the skill's own machine-**resolved** comments. On a
+  `--full-review` (which re-scans the whole diff) or when a later commit touched lines near
+  a resolved finding, the detector re-fired and `post_review` posted a brand-new comment for
+  something the developer had already fixed. Now:
+  - `check_resolved.py` writes `.ai-review/posted.json` — an index of every AI finding
+    already on the PR (open **and** resolved; dismissed ones stay owned by
+    `check_dismissals.py`), each carrying `path` / `line` / `dim` / `severity` / `resolved`.
+  - A new Step 8 filter skips any candidate matching a posted entry (same `path`, line within
+    ±5, same `dim` — falling back to path+line for older comments with no `dim` marker). A
+    still-open match would be a duplicate; a resolved match would resurrect a fixed finding.
+    Not disabled by `--ignore-dismissals` (that flag is about human dismissals). A genuine
+    regression is surfaced in the run summary rather than silently re-posted.
+
+### Changed
+- **`ai-review dismiss` now resolves the thread.** After writing the ❌ dismissed banner it
+  POSTs to the comment's `/resolve` endpoint so the inline thread collapses in the Bitbucket
+  UI — a dismissed finding is a closed conversation, same as a fixed one. Best-effort: the
+  dismissal is already saved by the body update, so a resolve failure only leaves the thread
+  visually open (`404`/`409` are treated as already-resolved / not-inline).
+
+_Both changes are reviewer-only (resolved-comment tracking and dismissal plumbing are not
+mirrored to the fixer, which already excludes resolved/dismissed findings from its work-list).
+`code-fixer`'s version moves in lockstep per the shared-lens versioning policy; its behaviour
+is unchanged._
+
 ## code-reviewer 1.42.0 / code-fixer 1.38.0 — 2026-07-20
 
 ### Reverted

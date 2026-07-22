@@ -326,6 +326,67 @@ class TestCheckResolved(unittest.TestCase):
         self.assertEqual(check_resolved.extract_problem('no problem section'), '')
 
 
+# ── check_resolved — posted-findings index (dedup source) ─────────────────────
+
+class TestCheckResolvedPostedIndex(unittest.TestCase):
+
+    def _comment(self, cid, path, line, body):
+        return {'id': cid, 'inline': {'path': path, 'to': line},
+                'content': {'raw': body}}
+
+    def test_is_finding_open_and_resolved(self):
+        self.assertTrue(check_resolved.is_finding('x <!-- ai-review:open:abc123 -->'))
+        self.assertTrue(check_resolved.is_finding('x <!-- ai-review:resolved:abc123 -->'))
+
+    def test_is_finding_excludes_replies_and_plain(self):
+        self.assertFalse(check_resolved.is_finding('reply <!-- ai-review:reply -->'))
+        self.assertFalse(check_resolved.is_finding('fixer <!-- ai-fixer:reply -->'))
+        self.assertFalse(check_resolved.is_finding('a plain developer comment'))
+
+    def test_is_dismissed(self):
+        self.assertTrue(check_resolved.is_dismissed('<!-- ai-review:dismissed {"dim":"3a"} -->'))
+        self.assertFalse(check_resolved.is_dismissed('<!-- ai-review:open:abc -->'))
+
+    def test_extract_meta_valid_absent_invalid(self):
+        self.assertEqual(
+            check_resolved.extract_meta('<!-- ai-review:meta {"dim":"3a","severity":"🔴"} -->'),
+            {'dim': '3a', 'severity': '🔴'})
+        self.assertEqual(check_resolved.extract_meta('no meta'), {})
+        self.assertEqual(check_resolved.extract_meta('<!-- ai-review:meta {bad} -->'), {})
+
+    def test_build_posted_index_includes_open_and_resolved(self):
+        comments = [
+            self._comment(1, 'app/A.php', 10,
+                'finding\n<!-- ai-review:meta {"dim":"3a","severity":"🔴"} -->\n'
+                '<!-- ai-review:open:abc123 -->'),
+            self._comment(2, 'app/B.php', 20,
+                '✅ Addressed\n<!-- ai-review:meta {"dim":"1c","severity":"🟡"} -->\n'
+                '<!-- ai-review:resolved:def456 -->'),
+        ]
+        idx = check_resolved.build_posted_index(comments)
+        self.assertEqual(len(idx), 2)
+        self.assertEqual(idx[0], {'comment_id': 1, 'path': 'app/A.php', 'line': 10,
+                                  'dim': '3a', 'severity': '🔴', 'resolved': False})
+        self.assertEqual(idx[1]['resolved'], True)
+        self.assertEqual(idx[1]['dim'], '1c')
+
+    def test_build_posted_index_excludes_dismissed_and_replies(self):
+        comments = [
+            self._comment(1, 'app/A.php', 10,
+                          '❌ Dismissed\n<!-- ai-review:dismissed {"dim":"3a"} -->'),
+            self._comment(2, 'app/A.php', 11, 'a reply <!-- ai-review:reply -->'),
+            self._comment(3, 'app/A.php', 12, 'plain human comment'),
+        ]
+        self.assertEqual(check_resolved.build_posted_index(comments), [])
+
+    def test_build_posted_index_missing_meta_yields_empty_dim(self):
+        comments = [self._comment(1, 'app/A.php', 10,
+                                  'legacy finding\n<!-- ai-review:open:abc123 -->')]
+        idx = check_resolved.build_posted_index(comments)
+        self.assertEqual(idx[0]['dim'], '')
+        self.assertEqual(idx[0]['path'], 'app/A.php')
+
+
 # ── check_dismissals — dismissal parsing ──────────────────────────────────────
 
 class TestCheckDismissals(unittest.TestCase):
@@ -425,6 +486,28 @@ class TestAiReviewBin(unittest.TestCase):
 
     def test_line_signature_missing_file(self):
         self.assertEqual(ai_review.line_signature('/no/such/file.php', 5), '')
+
+    # ── curl_post_status — /resolve on dismiss ────────────────────────────────
+
+    def test_curl_post_status_2xx(self):
+        for code in ('200', '201'):
+            fake = _fake_completed(f'{{"id":1}}\n__HTTP__{code}', 0)
+            with patch.object(ai_review, 'run', return_value=fake):
+                self.assertEqual(
+                    ai_review.curl_post_status('http://x/resolve', ('e', 't'), {}),
+                    int(code))
+
+    def test_curl_post_status_409_already_resolved(self):
+        fake = _fake_completed('{"error":"resolved"}\n__HTTP__409', 0)
+        with patch.object(ai_review, 'run', return_value=fake):
+            self.assertEqual(
+                ai_review.curl_post_status('http://x/resolve', ('e', 't'), {}), 409)
+
+    def test_curl_post_status_transport_failure_is_zero(self):
+        fake = _fake_completed('', 7)  # no __HTTP__ marker in stdout
+        with patch.object(ai_review, 'run', return_value=fake):
+            self.assertEqual(
+                ai_review.curl_post_status('http://x/resolve', ('e', 't'), {}), 0)
 
 
 # ── scan_diff — ignore marker detection ───────────────────────────────────────

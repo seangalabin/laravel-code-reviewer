@@ -124,7 +124,7 @@ Add a marker above the line (the skill skips findings within 2 lines below it). 
   --reason="Internal-only endpoint, auth handled by middleware"
 ```
 
-The comment gets a ❌ banner, and subsequent runs skip matching findings (same file and dimension, line within ±5).
+The comment gets a ❌ banner and its inline thread is resolved (collapses in the Bitbucket UI). Subsequent runs skip matching findings (same file and dimension, line within ±5) — and won't re-post a finding already on the PR, open or resolved, so `--full-review` or a later edit near a fixed line won't resurrect it.
 
 ### Developer replies
 

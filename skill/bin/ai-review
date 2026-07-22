@@ -84,6 +84,22 @@ def curl_get(url: str, auth: tuple[str, str]) -> dict:
     return json.loads(body)
 
 
+def curl_post_status(url: str, auth: tuple[str, str], body: dict) -> int:
+    """POST a JSON body and return the HTTP status code (0 on transport failure).
+    Used for best-effort endpoints like /resolve where the caller decides how to
+    react to each status rather than dying on non-2xx."""
+    r = run(['curl', '-sS', '-w', '\n__HTTP__%{http_code}',
+             '-u', f'{auth[0]}:{auth[1]}',
+             '-X', 'POST',
+             '-H', 'Content-Type: application/json',
+             '-d', json.dumps(body), url])
+    _, _, code = r.stdout.rpartition('__HTTP__')
+    try:
+        return int(code.strip())
+    except ValueError:
+        return 0
+
+
 def find_pr_id(api_base: str, auth: tuple[str, str], branch: str) -> str:
     # safe='' so a "/" in the branch name is encoded inside the BBQL value.
     q = urllib.parse.quote(f'source.branch.name="{branch}" AND state="OPEN"', safe='')
@@ -269,6 +285,23 @@ def cmd_dismiss(args: argparse.Namespace) -> None:
         die(f'PUT failed: {r.stderr.strip() or r.stdout.strip()}')
     print(f'  ❌ comment #{args.comment_id} dismissed ({filepath}:{line_num or "?"})')
     print(f'  Reason: {reason}')
+
+    # Resolve the inline thread natively so it collapses in the Bitbucket UI —
+    # a dismissed finding is a closed conversation, same as a fixed one. Best
+    # effort: the dismissal is already saved via the PUT above, so a resolve
+    # failure only leaves the thread visually open, never loses the dismissal.
+    status = curl_post_status(f'{comment_url}/resolve', auth, {})
+    if status in (200, 201):
+        print(f'  ✓ comment #{args.comment_id} thread resolved (collapsed in Bitbucket UI)')
+    elif status in (404, 409):
+        # 404 = not a resolvable inline thread, 409 = already resolved.
+        print(f'  ↷ comment #{args.comment_id} thread resolution skipped '
+              '(already resolved or not an inline thread)')
+    else:
+        detail = f'HTTP {status}' if status else 'transport failure'
+        print(f'  ⚠️  resolve POST for comment #{args.comment_id} returned {detail} '
+              '— dismissal saved; check token scope (needs Pull requests: write).',
+              file=sys.stderr)
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────

@@ -317,6 +317,8 @@ Run this before the new diff analysis:
 
 This outputs a JSON array of open AI review comments on the current PR — comments that were posted by a previous run of this skill and haven't been marked resolved yet. If the array is empty, skip to the Workflow.
 
+It also writes `.ai-review/posted.json` — the index of **every** AI finding already on the PR (open *and* resolved, dismissed ones excluded), used by the Step 8 dedup filter to avoid re-posting a finding that is already present. You don't act on that file here; Step 8 reads it.
+
 For each comment in the array:
 
 1. Read the current code at `{path}:{line}` in the working tree.
@@ -472,7 +474,16 @@ Before invoking each script in Steps -1 → 0.7 and the scoping scripts in Step 
    - candidate line is within ±5 of the dismissal `line`
 
    Skip this filter entirely if `--ignore-dismissals` was passed.
-10. **Compile remaining findings** grouped by severity (🔴 Critical → 🟡 Warning → 🔵 Suggestion), and **print the coverage ledger v2 (with Source column)** so the developer can see every dimension was checked. Do not post or modify any files yet.
+10. **Filter already-posted findings.** For every surviving candidate, read `.ai-review/posted.json` (written by `check_resolved.py` in Step 5) and **skip** the candidate if any entry matches:
+    - same `path`, AND
+    - candidate line is within ±5 of the entry `line`, AND
+    - same `dim` — **unless** the entry has no `dim` (an older comment predating the meta marker), in which case match on `path` + line alone.
+
+    This stops the skill re-posting a finding that is already on the PR: a still-**open** entry would be a duplicate comment; a **resolved** entry (`"resolved": true`) would resurrect something the developer already fixed. Leave the existing comment as the record.
+    - This filter is **not** disabled by `--ignore-dismissals` — that flag is about human dismissals only, not the skill's own posted comments.
+    - **Regression note:** if a candidate matches a `resolved` entry, the reviewer previously believed this was fixed. Don't re-post, but if you can see the code genuinely regressed, mention it once in the run summary (`⚠️ {path}:{line} — previously-resolved finding appears to have regressed; left the resolved comment as-is`) so the developer can reopen it deliberately.
+    - If `.ai-review/posted.json` is absent or empty (no PR comments, or the Step 5 fetch was skipped), skip this filter.
+11. **Compile remaining findings** grouped by severity (🔴 Critical → 🟡 Warning → 🔵 Suggestion), and **print the coverage ledger v2 (with Source column)** so the developer can see every dimension was checked. Do not post or modify any files yet.
 
 ### Step 9 — Post the review
 
