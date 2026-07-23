@@ -5,6 +5,20 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.44.0 / code-fixer 1.40.0 — 2026-07-23
+
+### Changed
+- **§2o Comments — broadened to catch narrating comments, not just line-level noise.** The
+  rule now leads with *default to no comment* (clear names / small methods / early returns
+  carry the meaning) and explicitly flags **step-label / section-divider** comments that
+  announce a self-evident block (`// Build the payload`, `// Validate the request`, `// Save
+  to the database`) — the most common form of comment noise — not only trivial line restatements
+  like `$i++; // increment i`. When a block needs a label to be followable, the fix is to
+  **extract a well-named method**, not to caption it. A `why` comment for genuinely non-obvious
+  logic is still warranted; PHPDoc, tooling pragmas, and `TODO`/`FIXME`/`HACK` markers stay
+  exempt. Shared-lens change, so both **code-reviewer** and **code-fixer** apply it (still
+  🔵 Suggestion).
+
 ## code-reviewer 1.43.0 / code-fixer 1.39.0 — 2026-07-22
 
 ### Fixed

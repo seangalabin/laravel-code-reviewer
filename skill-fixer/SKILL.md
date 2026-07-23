@@ -746,9 +746,9 @@ public function applyGstToLineTotals(array $lineItems): array {
 
 #### 2o. Comments — only where the code can't explain itself — 🔵 Suggestion
 
-A comment should explain **why** (a non-obvious constraint, a workaround, a business/regulatory reason), not **what** the code already says. The first fix for unclear code is a clearer name or an extracted method — not a comment. Flag three things:
+Default to **no comment**: clear names, small methods, and early returns should carry the meaning on their own. A comment earns its place only by explaining a non-obvious **why** — a constraint, a workaround, a business/regulatory reason the code itself cannot show — never by restating **what** the code already says. The first fix for unclear code is a clearer name or an extracted method, not a comment that narrates it. Flag three things:
 
-- **Redundant / obvious comments** that merely restate the code — `$i++; // increment i`, `// loop over users`, `// return the result`. Delete them; they add noise and drift out of date.
+- **Redundant / narrating comments** that restate what the code already says — whether line-level (`$i++; // increment i`, `// return the result`) or a **step-label / section-divider** announcing a self-evident block (`// Loop through the orders`, `// Validate the request`, `// Build the payload`, `// Save to the database`, `// Set the properties`). If the comment just translates the next line(s) into English, delete it — the code already reads that way, and the comment only adds noise and drifts out of date. When a block genuinely needs a label to be followable, that's the signal to **extract it into a well-named method**, not to caption it.
 - **Commented-out code this change added** — delete it. Git history preserves anything you might want back; dead code in the file is just clutter. (Only flag commented-out code on the diff's added lines — don't flag pre-existing commented code sitting on a context line.)
 - **A genuinely hard-to-follow block with no explanatory comment** — when logic is unavoidably dense (a tricky algorithm, a non-obvious edge-case guard, a deliberate deviation from the obvious approach), a short *why* comment is warranted. Suggest adding one, or refactoring so it isn't needed.
 
@@ -756,6 +756,15 @@ A comment should explain **why** (a non-obvious constraint, a workaround, a busi
 // BAD — restates the code
 // increment the counter by one
 $counter++;
+
+// BAD — step-label narrating a self-evident block; the code already says this
+// Build the order payload
+$payload = [
+    'customer_id' => $customer->id,
+    'total'       => $total,
+];
+// Save the order
+$order = Order::create($payload);
 
 // BAD — dead code left behind
 // $user->notify(new OldWelcome($user));
