@@ -5,6 +5,21 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.44.1 / code-fixer 1.40.1 — 2026-07-23
+
+### Fixed
+- **Checkpoint read no longer reports "no checkpoint" on a transient API error.**
+  `get_checkpoint.sh` / `.ps1` used `curl -sSf` with no retry and treated *any* non-2xx or
+  transport failure as "no checkpoint found" — so on a busy PR (many comment pages) a single
+  429/5xx mid-pagination made the run fall back to a full-branch re-scan and read as if the
+  saved checkpoint comment had vanished. Now transient failures (network, 429, 5xx) are
+  retried with backoff, the fetch uses `pagelen=100` with a field filter to shrink pages, and
+  a *persistent* API error exits with a distinct status (`3`) that prints a clear "couldn't
+  read the checkpoint — API error; it likely still exists" warning instead of the misleading
+  "no checkpoint" line. Genuine absence still falls back to a full review as before.
+  Reviewer-only (checkpoint scripts have no fixer counterpart); `code-fixer` bumps in lockstep
+  per the shared-lens versioning policy, behaviour unchanged.
+
 ## code-reviewer 1.44.0 / code-fixer 1.40.0 — 2026-07-23
 
 ### Changed
