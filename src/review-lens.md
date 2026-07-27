@@ -1082,7 +1082,7 @@ Product::where('id', $id)->where('stock', '>', 0)->decrement('stock');
 
 #### 16f. Cache hot, expensive reads in Redis — 🔵 Suggestion
 
-When the diff adds or reworks a read that is both **expensive to compute** and **served repeatedly with the same result**, suggest caching it in Redis via Laravel's cache (`Cache::remember()`). Judge *hot* from context, not just the code: the card description and PR context often say what the change is for — a dashboard, homepage widget, public listing, report, or navigation menu implies a high-traffic read path; an admin one-off does not. Typical candidates:
+When the diff adds or reworks a read that is **served repeatedly with the same result** and **costs enough to be worth not repeating** — either expensive per call (a heavy aggregate / multi-join) **or** cheap per call but on a **hot per-request path** where the aggregate DB load adds up (settings, lookups, per-item reads in a listing) — suggest caching it in Redis via Laravel's cache (`Cache::remember()`). Frequency is a first-class trigger here, not just per-call expense. Judge *hot* from context, not just the code: the card description and PR context often say what the change is for — a dashboard, homepage widget, public listing, report, or navigation menu implies a high-traffic read path; an admin one-off does not. Typical candidates:
 
 - aggregate/report queries (joins + `groupBy` + aggregates) feeding dashboards or widgets;
 - reference/lookup data read on many requests (settings, menus, categories, feature flags);
@@ -1108,7 +1108,7 @@ $stats = Cache::remember('dashboard:order-stats:'.now()->year, 600, fn () =>
 A useful suggestion names the three cache decisions, not just "cache this": the **key** (include every parameter that changes the result — tenant, user, filters, date), the **TTL / staleness budget** the business can tolerate, and the **invalidation path** (TTL expiry, or `Cache::forget()` / a model observer when the underlying rows change).
 
 Judgement — do **not** suggest caching when:
-- the read is already cheap (an indexed single-row lookup) — the cache round-trip saves nothing;
+- the read is a trivial single-row indexed lookup (e.g. `find($id)` on a primary key) — the cache round-trip costs about as much as the query and adds staleness risk for no real saving; **frequency alone does not change this** — a hot path only justifies a cache when each call does non-trivial work or the aggregate DB load is the actual problem;
 - the result must be **read-after-write fresh** (balances, stock levels, authorization state) and no invalidation hook exists — a stale cache there is a correctness bug, not an optimisation;
 - the key cardinality is unbounded (per-user × per-filter × per-page keys) — that's Redis memory pressure, not a cache;
 - the card/code indicates a rarely-hit path (admin tooling, one-off command);

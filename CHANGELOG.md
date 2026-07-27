@@ -5,6 +5,20 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.45.0 / code-fixer 1.41.0 — 2026-07-27
+
+### Changed
+- **§16f caching — frequency is now a first-class trigger.** The rule previously fired only
+  on reads that were *both* expensive-per-call **and** frequent, which under-fired on a
+  moderately-costed query sitting on a hot per-request path (the aggregate DB load is the
+  problem even though no single call looks "expensive"). The trigger is now "served
+  repeatedly **and** costs enough to be worth not repeating — expensive per call **or** cheap
+  per call but on a hot path where the aggregate load adds up." The cheap-read carve-out is
+  tightened to exclude only **trivial single-row indexed lookups** (`find($id)` on a PK),
+  with an explicit note that **frequency alone doesn't justify caching a trivial lookup** —
+  the Redis round-trip + staleness risk outweigh the saving. Net: catches the frequent-but-
+  moderate read without spraming cache suggestions onto cheap PK lookups.
+
 ## code-reviewer 1.44.1 / code-fixer 1.40.1 — 2026-07-23
 
 ### Fixed
