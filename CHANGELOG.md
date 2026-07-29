@@ -5,6 +5,21 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.46.1 / code-fixer 1.42.1 — 2026-07-29
+
+### Fixed
+- **CI headless runs now actually load the skill (`ai-review-ci`).** The wrapper invoked
+  `claude --print "/code-reviewer" --bare`, but `--bare` does **not** load project skills — so
+  `/code-reviewer` resolved to `Unknown command: /code-reviewer` and the run exited 0 with
+  `num_turns: 0`, posting nothing (the pipeline's `|| true` then made it look green). Root-caused
+  against CLI v2.1.220 by reproduction: without `--bare` the slash command resolves; with
+  `--bare` it fails even in a trusted workspace. Fix: drop `--bare`. Auth still uses
+  `ANTHROPIC_API_KEY` (no keychain/OAuth in a CI container). Also pre-accept workspace trust
+  (`hasTrustDialogAccepted`) before invoking `claude` — `--print` skips the trust *dialog* but
+  doesn't *grant* trust, and an untrusted workspace ignores settings permissions. Reviewer-only
+  (`ai-review-ci` has no fixer counterpart); `code-fixer` bumps in lockstep per the shared-lens
+  policy, behaviour unchanged.
+
 ## code-reviewer 1.46.0 / code-fixer 1.42.0 — 2026-07-29
 
 ### Added

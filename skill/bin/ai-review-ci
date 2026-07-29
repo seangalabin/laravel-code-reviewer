@@ -2,7 +2,7 @@
 # ai-review-ci — run /code-reviewer headlessly for CI environments.
 #
 # Reads PR context from CI env vars and invokes the Claude Code CLI in
-# --print --bare mode. Bypasses all interactive prompts (the skill detects
+# --print mode. Bypasses all interactive prompts (the skill detects
 # AI_REVIEW_CI=1 and auto-confirms every [y/n] prompt). Designed to be
 # called from a Bitbucket Pipelines step (or any CI provider).
 #
@@ -66,9 +66,10 @@ fi
 export AI_REVIEW_CI=1
 
 # ── Tool allowlist ────────────────────────────────────────────────────────────
-# --bare skips .claude/settings.json, so we list every Bash pattern the skill
-# legitimately uses. Bare mode also keeps Anthropic auth strictly to the env
-# key (no keychain / OAuth reads), matching CI's BYO-key model.
+# We pass an explicit allowlist so headless runs never prompt: every Bash pattern
+# the skill legitimately uses is listed, and --permission-mode dontAsk runs
+# exactly those without asking. Anthropic auth uses ANTHROPIC_API_KEY (a CI
+# container has no keychain / OAuth to fall back to).
 #
 # IMPORTANT: in target mode (--pr/--branch, which is exactly what CI uses) the
 # skill runs worktree scripts via an ABSOLUTE path —
@@ -101,9 +102,33 @@ echo "  Base branch   : ${AI_REVIEW_BASE_BRANCH:-develop}"
 echo "  Output JSON   : $OUTPUT_FILE"
 echo
 
+# ── Trust the workspace so the project skill loads ────────────────────────────
+# `claude --print` skips the trust *dialog* but does not *grant* trust. An
+# untrusted workspace silently refuses to load the project's /code-reviewer
+# skill — the prompt resolves to "Unknown command: /code-reviewer" and nothing
+# runs — and ignores settings permissions. Pre-accept trust for this checkout.
+CLAUDE_CONFIG="${HOME:-/root}/.claude.json"
+python3 - "$PWD" "$CLAUDE_CONFIG" <<'PYTRUST' || echo "  ↷ couldn't pre-trust workspace (continuing)" >&2
+import json, os, sys
+workspace, cfg = sys.argv[1], sys.argv[2]
+data = {}
+if os.path.exists(cfg):
+    try:
+        data = json.load(open(cfg))
+    except Exception:
+        data = {}
+proj = data.setdefault("projects", {}).setdefault(workspace, {})
+proj["hasTrustDialogAccepted"] = True
+proj["hasCompletedProjectOnboarding"] = True
+with open(cfg, "w") as f:
+    json.dump(data, f)
+PYTRUST
+
 # ── Invoke Claude headlessly ──────────────────────────────────────────────────
+# NOTE: no --bare. --bare does NOT load project skills, so /code-reviewer would
+# resolve to "Unknown command" and the review would never run. Verified against
+# CLI v2.1.220. Auth still uses ANTHROPIC_API_KEY.
 claude --print "$PROMPT" \
-    --bare \
     --no-session-persistence \
     --output-format json \
     --permission-mode dontAsk \
