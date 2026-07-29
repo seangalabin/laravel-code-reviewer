@@ -5,6 +5,16 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.46.4 / code-fixer 1.42.4 — 2026-07-29
+
+### Changed
+- **`ai-review-ci` default spend cap lowered 5.00 → 2.00 USD.** The cap is a runaway
+  ceiling, not a target — runs bill actual usage; 2.00 covers the worst realistic
+  sonnet fan-out with headroom. Docs now warn against setting it below ~1.00 (a run
+  killed mid-review bills the tokens already spent but posts nothing) and point at
+  `AI_REVIEW_MODEL=sonnet` as the real cost lever. Reviewer-only; `code-fixer`
+  bumps in lockstep, behaviour unchanged.
+
 ## code-reviewer 1.46.3 / code-fixer 1.42.3 — 2026-07-29
 
 ### Fixed

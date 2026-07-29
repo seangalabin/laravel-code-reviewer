@@ -17,7 +17,10 @@
 #   JIRA_API_TOKEN           (falls back to BITBUCKET_API_TOKEN)
 #   BITBUCKET_PR_ID          Auto-set by Bitbucket Pipelines on PR steps.
 #   BITBUCKET_BRANCH         Auto-set by Bitbucket Pipelines.
-#   AI_REVIEW_MAX_USD        Default 5.00 — caps spend per run.
+#   AI_REVIEW_MAX_USD        Default 2.00 — caps spend per run. A ceiling, not a
+#                            target: you pay actual usage; the cap kills runaways.
+#                            Don't set below ~1.00 — a run that dies mid-review
+#                            bills the tokens spent but posts nothing.
 #   AI_REVIEW_MODEL          Override the model (e.g. "sonnet" for cheaper runs).
 #   AI_REVIEW_OUTPUT         Path for the JSON output. Default: ./ai-review-output.json
 #   AI_REVIEW_BASE_BRANCH    Base branch the diff is scoped against. Default: develop.
@@ -54,7 +57,7 @@ elif [[ -n "${BITBUCKET_BRANCH:-}" ]]; then
 fi
 
 PROMPT="/code-reviewer $PR_ARG"
-MAX_USD="${AI_REVIEW_MAX_USD:-5.00}"
+MAX_USD="${AI_REVIEW_MAX_USD:-2.00}"
 OUTPUT_FILE="${AI_REVIEW_OUTPUT:-./ai-review-output.json}"
 
 MODEL_ARGS=()
