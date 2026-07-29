@@ -66,10 +66,14 @@ fi
 export AI_REVIEW_CI=1
 
 # ── Tool allowlist ────────────────────────────────────────────────────────────
-# We pass an explicit allowlist so headless runs never prompt: every Bash pattern
-# the skill legitimately uses is listed, and --permission-mode dontAsk runs
-# exactly those without asking. Anthropic auth uses ANTHROPIC_API_KEY (a CI
-# container has no keychain / OAuth to fall back to).
+# In an ephemeral CI container we run every tool without prompting via
+# --permission-mode bypassPermissions (set on the claude call below). NOTE:
+# --permission-mode dontAsk is the WRONG mode here — it AUTO-DENIES anything not
+# explicitly allow-listed, which silently blocked the skill's Bitbucket-API
+# scripts (they run via an absolute `bash "$SKILLS_ROOT/..."` path in target mode
+# that the patterns below don't match) so nothing got posted. The allowlist is
+# kept only as documentation of the exact Bash patterns the skill uses.
+# Anthropic auth uses ANTHROPIC_API_KEY (a CI container has no keychain / OAuth).
 #
 # IMPORTANT: in target mode (--pr/--branch, which is exactly what CI uses) the
 # skill runs worktree scripts via an ABSOLUTE path —
@@ -131,7 +135,7 @@ PYTRUST
 claude --print "$PROMPT" \
     --no-session-persistence \
     --output-format json \
-    --permission-mode dontAsk \
+    --permission-mode bypassPermissions \
     --max-budget-usd "$MAX_USD" \
     "${MODEL_ARGS[@]}" \
     --allowedTools "${ALLOWED_TOOLS[@]}" \

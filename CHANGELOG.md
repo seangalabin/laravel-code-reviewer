@@ -5,6 +5,18 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.46.2 / code-fixer 1.42.2 — 2026-07-29
+
+### Fixed
+- **CI headless runs can now post (`ai-review-ci` permission mode).** After the `--bare` fix
+  the skill loaded and analysed the diff, but every Bitbucket-API script was denied and nothing
+  posted. Cause: `--permission-mode dontAsk` **auto-denies** any tool not matched by the
+  `--allowedTools` list — and the skill's `.sh` scripts run via an absolute `bash "$SKILLS_ROOT/…"`
+  path (target mode) that the patterns didn't match, so `post_review.sh` never ran. Switched to
+  `--permission-mode bypassPermissions`, the correct "run every tool without prompting" mode for
+  an ephemeral CI container. Reviewer-only (`ai-review-ci`); `code-fixer` bumps in lockstep,
+  behaviour unchanged.
+
 ## code-reviewer 1.46.1 / code-fixer 1.42.1 — 2026-07-29
 
 ### Fixed
