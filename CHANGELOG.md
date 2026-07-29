@@ -5,6 +5,22 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.46.3 / code-fixer 1.42.3 — 2026-07-29
+
+### Fixed
+- **CI headless runs work as root (`ai-review-ci`).** 1.46.2's `bypassPermissions` mode is
+  hard-blocked when running as root ("cannot be used with root/sudo privileges", exit 1) —
+  and Bitbucket Pipelines containers run as root, so the run died before starting. There is
+  no sanctioned root override (verified against current docs: `--allow-dangerously-skip-permissions`
+  only adds the mode to the interactive cycle; no env/settings escape). Reverted to
+  `--permission-mode dontAsk` — root-compatible — and fixed the real 1.46.2-era bug: the
+  allowlist used pattern-scoped entries (`Bash(git *)`, `Bash(bash */scripts/*)`) which never
+  match the compound commands target mode actually runs (`cd "$WORKTREE" && "$SKILLS_ROOT/…"`),
+  so every Bitbucket script was auto-denied. The allowlist now grants **unqualified** tool
+  names (`Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`, `Task`, `TodoWrite`) — all Bash
+  calls allowed, appropriate for the ephemeral single-purpose CI container. Reviewer-only;
+  `code-fixer` bumps in lockstep, behaviour unchanged.
+
 ## code-reviewer 1.46.2 / code-fixer 1.42.2 — 2026-07-29
 
 ### Fixed
