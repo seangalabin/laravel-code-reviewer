@@ -1,0 +1,76 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Turnkey Bitbucket Pipelines config — run code-reviewer automatically on every
+# pull request (created + each push to the PR's source branch).
+#
+# This is a STANDALONE example for a repo that has no pipeline yet. If you
+# already have a bitbucket-pipelines.yml, don't copy this wholesale — instead
+# add the `ai_review` step into your existing `pipelines: pull-requests:`
+# section (see the "merge into an existing pipeline" note at the bottom).
+#
+# One-time setup on the repo:
+#   1. Repo Settings → Pipelines → Enable.
+#   2. Repo Settings → Repository variables (mark each "Secured"):
+#        ANTHROPIC_API_KEY      Claude API key (headless engine)
+#        BITBUCKET_EMAIL        account the review comments post as — use a bot
+#        BITBUCKET_API_TOKEN    token with "Pull requests: write" scope
+#      Optional:
+#        JIRA_BASE_URL / JIRA_EMAIL / JIRA_API_TOKEN   card-status sync
+#        AI_REVIEW_MODEL        e.g. sonnet — cheaper runs
+#        AI_REVIEW_MAX_USD      per-run spend cap (default 5.00)
+#
+# BITBUCKET_PR_ID and BITBUCKET_BRANCH are provided automatically by Bitbucket
+# on pull-request pipelines; ai-review-ci reads them.
+# ─────────────────────────────────────────────────────────────────────────────
+
+image: node:20
+
+clone:
+  depth: full   # the reviewer diffs against origin/develop + checkpoint SHAs;
+                # a shallow clone hides them and every run degrades to a full re-scan.
+
+pipelines:
+  pull-requests:
+    '**':                          # every PR, any source branch
+      - step:
+          name: AI code review
+          script:
+            - git config --global --add safe.directory $BITBUCKET_CLONE_DIR
+            - apt-get update && apt-get install -y python3 curl git
+            - npm install -g @anthropic-ai/claude-code          # the headless engine
+            - npx -y github:seangalabin/laravel-code-reviewer .  # install/refresh the skill
+            - git fetch origin develop:refs/remotes/origin/develop   # base ref for the diff
+            # Advisory — `|| true` so a review/API error never red-marks the PR.
+            - .claude/skills/code-reviewer/bin/ai-review-ci || true
+          artifacts:
+            - ai-review-output.json
+
+# ─── Merge into an EXISTING pipeline ─────────────────────────────────────────
+# If you already run tests on PRs, keep the reviewer separate from the test
+# gate so it never blocks a merge. Define it once as a YAML anchor under
+# `definitions: steps:` …
+#
+#   definitions:
+#     steps:
+#       - ai_review: &ai-review
+#           image: node:20
+#           name: AI code review
+#           clone: { enabled: true, depth: full }
+#           script:
+#             - git config --global --add safe.directory $BITBUCKET_CLONE_DIR
+#             - apt-get update && apt-get install -y python3 curl git
+#             - npm install -g @anthropic-ai/claude-code
+#             - npx -y github:seangalabin/laravel-code-reviewer .
+#             - git fetch origin develop:refs/remotes/origin/develop
+#             - .claude/skills/code-reviewer/bin/ai-review-ci || true
+#           artifacts:
+#             - ai-review-output.json
+#
+# … then reference it as its own entry in the PR pipeline, after your test
+# parallel so it doesn't delay the gate:
+#
+#   pipelines:
+#     pull-requests:
+#       '**':
+#         - parallel:            # your existing test gate
+#             steps: [ { step: *test-php }, { step: *test-js } ]
+#         - step: *ai-review     # advisory review, runs after the gate passes
