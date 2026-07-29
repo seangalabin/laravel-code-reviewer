@@ -3,7 +3,7 @@
 # Default mode is check-only. Pass -Fix to auto-format and stage.
 param([switch]$Fix)
 
-$Base = if ($env:BASE_BRANCH) { $env:BASE_BRANCH } else { "develop" }
+$Base = if ($env:AI_REVIEW_BASE_BRANCH) { $env:AI_REVIEW_BASE_BRANCH } elseif ($env:BASE_BRANCH) { $env:BASE_BRANCH } else { "develop" }
 $RemoteBase = "origin/$Base"
 
 git rev-parse --verify $RemoteBase 2>$null | Out-Null

@@ -20,6 +20,9 @@
 #   AI_REVIEW_MAX_USD        Default 5.00 — caps spend per run.
 #   AI_REVIEW_MODEL          Override the model (e.g. "sonnet" for cheaper runs).
 #   AI_REVIEW_OUTPUT         Path for the JSON output. Default: ./ai-review-output.json
+#   AI_REVIEW_BASE_BRANCH    Base branch the diff is scoped against. Default: develop.
+#                            Set to "master" (etc.) for a repo with a different
+#                            integration branch. Inherited by the skill via env.
 #
 # Exit codes:
 #   0  Run completed (review posted; findings may or may not exist).
@@ -93,6 +96,7 @@ ALLOWED_TOOLS=(
 echo "🚀 ai-review-ci — running /code-reviewer headlessly"
 echo "  Prompt        : $PROMPT"
 echo "  Max budget    : \$$MAX_USD"
+echo "  Base branch   : ${AI_REVIEW_BASE_BRANCH:-develop}"
 [[ -n "${AI_REVIEW_MODEL:-}" ]] && echo "  Model         : ${AI_REVIEW_MODEL}"
 echo "  Output JSON   : $OUTPUT_FILE"
 echo

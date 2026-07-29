@@ -5,7 +5,7 @@ description: Diff-scoped code review and interactive fix applicator for the curr
 
 # Code Fixer
 
-Reviews the **current branch's changes** against the base branch (`develop` for this repo). Findings must be anchored to lines that the branch actually changed — not to pre-existing code in untouched files.
+Reviews the **current branch's changes** against the base branch (`develop` by default; override with the `AI_REVIEW_BASE_BRANCH` env var for a repo whose integration branch is `master` or similar). Findings must be anchored to lines that the branch actually changed — not to pre-existing code in untouched files.
 
 ---
 
@@ -103,7 +103,7 @@ Before analyzing, fetch the linked issue-tracker card so the lens evaluates your
 
 1. **Find the ticket reference.** Look, in order, for a pattern like `[A-Z][A-Z0-9_]*-\d+` (Atlassian project key format — e.g. `B20-11233`, `PROJ-42`):
    - Current branch name (e.g. `feature/B20-11233-add-stats-...`)
-   - Recent commit subjects on the branch (`git log --format=%s origin/develop..HEAD`)
+   - Recent commit subjects on the branch (`git log --format=%s "origin/${AI_REVIEW_BASE_BRANCH:-develop}..HEAD"`)
 
 2. **Fetch the card.** Use the first available source — never block the run on this:
    - **Atlassian MCP** tools (`mcp__claude_ai_Atlassian__getJiraIssue`, `mcp__claude_ai_Atlassian__searchJiraIssuesUsingJql`) when configured. Preferred.
@@ -115,7 +115,7 @@ Before analyzing, fetch the linked issue-tracker card so the lens evaluates your
    - Does the branch address the stated problem?
    - Does it satisfy the explicit acceptance criteria? (Missing requirements → 🟡 Warning.)
 
-4a. **File relatedness check — every changed file should plausibly belong to this task.** List the changed files (`git diff --name-only origin/develop...HEAD`) and, for each, ask: *does this file's change serve the card's stated goal?* Flag any file with **no plausible connection** as a 🟡 Warning, phrased to confirm — not accuse:
+4a. **File relatedness check — every changed file should plausibly belong to this task.** List the changed files (`git diff --name-only "origin/${AI_REVIEW_BASE_BRANCH:-develop}...HEAD"`) and, for each, ask: *does this file's change serve the card's stated goal?* Flag any file with **no plausible connection** as a 🟡 Warning, phrased to confirm — not accuse:
 
    > 🟡 `{path}` doesn't appear related to {TICKET} ({one-line task summary}). Confirm it belongs on this branch, or move it out — unrelated changes ride in unreviewed and muddy the diff.
 
@@ -129,7 +129,7 @@ Before analyzing, fetch the linked issue-tracker card so the lens evaluates your
 
 3c. **Implementation context.** Running in your own session, you usually already have the "why" behind the change. If a rationale block exists in the card (a comment, or a section marked `<!-- ai-review:context -->` — decisions, assumptions, trade-offs), weigh it the same disciplined way as `/code-reviewer` does: it explains intent so you don't flag a deliberate trade-off, but it does **not** waive a genuine defect (a 🔴 stands), a flawed rationale is still challenged, and findings anchor to the actual code. This is also the place to *capture* that rationale for the reviewer — paste it as **inline text** (markdown or plain) into the PR description or a card comment so the reviewer inherits your context. Don't attach it as a file — the reviewer reads comment/PR text, it can't download attachments.
 
-5. **No ticket detected** → print `No ticket reference detected — auditing branch against develop only.` and continue.
+5. **No ticket detected** → print `No ticket reference detected — auditing branch against the base branch only.` and continue.
 
 6. **Read-only.** Never edit the card, post comments on it, or transition its status.
 
@@ -169,16 +169,16 @@ When you encounter one of these markers above a line you would otherwise flag, *
 
 ### Refresh the base branch first
 
-Print `🔍 Refreshing origin/develop...` then run:
+The base branch defaults to `develop`; set `AI_REVIEW_BASE_BRANCH` (e.g. `master`) to audit a repo whose integration branch is something else. Print `🔍 Refreshing the base branch...` then run:
 
 ```bash
-git fetch origin develop
+git fetch origin "${AI_REVIEW_BASE_BRANCH:-develop}"
 ```
 
-The review is diffed against `origin/develop`. A stale remote-tracking ref means the diff base is wrong.
+The review is diffed against `origin/${AI_REVIEW_BASE_BRANCH:-develop}`. A stale remote-tracking ref means the diff base is wrong.
 
-- Success → print `  ✓ origin/develop up to date.` and continue.
-- Failure (offline, no remote, etc.) → print `  ↷ Couldn't refresh develop — reviewing against your local copy.` and continue. A missing fetch is not fatal; the local `origin/develop` is still usable.
+- Success → print `  ✓ base branch up to date.` and continue.
+- Failure (offline, no remote, etc.) → print `  ↷ Couldn't refresh the base branch — reviewing against your local copy.` and continue. A missing fetch is not fatal; the local copy is still usable.
 
 ### Run the scoping scripts
 
@@ -201,7 +201,7 @@ If Python was not found in the requirements check, skip `scan_diff.py` entirely 
 Then read the full diff:
 
 ```bash
-git diff origin/develop...HEAD    # source of truth for scope
+git diff "origin/${AI_REVIEW_BASE_BRANCH:-develop}...HEAD"    # source of truth for scope
 ```
 
 `scan_diff.py` is a *pre-pass*, not a verdict. False positives are expected — read context and filter.
@@ -220,7 +220,7 @@ Before invoking each script in Steps -1 → 0.1 and the scoping scripts in Step 
 2. **Refuse if on a protected branch.** Run `git branch --show-current`. If it returns `main`, `master`, or `develop`, stop: `ERROR: Refusing to run on a protected branch. Check out your feature branch first.`
 3. **Diff first.** Run the scoping scripts and read every hunk. Do not start by reading whole files.
 4. **Read for context, not findings.** When a hunk references a Repository, Service, or Vuex store not in the diff, read the relevant part to understand intent — findings on those files are out of scope unless changed.
-5. **Choose the analysis mode.** Count the diff's changed lines: `git diff --shortstat origin/develop...HEAD` insertions + deletions. **Under 25 changed lines** → run the *inline walk* described in 6a. **25 or more** → run the *fan-out* described in 6b. Either way, the `scan_diff.py` pre-pass output from the scoping step is Phase 1 input to item 7. If the `scan_diff.py` pre-pass failed or was skipped (no Python), continue — Phase 2/the inline walk still runs; note `scan: skipped` in the ledger.
+5. **Choose the analysis mode.** Count the diff's changed lines: `git diff --shortstat "origin/${AI_REVIEW_BASE_BRANCH:-develop}...HEAD"` insertions + deletions. **Under 25 changed lines** → run the *inline walk* described in 6a. **25 or more** → run the *fan-out* described in 6b. Either way, the `scan_diff.py` pre-pass output from the scoping step is Phase 1 input to item 7. If the `scan_diff.py` pre-pass failed or was skipped (no Python), continue — Phase 2/the inline walk still runs; note `scan: skipped` in the ledger.
 
 6a. **Inline walk (small diffs).** Apply the full review lens dimension by dimension — do not free-associate. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §16 Scalability) plus the company rules from Step 2, deliberately check the diff against that dimension before moving on. A dimension is only "done" once you've recorded a finding or confirmed the diff is clean for it. Then run a completeness-critic pass: re-scan the diff once more focused only on dimensions you marked clean — "genuinely fine, or did I skim?" Watch the easily-missed: §2i magic literals, §2m `count()` emptiness, §2p name-matches-behaviour, §3i hardcoded secrets, §4b N+1, §10 `report()` on caught exceptions. Ledger `Source` column: `inline`.
 
@@ -1663,7 +1663,7 @@ Each script has a Unix (`.sh`) and Windows (`.ps1`) variant. Use whichever match
 | Pest (scoped) | `pest_for_changed.sh [pest args]` | `pest_for_changed.ps1 [pest args]` |
 | Version check | `check_version.sh` | `check_version.ps1` |
 
-- **`branch_summary`** — one-glance overview of what changed vs `origin/develop`.
+- **`branch_summary`** — one-glance overview of what changed vs the base branch (`origin/develop` by default, or `AI_REVIEW_BASE_BRANCH`).
 - **`scan_diff.py`** — pre-pass pattern scanner. Only scans `+` lines. False positives filtered by the agent.
 - **`pint_changed`** — run Pint against changed PHP files. Check-only by default; the fixer uses check-only (never auto-stages).
 - **`pest_for_changed`** — run only the Pest tests that map to changed files (`app/Foo/Bar.php` → `tests/Feature/Foo/BarTest.php`).

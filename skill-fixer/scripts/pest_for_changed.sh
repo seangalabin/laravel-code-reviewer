@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-BASE="${BASE_BRANCH:-develop}"
+BASE="${AI_REVIEW_BASE_BRANCH:-${BASE_BRANCH:-develop}}"
 REMOTE_BASE="origin/${BASE}"
 
 if ! git rev-parse --verify "${REMOTE_BASE}" >/dev/null 2>&1; then

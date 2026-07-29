@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-BASE="${BASE_BRANCH:-develop}"
+BASE="${AI_REVIEW_BASE_BRANCH:-${BASE_BRANCH:-develop}}"
 REMOTE_BASE="origin/${BASE}"
 MODE="--test"
 FIX_AND_STAGE=0

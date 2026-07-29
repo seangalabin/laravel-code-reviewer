@@ -5,7 +5,7 @@ description: Diff-scoped code review for the current branch. Reviews ONLY the li
 
 # Code Reviewer
 
-Reviews the **current branch's changes** against the base branch (`develop` for this repo). Findings must be anchored to lines that the branch actually changed — not to pre-existing code in untouched files.
+Reviews the **current branch's changes** against the base branch (`develop` by default; override with the `AI_REVIEW_BASE_BRANCH` env var for a repo whose integration branch is `master` or similar). Findings must be anchored to lines that the branch actually changed — not to pre-existing code in untouched files.
 
 ---
 
@@ -214,7 +214,7 @@ Before analyzing the diff, fetch the linked issue-tracker card. The goal is to j
    - **Verify the rationale, don't rubber-stamp it.** If the stated reasoning is itself wrong ("skipped server validation because the frontend validates"), challenge *the reasoning*, at the appropriate severity — the note is a claim to check, not a waiver.
    - **Anchor to the actual diff.** If the context is stale or contradicts the code, trust the code and note the mismatch.
 
-5. **No ticket detected** → print `No ticket reference detected — reviewing diff against develop only.` and continue. The skill still works without a card; it just loses the "right problem", file-relatedness, discussion-decision, and implementation-context signals.
+5. **No ticket detected** → print `No ticket reference detected — reviewing diff against the base branch only.` and continue. The skill still works without a card; it just loses the "right problem", file-relatedness, discussion-decision, and implementation-context signals.
 
 6. **Read-only.** Never edit the card, post comments on it, transition its status, or write back any state.
 
@@ -254,13 +254,13 @@ When you encounter one of these markers above a line you would otherwise flag, *
 
 ### Refresh from the remote first
 
-In normal mode, the review compares against `origin/develop` and the current branch on Bitbucket. Stale remote-tracking refs — or a local HEAD that lags the remote — will hide new commits from the checkpoint comparison and produce a false "no new commits" result. Refresh before resolving the diff base:
+In normal mode, the review compares against the **base branch** and the current branch on Bitbucket. The base branch defaults to `develop`; set `AI_REVIEW_BASE_BRANCH` (e.g. in CI) to review a repo whose integration branch is `master` or anything else. Stale remote-tracking refs — or a local HEAD that lags the remote — will hide new commits from the checkpoint comparison and produce a false "no new commits" result. Refresh before resolving the diff base:
 
 ```bash
 .claude/skills/code-reviewer/scripts/refresh_branch.sh
 ```
 
-The script fetches `origin/develop` and `origin/<branch>`, then aligns the local branch:
+The script fetches the base branch (`origin/develop` by default, or `origin/$AI_REVIEW_BASE_BRANCH` when set) and `origin/<branch>`, then aligns the local branch:
 
 - Behind only → fast-forwards local to match the remote.
 - Diverged or has unpushed commits → leaves HEAD alone and warns; the review proceeds against the local view.
@@ -269,6 +269,14 @@ The script fetches `origin/develop` and `origin/<branch>`, then aligns the local
 **Skip this step in target mode (`--branch`/`--pr`)** — `setup_target.sh` already fetched the branch and the worktree is detached at the fresh `origin/<branch>`. The script no-ops if it detects target mode.
 
 ### Determine the diff base
+
+First resolve the base branch once — it defaults to `develop` but is overridable so the skill works on repos with a different integration branch:
+
+```bash
+BASE="${AI_REVIEW_BASE_BRANCH:-develop}"   # e.g. AI_REVIEW_BASE_BRANCH=master
+```
+
+Use `origin/$BASE` as the diff base everywhere below.
 
 **Unless `--full-review` was passed**, always try the checkpoint first:
 
@@ -281,12 +289,12 @@ The script reads a hidden checkpoint comment on the PR and prints the SHA — or
 
 - `CHECKPOINT_SHA` **non-empty AND equals `HEAD_SHA`** → there are no new commits to analyze. Developer replies are independent of new commits, so **first run Step 7 (respond to developer replies) below**, then **stop** — do not run scoping, the Step 8 analysis, or Step 9 posting. After handling any replies, print exactly this and stop:
 
-  > `PR #{ID} was last reviewed at {short_sha}, which is still the current tip. 0 new commits to review since the last run. Pass --full-review to re-review the whole branch against develop.`
+  > `PR #{ID} was last reviewed at {short_sha}, which is still the current tip. 0 new commits to review since the last run. Pass --full-review to re-review the whole branch against $BASE.`
 
 - `CHECKPOINT_SHA` **non-empty AND differs from `HEAD_SHA`** → `BASE_REF=$CHECKPOINT_SHA`. Print: `Reviewing commits since {short_sha} (last review checkpoint). Pass --full-review to review the full branch.`
-- `CHECKPOINT_SHA` **empty** → `BASE_REF=origin/develop`. Print: `No checkpoint found — running full review against develop.`
+- `CHECKPOINT_SHA` **empty** → `BASE_REF=origin/$BASE`. Print: `No checkpoint found — running full review against $BASE.`
 
-**If `--full-review` was passed:** skip `get_checkpoint.sh` and set `BASE_REF=origin/develop` directly. Print: `Full review against develop.`
+**If `--full-review` was passed:** skip `get_checkpoint.sh` and set `BASE_REF=origin/$BASE` directly. Print: `Full review against $BASE.`
 
 > `--since-last-review` is accepted as an alias for the default behaviour (no-op).
 
@@ -1879,7 +1887,7 @@ If developers want to fix issues locally instead, they should use the `/code-fix
 
 Each `.sh` script below has a matching `.ps1` Windows variant (same name, same arguments, same `.ai-review/target.json` handling). Use the variant selected by **OS detection** above. The `.py` scripts run on both platforms via `python`/`python3`.
 
-- **`branch_summary.sh [base]`** — one-glance overview of what changed vs `origin/develop`.
+- **`branch_summary.sh [base]`** — one-glance overview of what changed vs the base branch (`origin/develop` by default, or the `[base]` arg / `AI_REVIEW_BASE_BRANCH`).
 - **`scan_diff.py [--base REF] [--no-snippets]`** — pre-pass pattern scanner. Only scans `+` lines. False positives filtered by the agent.
 - **`post_review.sh`** — posts the compiled review as inline Bitbucket PR comments. Reads findings from a JSON file path (first arg, preferred) or stdin. Requires `BITBUCKET_EMAIL` and `BITBUCKET_API_TOKEN` env vars.
 - **`check_replies.py`** — prints a JSON array of open findings whose thread ends with an unanswered developer reply (see Step 7). Empty `[]` when nothing awaits a response.

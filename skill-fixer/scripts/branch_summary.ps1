@@ -1,6 +1,6 @@
 # One-glance summary of what the current branch changed vs the base.
 # Usage: pwsh scripts/branch_summary.ps1 [base-branch]
-param([string]$Base = "develop")
+param([string]$Base = $(if ($env:AI_REVIEW_BASE_BRANCH) { $env:AI_REVIEW_BASE_BRANCH } elseif ($env:BASE_BRANCH) { $env:BASE_BRANCH } else { "develop" }))
 
 $RemoteBase = "origin/$Base"
 $HeadBranch = (git branch --show-current).Trim()

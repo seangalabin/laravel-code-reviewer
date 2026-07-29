@@ -6,7 +6,7 @@
 # Usage: pwsh scripts/pest_for_changed.ps1 [extra pest args...]
 param([Parameter(ValueFromRemainingArguments=$true)][string[]]$PestArgs)
 
-$Base = if ($env:BASE_BRANCH) { $env:BASE_BRANCH } else { "develop" }
+$Base = if ($env:AI_REVIEW_BASE_BRANCH) { $env:AI_REVIEW_BASE_BRANCH } elseif ($env:BASE_BRANCH) { $env:BASE_BRANCH } else { "develop" }
 $RemoteBase = "origin/$Base"
 
 git rev-parse --verify $RemoteBase 2>$null | Out-Null

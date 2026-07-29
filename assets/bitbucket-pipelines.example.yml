@@ -17,6 +17,13 @@
 #        JIRA_BASE_URL / JIRA_EMAIL / JIRA_API_TOKEN   card-status sync
 #        AI_REVIEW_MODEL        e.g. sonnet — cheaper runs
 #        AI_REVIEW_MAX_USD      per-run spend cap (default 5.00)
+#        AI_REVIEW_BASE_BRANCH  base branch the diff is scoped against
+#                               (default develop; set to master etc. — see below)
+#
+# Base branch: the reviewer diffs against `develop` by default. If this repo
+# integrates into a different branch (e.g. master), set AI_REVIEW_BASE_BRANCH
+# (as a repo variable or inline `export` in the step) AND fetch that branch
+# instead of develop in the script below.
 #
 # BITBUCKET_PR_ID and BITBUCKET_BRANCH are provided automatically by Bitbucket
 # on pull-request pipelines; ai-review-ci reads them.
@@ -38,7 +45,7 @@ pipelines:
             - apt-get update && apt-get install -y python3 curl git
             - npm install -g @anthropic-ai/claude-code          # the headless engine
             - npx -y github:seangalabin/laravel-code-reviewer .  # install/refresh the skill
-            - git fetch origin develop:refs/remotes/origin/develop   # base ref for the diff
+            - git fetch origin "${AI_REVIEW_BASE_BRANCH:-develop}:refs/remotes/origin/${AI_REVIEW_BASE_BRANCH:-develop}"   # base ref for the diff
             # Advisory — `|| true` so a review/API error never red-marks the PR.
             - .claude/skills/code-reviewer/bin/ai-review-ci || true
           artifacts:

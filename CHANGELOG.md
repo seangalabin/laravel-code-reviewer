@@ -5,6 +5,23 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.46.0 / code-fixer 1.42.0 — 2026-07-29
+
+### Added
+- **Configurable base branch via `AI_REVIEW_BASE_BRANCH`.** Both skills previously hardcoded
+  `origin/develop` as the diff base, so they only worked on repos with a `develop` integration
+  branch. The base branch now resolves from `AI_REVIEW_BASE_BRANCH` (→ legacy `BASE_BRANCH` →
+  `develop`), so a `master`-based (or any-based) repo works by setting one env var — e.g. in a
+  Bitbucket Pipeline: `AI_REVIEW_BASE_BRANCH: master`.
+  - Reviewer: the diff-base resolution (`BASE_REF`), `refresh_branch.sh`/`.ps1`, and
+    `branch_summary.sh`/`.ps1` all honour it; `ai-review-ci` documents it and echoes it in the
+    banner.
+  - Fixer (mirrored per the shared-lens policy): the scoping diff commands in the template plus
+    `branch_summary`, `pest_for_changed`, and `pint_changed` honour it.
+  - `assets/bitbucket-pipelines.example.yml` and the README CI section document the knob; the
+    example's `git fetch` uses `${AI_REVIEW_BASE_BRANCH:-develop}` so a non-develop repo only
+    needs the repo variable set.
+
 ## code-reviewer 1.45.0 / code-fixer 1.41.0 — 2026-07-27
 
 ### Changed

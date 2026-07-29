@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-BASE="${1:-develop}"
+BASE="${1:-${AI_REVIEW_BASE_BRANCH:-${BASE_BRANCH:-develop}}}"
 REMOTE_BASE="origin/${BASE}"
 HEAD_BRANCH=$(git branch --show-current)
 

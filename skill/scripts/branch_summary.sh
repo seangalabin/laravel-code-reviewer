@@ -5,7 +5,7 @@
 
 set -euo pipefail
 
-BASE="${1:-develop}"
+BASE="${1:-${AI_REVIEW_BASE_BRANCH:-${BASE_BRANCH:-develop}}}"
 HEAD_BRANCH=$(git branch --show-current)
 
 # If BASE looks like a commit SHA (7–40 hex chars), use it directly.

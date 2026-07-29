@@ -12,7 +12,7 @@
 
 set -uo pipefail
 
-BASE="${BASE_BRANCH:-develop}"
+BASE="${AI_REVIEW_BASE_BRANCH:-${BASE_BRANCH:-develop}}"
 
 # Target mode: .ai-review/target.json lives at the worktree root and the
 # worktree was created from a freshly-fetched origin/<branch>. Nothing to do.

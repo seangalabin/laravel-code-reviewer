@@ -5,7 +5,7 @@
 # Skips silently when invoked inside a target-mode worktree.
 # Exits 0 in all non-error paths so the caller can continue.
 
-$Base = if ($env:BASE_BRANCH) { $env:BASE_BRANCH } else { "develop" }
+$Base = if ($env:AI_REVIEW_BASE_BRANCH) { $env:AI_REVIEW_BASE_BRANCH } elseif ($env:BASE_BRANCH) { $env:BASE_BRANCH } else { "develop" }
 
 # Target mode: .ai-review/target.json at the worktree root means the worktree
 # was created from a freshly-fetched origin/<branch>. Nothing to do.

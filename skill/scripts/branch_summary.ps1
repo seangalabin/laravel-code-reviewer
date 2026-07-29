@@ -5,7 +5,7 @@
 # If [base] looks like a commit SHA (7-40 hex chars) it is used directly
 # (the --since-last-review checkpoint case); otherwise it is treated as a
 # branch name and resolved via origin/.
-param([string]$Base = "develop")
+param([string]$Base = $(if ($env:AI_REVIEW_BASE_BRANCH) { $env:AI_REVIEW_BASE_BRANCH } elseif ($env:BASE_BRANCH) { $env:BASE_BRANCH } else { "develop" }))
 
 if ($Base -match '^[0-9a-f]{7,40}$') {
     $RemoteBase = $Base
