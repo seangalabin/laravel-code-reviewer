@@ -35,11 +35,19 @@
 #   AI_REVIEW_BASE_BRANCH    Base branch the diff is scoped against. Default: develop.
 #                            Set to "master" (etc.) for a repo with a different
 #                            integration branch. Inherited by the skill via env.
+#   AI_REVIEW_FAIL_ON        Findings gate: none (default) | critical | warning | any.
+#                            When the completed run leaves findings at or above the
+#                            threshold (new this run, or still open from prior runs),
+#                            exit 3 so the pipeline can fail the step. "critical"
+#                            fails only on 🔴; "warning" on 🔴/🟡; "any" on all.
+#                            Resolved and dismissed findings never count.
 #
 # Exit codes:
-#   0  Run completed (review posted; findings may or may not exist).
+#   0  Run completed (review posted; nothing at/above the findings gate).
 #   1  Infrastructure failure (missing env, claude CLI not installed, etc.).
 #   2  Claude returned a non-zero exit (run errored mid-flight).
+#   3  Findings gate tripped (AI_REVIEW_FAIL_ON threshold met) — the review itself
+#      succeeded; there are open findings the developer must address or dismiss.
 
 set -uo pipefail
 
@@ -121,6 +129,7 @@ echo "  Base branch   : ${AI_REVIEW_BASE_BRANCH:-develop}"
 echo "  Auth          : $([[ -n "${ANTHROPIC_API_KEY:-}" ]] && echo "API key" || echo "OAuth token (subscription)")"
 [[ -n "${AI_REVIEW_MODEL:-}" ]] && echo "  Model         : ${AI_REVIEW_MODEL}"
 echo "  Output JSON   : $OUTPUT_FILE"
+echo "  Findings gate : ${AI_REVIEW_FAIL_ON:-none}"
 echo
 
 # ── Trust the workspace so the project skill loads ────────────────────────────
@@ -170,6 +179,60 @@ fi
 if [[ $RC -ne 0 ]]; then
     echo "❌ Headless run failed (exit $RC). See $OUTPUT_FILE for details." >&2
     exit 2
+fi
+
+# ── Findings gate ──────────────────────────────────────────────────────────────
+# Counts findings at/above the AI_REVIEW_FAIL_ON threshold from the two state
+# files the skill writes during the run:
+#   .ai-review/findings.json — findings posted by THIS run (inline entries only)
+#   .ai-review/posted.json   — index of prior AI findings on the PR; entries with
+#                              "resolved": false are still open (dismissed ones
+#                              are never in this file)
+# Severity comes from the entry's severity field, falling back to the 🔴/🟡/🔵
+# marker in the body; unknown severity is treated as 🔵 so it can never trip a
+# "critical"/"warning" gate.
+FAIL_ON="${AI_REVIEW_FAIL_ON:-none}"
+if [[ "$FAIL_ON" != "none" ]]; then
+    GATE_COUNT=$(python3 - "$FAIL_ON" <<'PYGATE' 2>/dev/null || echo 0
+import json, re, sys
+
+fail_on = sys.argv[1]
+rank = {'🔴': 3, '🟡': 2, '🔵': 1}
+threshold = {'any': 1, 'warning': 2, 'critical': 3}.get(fail_on)
+if threshold is None:
+    print(0)
+    raise SystemExit
+
+def sev_rank(sev, body=''):
+    if sev in rank:
+        return rank[sev]
+    m = re.search(r'(🔴|🟡|🔵)', body or '')
+    return rank[m.group(1)] if m else 1
+
+count = 0
+try:
+    for f in json.load(open('.ai-review/findings.json')):
+        if f.get('path') and f.get('line') is not None:
+            if sev_rank(f.get('severity', ''), f.get('body', '')) >= threshold:
+                count += 1
+except Exception:
+    pass
+try:
+    for p in json.load(open('.ai-review/posted.json')).get('posted', []):
+        if not p.get('resolved') and sev_rank(p.get('severity', '')) >= threshold:
+            count += 1
+except Exception:
+    pass
+print(count)
+PYGATE
+)
+    if [[ "${GATE_COUNT:-0}" -gt 0 ]]; then
+        echo
+        echo "⛔ Findings gate: $GATE_COUNT finding(s) at or above '$FAIL_ON' — exit 3." >&2
+        echo "   Fix them, or dismiss false positives with ai-review dismiss, then re-run." >&2
+        exit 3
+    fi
+    echo "✓ Findings gate ($FAIL_ON): nothing at or above threshold."
 fi
 
 echo

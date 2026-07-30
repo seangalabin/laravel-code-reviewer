@@ -5,6 +5,19 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.48.0 / code-fixer 1.44.0 — 2026-07-30
+
+### Added
+- **Findings gate — fail the pipeline on open findings (`AI_REVIEW_FAIL_ON`).** New
+  `ai-review-ci` env: `none` (default, advisory as before) | `critical` (🔴 only) |
+  `warning` (🔴/🟡) | `any`. When the completed run leaves findings at/above the threshold —
+  counting both findings posted this run (`findings.json`) and still-open findings from prior
+  runs (`posted.json`, `resolved: false`; dismissed never count) — the wrapper exits **3**,
+  distinct from infra (1) and run-error (2), so a pipeline can fail on findings while keeping
+  API/infra hiccups advisory. Unknown/legacy severities count as 🔵 and can never trip a
+  critical/warning gate. Banner prints the active gate. Reviewer-only; `code-fixer` bumps in
+  lockstep, behaviour unchanged.
+
 ## code-reviewer 1.47.1 / code-fixer 1.43.1 — 2026-07-30
 
 ### Fixed
