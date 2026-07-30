@@ -22,10 +22,14 @@
 #   JIRA_API_TOKEN           (falls back to BITBUCKET_API_TOKEN)
 #   BITBUCKET_PR_ID          Auto-set by Bitbucket Pipelines on PR steps.
 #   BITBUCKET_BRANCH         Auto-set by Bitbucket Pipelines.
-#   AI_REVIEW_MAX_USD        Default 2.00 — caps spend per run. A ceiling, not a
-#                            target: you pay actual usage; the cap kills runaways.
-#                            Don't set below ~1.00 — a run that dies mid-review
-#                            bills the tokens spent but posts nothing.
+#   AI_REVIEW_MAX_USD        Caps spend per run. A ceiling, not a target: you pay
+#                            actual usage; the cap kills runaways. Don't set below
+#                            ~2.00 — a run that dies mid-review bills the tokens
+#                            spent but posts nothing. Defaults: 2.00 with an API
+#                            key; UNCAPPED with subscription auth (OAuth has no
+#                            dollar bill — the subscription quota is the limiter,
+#                            and a USD cap only kills runs). Set explicitly to
+#                            force a cap either way.
 #   AI_REVIEW_MODEL          Override the model (e.g. "sonnet" for cheaper runs).
 #   AI_REVIEW_OUTPUT         Path for the JSON output. Default: ./ai-review-output.json
 #   AI_REVIEW_BASE_BRANCH    Base branch the diff is scoped against. Default: develop.
@@ -63,7 +67,17 @@ elif [[ -n "${BITBUCKET_BRANCH:-}" ]]; then
 fi
 
 PROMPT="/code-reviewer $PR_ARG"
-MAX_USD="${AI_REVIEW_MAX_USD:-2.00}"
+# Budget: explicit var wins; otherwise cap only API-key runs (subscription/OAuth
+# runs have no dollar bill — a USD cap just kills them mid-review for nothing).
+if [[ -n "${AI_REVIEW_MAX_USD:-}" ]]; then
+    MAX_USD="$AI_REVIEW_MAX_USD"
+elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+    MAX_USD="2.00"
+else
+    MAX_USD=""   # OAuth/subscription: uncapped
+fi
+BUDGET_ARGS=()
+[[ -n "$MAX_USD" ]] && BUDGET_ARGS=(--max-budget-usd "$MAX_USD")
 OUTPUT_FILE="${AI_REVIEW_OUTPUT:-./ai-review-output.json}"
 
 MODEL_ARGS=()
@@ -102,7 +116,7 @@ ALLOWED_TOOLS=(
 # ── Banner ────────────────────────────────────────────────────────────────────
 echo "🚀 ai-review-ci — running /code-reviewer headlessly"
 echo "  Prompt        : $PROMPT"
-echo "  Max budget    : \$$MAX_USD"
+echo "  Max budget    : ${MAX_USD:+\$$MAX_USD}${MAX_USD:-uncapped (subscription quota is the limiter)}"
 echo "  Base branch   : ${AI_REVIEW_BASE_BRANCH:-develop}"
 echo "  Auth          : $([[ -n "${ANTHROPIC_API_KEY:-}" ]] && echo "API key" || echo "OAuth token (subscription)")"
 [[ -n "${AI_REVIEW_MODEL:-}" ]] && echo "  Model         : ${AI_REVIEW_MODEL}"
@@ -139,7 +153,7 @@ claude --print "$PROMPT" \
     --no-session-persistence \
     --output-format json \
     --permission-mode dontAsk \
-    --max-budget-usd "$MAX_USD" \
+    "${BUDGET_ARGS[@]}" \
     "${MODEL_ARGS[@]}" \
     --allowedTools "${ALLOWED_TOOLS[@]}" \
     > "$OUTPUT_FILE"

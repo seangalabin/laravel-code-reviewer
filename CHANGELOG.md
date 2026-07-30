@@ -5,6 +5,18 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.47.1 / code-fixer 1.43.1 — 2026-07-30
+
+### Fixed
+- **`ai-review-ci` no longer applies a USD budget cap to subscription-auth runs by default.**
+  With `CLAUDE_CODE_OAUTH_TOKEN` (Pro/Max) there is no dollar bill — the CLI still tracks a
+  USD-equivalent and `--max-budget-usd` killed a real HQ run mid-analysis at its cap, wasting
+  the tokens and posting nothing. Now: an explicit `AI_REVIEW_MAX_USD` always wins; otherwise
+  API-key runs default to 2.00 and OAuth runs are uncapped (the subscription quota is the
+  limiter). Banner prints the effective budget. Also raised the "don't set below" guidance to
+  ~2.00 — a full run on a large project (big skill + company CLAUDE.md context) measures
+  ~$2–3-equivalent. Reviewer-only; `code-fixer` bumps in lockstep, behaviour unchanged.
+
 ## code-reviewer 1.47.0 / code-fixer 1.43.0 — 2026-07-30
 
 ### Changed
