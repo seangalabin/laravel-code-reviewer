@@ -5,6 +5,19 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.47.0 / code-fixer 1.43.0 — 2026-07-30
+
+### Changed
+- **§2a `declare(strict_types=1)` — enforce when applicable.** Previously flagged only on
+  *new* `app/` files. Now an edited legacy `app/` file counts too when the diff meaningfully
+  changes its logic (convention: *add when touching*), still 🔵. Judgment guards: a trivial
+  touch (one-line unrelated fix, rename ripple, formatting) is NOT flagged — demanding a
+  semantics-affecting declaration on a barely-touched file is scope creep — and the finding
+  must be phrased with the risk in view: `strict_types` changes coercion semantics for the
+  whole file, so suggest it alongside verifying the file's untouched paths (tests / call
+  sites), never as a blind one-liner. Migrations/config/routes stay out of scope. Shared-lens
+  change — both skills.
+
 ## code-reviewer 1.46.5 / code-fixer 1.42.5 — 2026-07-30
 
 ### Added

@@ -736,9 +736,15 @@ Suggest OOP structure **only when the code shows a concrete need** — all 🔵 
 
 ### 2. PSR-12 & Code Standards
 
-#### 2a. `declare(strict_types=1)`
+#### 2a. `declare(strict_types=1)` — enforce when applicable
 
 All new PHP files under `app/` must open with `declare(strict_types=1)` as the first statement after `<?php`. Flag as 🔵 Suggestion. The `app/` scope is deliberate — migrations, config, and route files are out of scope.
+
+**Edited legacy files count too.** When the diff meaningfully changes the logic of an existing `app/` file that lacks the declaration, flag it (🔵) — the convention is *add when touching*, so a touched file is an applicable file. Apply judgment on "applicable":
+
+- **Do flag:** new files; edited files where the diff adds/changes methods or logic.
+- **Don't flag:** a trivial touch to a legacy file (one-line unrelated fix, rename ripple, formatting) — demanding a semantics-affecting declaration on a file the PR barely touches is scope creep.
+- **Phrase with the risk in view:** adding `strict_types` changes coercion semantics for the *whole file*, not just the diff'd lines — a latent loose-type call elsewhere in the file can start throwing. Suggest it alongside a check that the file's tests cover the untouched paths (or a quick scan of the file's other call sites), not as a blind one-liner.
 
 ```php
 <?php
