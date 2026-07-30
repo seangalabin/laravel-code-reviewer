@@ -7,7 +7,12 @@
 # called from a Bitbucket Pipelines step (or any CI provider).
 #
 # Required env vars:
-#   ANTHROPIC_API_KEY        Claude API key for headless invocation.
+#   ANTHROPIC_API_KEY        Claude API key for headless invocation (pay-per-token
+#     — or —               API billing), OR an OAuth token from `claude
+#   CLAUDE_CODE_OAUTH_TOKEN  setup-token` (Pro/Max subscription — usage draws
+#                            from that person's subscription quota, so fine for
+#                            trials, wrong for a whole team's CI; prefer the API
+#                            key for shared pipelines). One of the two must be set.
 #   BITBUCKET_EMAIL          For the skill's Bitbucket REST calls.
 #   BITBUCKET_API_TOKEN
 #
@@ -35,8 +40,9 @@
 set -uo pipefail
 
 # ── Pre-flight env checks ─────────────────────────────────────────────────────
-if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
-    echo "ERROR: ANTHROPIC_API_KEY is required for headless CI mode." >&2
+if [[ -z "${ANTHROPIC_API_KEY:-}" && -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]]; then
+    echo "ERROR: set ANTHROPIC_API_KEY (API billing) or CLAUDE_CODE_OAUTH_TOKEN" >&2
+    echo "       (from \`claude setup-token\`, Pro/Max subscription) for headless CI mode." >&2
     exit 1
 fi
 if [[ -z "${BITBUCKET_EMAIL:-}" || -z "${BITBUCKET_API_TOKEN:-}" ]]; then
@@ -98,6 +104,7 @@ echo "🚀 ai-review-ci — running /code-reviewer headlessly"
 echo "  Prompt        : $PROMPT"
 echo "  Max budget    : \$$MAX_USD"
 echo "  Base branch   : ${AI_REVIEW_BASE_BRANCH:-develop}"
+echo "  Auth          : $([[ -n "${ANTHROPIC_API_KEY:-}" ]] && echo "API key" || echo "OAuth token (subscription)")"
 [[ -n "${AI_REVIEW_MODEL:-}" ]] && echo "  Model         : ${AI_REVIEW_MODEL}"
 echo "  Output JSON   : $OUTPUT_FILE"
 echo

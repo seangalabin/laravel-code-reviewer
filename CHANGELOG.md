@@ -5,6 +5,15 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.46.5 / code-fixer 1.42.5 — 2026-07-30
+
+### Added
+- **`ai-review-ci` accepts subscription auth.** Pre-flight now passes with either
+  `ANTHROPIC_API_KEY` (API billing) or `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`,
+  Pro/Max subscription); the banner names which auth is in use. Subscription tokens draw from
+  that person's quota — fine for trials, prefer the API key for shared team pipelines.
+  Reviewer-only; `code-fixer` bumps in lockstep, behaviour unchanged.
+
 ## code-reviewer 1.46.4 / code-fixer 1.42.4 — 2026-07-29
 
 ### Changed
