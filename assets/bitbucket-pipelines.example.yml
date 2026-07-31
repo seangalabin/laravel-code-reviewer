@@ -15,8 +15,8 @@
 #        BITBUCKET_API_TOKEN    token with "Pull requests: write" scope
 #      Optional:
 #        JIRA_BASE_URL / JIRA_EMAIL / JIRA_API_TOKEN   card-status sync
-#        AI_REVIEW_MODEL        default sonnet — the skill is Sonnet-only; any
-#                               other value fails pre-flight, so leave it unset
+#        AI_REVIEW_MODEL        sonnet (default) or opus — the skill runs on those
+#                               two only; anything else fails pre-flight
 #        AI_REVIEW_MAX_USD      per-run spend cap (default 2.00; ceiling, not target)
 #        AI_REVIEW_BASE_BRANCH  base branch the diff is scoped against
 #                               (default develop; set to master etc. — see below)

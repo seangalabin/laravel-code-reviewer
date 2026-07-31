@@ -30,9 +30,10 @@
 #                            dollar bill — the subscription quota is the limiter,
 #                            and a USD cap only kills runs). Set explicitly to
 #                            force a cap either way.
-#   AI_REVIEW_MODEL          Model for the run. Defaults to "sonnet" — the skill is
-#                            Sonnet-only and refuses to review on anything else, so
-#                            a non-sonnet value fails pre-flight (exit 1).
+#   AI_REVIEW_MODEL          Model for the run: "sonnet" (default) or "opus" — the
+#                            skill refuses to review on anything else, so an
+#                            unsupported value fails pre-flight (exit 1). sonnet is
+#                            the big cost lever; opus buys depth on a gnarly diff.
 #   AI_REVIEW_OUTPUT         Path for the JSON output. Default: ./ai-review-output.json
 #   AI_REVIEW_BASE_BRANCH    Base branch the diff is scoped against. Default: develop.
 #                            Set to "master" (etc.) for a repo with a different
@@ -90,16 +91,19 @@ BUDGET_ARGS=()
 [[ -n "$MAX_USD" ]] && BUDGET_ARGS=(--max-budget-usd "$MAX_USD")
 OUTPUT_FILE="${AI_REVIEW_OUTPUT:-./ai-review-output.json}"
 
-# The skill is Sonnet-only (see SKILL.md "Model guard") — it refuses to review on
-# any other model. Default to sonnet rather than the CLI default, and fail pre-flight
-# on a non-sonnet override so the run dies here (exit 1) instead of at the guard
-# after the container has already spun up.
+# The skill runs on sonnet or opus only (see SKILL.md "Model guard") — it refuses to
+# review on anything else. Default to sonnet rather than the CLI default, and reject an
+# unsupported override in pre-flight so the run dies here (exit 1) instead of at the
+# guard after the container has already spun up.
 MODEL="${AI_REVIEW_MODEL:-sonnet}"
-if [[ "$MODEL" != "sonnet" ]]; then
-    echo "ERROR: AI_REVIEW_MODEL='$MODEL' — code-reviewer only runs on sonnet." >&2
-    echo "       Unset AI_REVIEW_MODEL or set it to 'sonnet'." >&2
-    exit 1
-fi
+case "$MODEL" in
+    sonnet|opus) ;;
+    *)
+        echo "ERROR: AI_REVIEW_MODEL='$MODEL' — code-reviewer only runs on sonnet or opus." >&2
+        echo "       Unset AI_REVIEW_MODEL (defaults to sonnet) or set it to 'sonnet' or 'opus'." >&2
+        exit 1
+        ;;
+esac
 MODEL_ARGS=(--model "$MODEL")
 
 # Tells the skill (via SKILL.md "CI / headless mode" section) to skip prompts.

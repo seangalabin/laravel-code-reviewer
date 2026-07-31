@@ -59,7 +59,7 @@ Teams can extend or override the lens (disable a check, change a severity, add a
 - Node.js 16+
 - Laravel project with [PestPHP](https://pestphp.com/) and [Laravel Pint](https://laravel.com/docs/pint)
 - [Claude Code](https://claude.ai/code) CLI
-- **Model: Sonnet.** Both skills refuse to run on any other model (Fable, Opus, Haiku) — run `/model sonnet` before invoking. The fan-out slice agents are pinned to Sonnet too.
+- **Model: Sonnet or Opus.** Both skills refuse to run on anything else (Fable, Haiku) — run `/model sonnet` before invoking. The fan-out slice agents are always Sonnet regardless of the session model.
 - A Bitbucket repository with an open PR on the current branch
 - **Shell:** Linux, macOS, or WSL/Git Bash (`.sh` scripts). Native **Windows** is supported via PowerShell variants and additionally needs **Python 3** and **curl** on `PATH`; the skill auto-detects the OS.
 
@@ -160,7 +160,7 @@ BITBUCKET_PR_ID=42             # auto-set by Bitbucket Pipelines on PR steps
 .claude/skills/code-reviewer/bin/ai-review-ci
 ```
 
-Optional knobs: `AI_REVIEW_MAX_USD` (spend cap, default 2.00 — a runaway ceiling, you pay actual usage; don't set below ~1.00 or a mid-run kill bills tokens but posts nothing), `AI_REVIEW_MODEL` (defaults to `sonnet`; the skill is Sonnet-only, so any other value fails pre-flight), `AI_REVIEW_OUTPUT` (JSON output path). Exit codes: `0` ran, `1` infra failure (missing env / no `claude` CLI / non-sonnet model), `2` the run errored. Works on any host with the `claude` CLI on `PATH`.
+Optional knobs: `AI_REVIEW_MAX_USD` (spend cap, default 2.00 — a runaway ceiling, you pay actual usage; don't set below ~1.00 or a mid-run kill bills tokens but posts nothing), `AI_REVIEW_MODEL` (`sonnet` default or `opus`; anything else fails pre-flight — the skill runs on those two only), `AI_REVIEW_OUTPUT` (JSON output path). Exit codes: `0` ran, `1` infra failure (missing env / no `claude` CLI / unsupported model), `2` the run errored. Works on any host with the `claude` CLI on `PATH`.
 
 **Run it automatically on every PR.** A Bitbucket Pipelines `pull-requests:` trigger runs the review when a PR is opened and on each push to its source branch — exactly the cadence the incremental checkpoint was built for. Copy [`assets/bitbucket-pipelines.example.yml`](assets/bitbucket-pipelines.example.yml) to your repo root (or, if you already have a pipeline, merge in its `ai_review` anchor — the file shows how). Then enable Pipelines and add three secured repository variables: `ANTHROPIC_API_KEY`, `BITBUCKET_EMAIL`, and `BITBUCKET_API_TOKEN` (Pull requests: write). `BITBUCKET_PR_ID` / `BITBUCKET_BRANCH` are provided by Bitbucket automatically. Two load-bearing details the example handles: `clone: depth: full` (a shallow clone hides the base-branch diff ref) and posting as a dedicated **bot** account (comments appear as whoever owns the API token). The diff base defaults to `develop`; for a repo that integrates into `master` (or any other branch) set `AI_REVIEW_BASE_BRANCH` as a repo variable — the example's fetch and the skill both honour it.
 

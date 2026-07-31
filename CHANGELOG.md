@@ -5,6 +5,20 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.50.0 / code-fixer 1.46.0 — 2026-07-31
+
+### Changed
+- **Model guard now allows Opus as well as Sonnet.** 1.49.0 shipped the guard as Sonnet-only,
+  which stopped runs on Opus — too strict. The allowed set is now **Sonnet or Opus**; Fable,
+  Haiku, and anything else still stop with
+  `ERROR: <skill> only runs on Sonnet or Opus. Run /model sonnet and re-invoke this skill.`
+  `ai-review-ci` accepts `AI_REVIEW_MODEL=opus` alongside the `sonnet` default and still fails
+  pre-flight (exit 1) on anything else.
+- **Fan-out slice agents stay pinned to Sonnet** even when the session is Opus. Rationale is now
+  stated in the skill: a six-way fan-out on Opus is a lot of spend for mechanical lens
+  application, and the judgment happens in the main context at arbitration. `fable`/`haiku` are
+  never valid for a slice agent.
+
 ## code-reviewer 1.49.0 / code-fixer 1.45.0 — 2026-07-31
 
 ### Added

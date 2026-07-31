@@ -11,16 +11,16 @@ Reviews the **current branch's changes** against the base branch (`develop` by d
 
 ## Model guard (first, before anything else)
 
-This skill runs on **Sonnet only**. Check which model you are before OS detection, before reading any file, before running any script.
+This skill runs on **Sonnet or Opus only**. Check which model you are before OS detection, before reading any file, before running any script.
 
-If you are **not** Sonnet — Fable, Opus, Haiku, or anything else — stop immediately and print exactly:
+If you are **neither** Sonnet nor Opus — Fable, Haiku, or anything else — stop immediately and print exactly:
 
 ```
-ERROR: code-reviewer only runs on Sonnet.
+ERROR: code-reviewer only runs on Sonnet or Opus.
 Run /model sonnet and re-invoke this skill.
 ```
 
-Then end the turn. Do not review, do not scope the diff, do not offer to continue on the current model, and do not work around the guard by delegating the review to a Sonnet subagent — the arbitration in Step 8 happens in the main context and must itself be Sonnet.
+Then end the turn. Do not review, do not scope the diff, do not offer to continue on the current model, and do not work around the guard by delegating the review to a Sonnet subagent — the arbitration in Step 8 happens in the main context, so the main context itself must be Sonnet or Opus.
 
 ---
 
@@ -455,7 +455,7 @@ Before invoking each script in Steps -1 → 0.7 and the scoping scripts in Step 
 
 7a. **Inline walk (small diffs).** Apply the full review lens dimension by dimension — do not free-associate. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §16 Scalability) plus the company rules from Step 3, deliberately check the diff against that dimension before moving on. A dimension is only "done" once you've recorded a finding or confirmed the diff is clean for it. Then run a completeness-critic pass: re-scan the diff once more focused only on dimensions you marked clean — "genuinely fine, or did I skim?" Watch the easily-missed: §2i magic literals, §2m `count()` emptiness, §2p name-matches-behaviour, §3i hardcoded secrets, §4b N+1, §10 `report()` on caught exceptions. Ledger `Source` column: `inline`.
 
-7b. **Fan-out (25+ changed lines).** Launch **six parallel read-only subagents** with the Task/Agent tool, one per lens slice. Every slice agent MUST be spawned with `model: sonnet` explicitly — never let a slice agent inherit the session model, and never spawn one on `fable`:
+7b. **Fan-out (25+ changed lines).** Launch **six parallel read-only subagents** with the Task/Agent tool, one per lens slice. Every slice agent MUST be spawned with `model: sonnet` explicitly — a six-way fan-out on Opus is a lot of spend for mechanical lens application, and the judgment happens in the main context at arbitration (Step 8). Never let a slice agent inherit the session model, and never spawn one on `fable` or `haiku`:
 
    | Slice | Dimensions | Skip when |
    |---|---|---|
