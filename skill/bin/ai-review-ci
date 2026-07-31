@@ -30,7 +30,9 @@
 #                            dollar bill — the subscription quota is the limiter,
 #                            and a USD cap only kills runs). Set explicitly to
 #                            force a cap either way.
-#   AI_REVIEW_MODEL          Override the model (e.g. "sonnet" for cheaper runs).
+#   AI_REVIEW_MODEL          Model for the run. Defaults to "sonnet" — the skill is
+#                            Sonnet-only and refuses to review on anything else, so
+#                            a non-sonnet value fails pre-flight (exit 1).
 #   AI_REVIEW_OUTPUT         Path for the JSON output. Default: ./ai-review-output.json
 #   AI_REVIEW_BASE_BRANCH    Base branch the diff is scoped against. Default: develop.
 #                            Set to "master" (etc.) for a repo with a different
@@ -88,10 +90,17 @@ BUDGET_ARGS=()
 [[ -n "$MAX_USD" ]] && BUDGET_ARGS=(--max-budget-usd "$MAX_USD")
 OUTPUT_FILE="${AI_REVIEW_OUTPUT:-./ai-review-output.json}"
 
-MODEL_ARGS=()
-if [[ -n "${AI_REVIEW_MODEL:-}" ]]; then
-    MODEL_ARGS=(--model "$AI_REVIEW_MODEL")
+# The skill is Sonnet-only (see SKILL.md "Model guard") — it refuses to review on
+# any other model. Default to sonnet rather than the CLI default, and fail pre-flight
+# on a non-sonnet override so the run dies here (exit 1) instead of at the guard
+# after the container has already spun up.
+MODEL="${AI_REVIEW_MODEL:-sonnet}"
+if [[ "$MODEL" != "sonnet" ]]; then
+    echo "ERROR: AI_REVIEW_MODEL='$MODEL' — code-reviewer only runs on sonnet." >&2
+    echo "       Unset AI_REVIEW_MODEL or set it to 'sonnet'." >&2
+    exit 1
 fi
+MODEL_ARGS=(--model "$MODEL")
 
 # Tells the skill (via SKILL.md "CI / headless mode" section) to skip prompts.
 export AI_REVIEW_CI=1
@@ -127,7 +136,7 @@ echo "  Prompt        : $PROMPT"
 echo "  Max budget    : ${MAX_USD:+\$$MAX_USD}${MAX_USD:-uncapped (subscription quota is the limiter)}"
 echo "  Base branch   : ${AI_REVIEW_BASE_BRANCH:-develop}"
 echo "  Auth          : $([[ -n "${ANTHROPIC_API_KEY:-}" ]] && echo "API key" || echo "OAuth token (subscription)")"
-[[ -n "${AI_REVIEW_MODEL:-}" ]] && echo "  Model         : ${AI_REVIEW_MODEL}"
+echo "  Model         : ${MODEL}"
 echo "  Output JSON   : $OUTPUT_FILE"
 echo "  Findings gate : ${AI_REVIEW_FAIL_ON:-none}"
 echo

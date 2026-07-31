@@ -5,6 +5,31 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.49.0 / code-fixer 1.45.0 — 2026-07-31
+
+### Added
+- **Sonnet-only model guard.** Both skills now check which model they are running as before
+  anything else — before OS detection, before scoping the diff, before reading a file. On any
+  model other than Sonnet (Fable, Opus, Haiku, …) the skill prints
+  `ERROR: <skill> only runs on Sonnet. Run /model sonnet and re-invoke this skill.` and ends the
+  turn. The guard explicitly forbids the obvious workaround — delegating the review to a Sonnet
+  subagent — because arbitration (reviewer Step 8 / fixer Step 7) runs in the main context and
+  must itself be Sonnet.
+
+### Changed
+- **Fan-out slice agents are pinned to Sonnet.** The six parallel lens-slice subagents
+  (reviewer 7b / fixer 6b) must now be spawned with `model: sonnet` explicitly rather than
+  inheriting the session model, and never on `fable`. Previously a slice agent silently
+  inherited whatever the parent session was running.
+- **`ai-review-ci` defaults `AI_REVIEW_MODEL` to `sonnet`.** The wrapper previously passed
+  `--model` only when the var was set, letting CI inherit the CLI default — which the new guard
+  would refuse, aborting the run after the container had spun up. It now defaults to `sonnet`
+  and fails **pre-flight** (exit 1) on a non-sonnet override rather than dying at the guard
+  mid-run. The banner always prints the effective model.
+
+> **Note:** requiring Sonnet is a new precondition on invocation. Runs previously started under
+> Opus (or any non-Sonnet model) will now stop at the guard.
+
 ## code-reviewer 1.48.0 / code-fixer 1.44.0 — 2026-07-30
 
 ### Added
