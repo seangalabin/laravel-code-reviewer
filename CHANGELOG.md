@@ -5,7 +5,20 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
-## code-reviewer 1.50.0 / code-fixer 1.46.0 — 2026-07-31
+## code-reviewer 1.51.0 / code-fixer 1.47.0 — 2026-08-03
+
+### Changed
+- **§4c Eloquent scopes is now the canonical rule, and it fires on readability, not just
+  duplication.** Previously the "long chain → named scope" idea lived as a one-line bullet
+  under §1c (repositories only) with no threshold, while §4c only caught *duplicated* chains —
+  so a single unreadable 6-constraint chain in a Service or Job was never flagged. §4c now
+  covers both triggers in any layer (🔵): a duplicated 2+ constraint chain, or a single chain of
+  **4+ constraint calls** expressing one nameable business concept. Query construction
+  (`select`/`with`/`orderBy`/`paginate`/…) never counts toward the threshold. Carve-outs:
+  one-off report queries, chains already composed of scopes, and conditional request-filter
+  chains. Includes BAD/GOOD examples and the placement discipline — the scope is defined on the
+  Model, but the call site stays in the Repository (§1c). §1c and §5 bullets now cross-reference
+  §4c. Shared-lens change — both skills.
 
 ### Changed
 - **Model guard now allows Opus as well as Sonnet.** 1.49.0 shipped the guard as Sonnet-only,

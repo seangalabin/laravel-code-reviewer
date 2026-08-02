@@ -472,7 +472,7 @@ Service method length: flag at **30+ lines** as 🔵 Suggestion.
 Repositories own all Eloquent/query logic. They must:
 - Return typed objects (`Model`, `Collection`, `?Model`) — returning a plain `array` is 🔵 Suggestion
 - Contain no business logic, no HTTP concerns — 🟡 Warning
-- Use Eloquent scopes for reusable filter chains — a very long query chain where a named scope would help readability is 🔵 Suggestion
+- Use Eloquent scopes for reusable or unreadable filter chains — thresholds and carve-outs in §4c (canonical)
 - Avoid eager-loading constraints inside relationship methods — those belong in the Repository query, not on the Model; see §5 (canonical)
 
 **Repository granularity — one per aggregate root, not one per Model.** A Repository owns an entire domain aggregate. Models that exist only as children of another aggregate root (data / details / items / attachments / metadata rows with a FK to a parent and no independent lifecycle outside it) belong inside the parent's Repository — do **not** create a separate Repository for them.
@@ -1086,9 +1086,50 @@ $addresses = $user->addresses;
 
 **Report each logical N+1 once**, at its root cause (the missing eager-load), not at every site that consumes the relation.
 
-#### 4c. Eloquent scopes
+#### 4c. Eloquent scopes (canonical)
 
-Repeated query chains belong in a named local scope. Flag duplicated filter chains as 🔵 Suggestion.
+A named local scope turns a chain of constraints into the business concept it expresses. Two triggers, both 🔵 Suggestion, in **any layer** (Repository, Service, Job, Command — not just repositories):
+
+- **Duplication** — the same chain of 2+ constraint calls appears in two or more places in the diff (or a changed line repeats a chain visible elsewhere in the file). One canonical scope; report once, at the site the diff touched.
+- **Readability** — a single chain of **4+ constraint calls** (`where`, `orWhere`, `whereIn`, `whereBetween`, `whereHas`, `whereNull`, `whereDate`, …) that together express **one nameable business condition**. The test: can you name the scope after a domain concept (`active()`, `overdue()`, `visibleTo($user)`)? If the only honest name restates the implementation (`whereStatusActiveAndNotDeletedAndPublished()`), the chain isn't a concept — don't flag it.
+
+**Count only constraint calls** toward the threshold. Query *construction* — `select()`, `with()`, `orderBy()`, `groupBy()`, `limit()`, `paginate()`, `get()` — never counts and is fine chained at any length.
+
+```php
+// BAD — six constraints spelling out "claimable by this assessor" inline
+$appraisals = Appraisal::query()
+    ->where('status', AppraisalStatus::Submitted)
+    ->whereNull('assessor_id')
+    ->where('expires_at', '>', now())
+    ->whereHas('property', fn ($q) => $q->where('state', $assessor->state))
+    ->whereDoesntHave('flags', fn ($q) => $q->where('type', FlagType::Fraud))
+    ->where('tier', '<=', $assessor->tier)
+    ->orderByDesc('submitted_at')
+    ->get();
+
+// GOOD — the concept has a name; call sites read as the business rule
+// App\Models\Appraisal
+public function scopeClaimableBy(Builder $query, Assessor $assessor): Builder
+{
+    return $query
+        ->where('status', AppraisalStatus::Submitted)
+        ->whereNull('assessor_id')
+        ->where('expires_at', '>', now())
+        ->whereHas('property', fn ($q) => $q->where('state', $assessor->state))
+        ->whereDoesntHave('flags', fn ($q) => $q->where('type', FlagType::Fraud))
+        ->where('tier', '<=', $assessor->tier);
+}
+
+// call site (Repository)
+$appraisals = Appraisal::claimableBy($assessor)->orderByDesc('submitted_at')->get();
+```
+
+**Don't flag:**
+- A one-off analytical/report query whose constraints have no reusable business meaning — a scope named for one report is noise, not abstraction.
+- A chain already composed of scopes (`Appraisal::submitted()->unassigned()->fresh()`) — that *is* the pattern working.
+- Dynamic chains built conditionally from request filters (`when($request->status, ...)`) — those are a filter object/builder concern, not a scope.
+
+**Placement discipline:** the scope is *defined* on the Model, but extracting one is not a license to query the Model from a Service or Controller — the call site still belongs in the Repository (§1c). Phrase findings to move the chain into a scope **and** keep the query in its layer; naming follows §2p (`scopeActive` — adjective/concept suffix).
 
 #### 4d. Fillable / guarded hygiene
 
@@ -1144,7 +1185,7 @@ DB::transaction(function () use ($data, $items) {
 
 - Complex business logic or side effects inside a Model method — 🟡 Warning.
 - HTTP concerns (`Request`, `response()`, `Auth` facade) inside a Model — 🟡 Warning.
-- A method that issues its own Eloquent query instead of defining a scope — 🔵 Suggestion.
+- A method that issues its own Eloquent query instead of defining a scope — 🔵 Suggestion (scope thresholds and carve-outs: §4c, canonical).
 - Relationship method that contains eager-loading constraints (belongs in the Repository query, not the Model) — 🔵 Suggestion.
 - `$guarded = []` without `$fillable` — see §4d (canonical rule).
 
