@@ -5,6 +5,20 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.53.0 / code-fixer 1.49.0 — 2026-08-04
+
+### Changed
+- **Jira sync — board-flow rule.** `update_card_status.py` now implements "cards under
+  review move by findings": open/unresolved findings → `Failed Code Review`; clean →
+  **`Ready To Test`** (the passed-status default was `Code Review`, which parked clean cards
+  back where they started). New guard: **only cards whose current status is in
+  `JIRA_SOURCE_STATUSES`** (default `Code Review,Failed Code Review`) are transitioned — a
+  card that is In Progress, already in QA, or Done is left alone. `Failed Code Review` is an
+  eligible source deliberately, so a card that failed a previous run advances to
+  `Ready To Test` when a re-run comes back clean. All three statuses remain overridable via
+  env (`JIRA_FAILED_STATUS` / `JIRA_PASSED_STATUS` / `JIRA_SOURCE_STATUSES`). Reviewer-only
+  (the fixer never touches Jira); `code-fixer` bumps in lockstep, behaviour unchanged.
+
 ## code-reviewer 1.52.0 / code-fixer 1.48.0 — 2026-08-04
 
 ### Removed

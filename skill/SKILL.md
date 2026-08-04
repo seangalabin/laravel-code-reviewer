@@ -524,7 +524,7 @@ Do not run any Bitbucket posting scripts until the user confirms **y**.
 
 ### Step 10 — Sync Jira card status (idempotent, soft-fails)
 
-After all the comment-state work in Steps 0.5 / 0.6 / 2 is done, transition the linked Jira card based on the **current state of the PR** — not just what this run produced. A clean diff or a fully-addressed PR should move the card back to `Code Review`; remaining open findings should move it to `Failed Code Review`.
+After all the comment-state work in Steps 0.5 / 0.6 / 2 is done, transition the linked Jira card based on the **current state of the PR** — not just what this run produced. Remaining open findings move the card to `Failed Code Review`; a clean diff or a fully-addressed PR moves it to `Ready To Test` (override with `JIRA_FAILED_STATUS` / `JIRA_PASSED_STATUS`). **Only cards currently in a review column move** — the script skips any card whose status isn't in `JIRA_SOURCE_STATUSES` (default `Code Review,Failed Code Review`), so it never yanks a card that is still In Progress, already in QA, or Done. `Failed Code Review` is an eligible source so a fixed card advances to `Ready To Test` on a clean re-run.
 
 1. **Compute `has_open_findings`** — `true` if any of:
    - This run posted ≥1 new finding (and the user said `y`).

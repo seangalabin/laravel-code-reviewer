@@ -7,7 +7,14 @@ Usage:
 
 Decision rule:
 - has-open-findings=true  → transition to JIRA_FAILED_STATUS (default "Failed Code Review")
-- has-open-findings=false → transition to JIRA_PASSED_STATUS (default "Code Review")
+- has-open-findings=false → transition to JIRA_PASSED_STATUS (default "Ready To Test")
+
+Only cards currently sitting in a review column are moved: if the card's current
+status is not in JIRA_SOURCE_STATUSES (default "Code Review,Failed Code Review"),
+the sync skips. This stops the pipeline yanking cards that are still In Progress,
+already in QA, or Done. "Failed Code Review" is an eligible source so a card that
+failed a previous run can advance to "Ready To Test" once a re-run comes back
+clean.
 
 The script auto-detects the ticket key from the current branch (regex `[A-Z]+-\\d+`)
 unless `--ticket` is passed. It is **idempotent** — if the card is already in
@@ -20,8 +27,10 @@ Required env vars:
   JIRA_API_TOKEN       Atlassian API token   (falls back to BITBUCKET_API_TOKEN)
 
 Optional env vars:
-  JIRA_FAILED_STATUS   defaults to "Failed Code Review"
-  JIRA_PASSED_STATUS   defaults to "Code Review"
+  JIRA_FAILED_STATUS    defaults to "Failed Code Review"
+  JIRA_PASSED_STATUS    defaults to "Ready To Test"
+  JIRA_SOURCE_STATUSES  comma-separated statuses eligible to be moved;
+                        defaults to "Code Review,Failed Code Review"
 """
 
 from __future__ import annotations
@@ -51,6 +60,17 @@ def extract_ticket_id(text: str) -> str | None:
         return None
     m = TICKET_PATTERN.search(text)
     return m.group(1) if m else None
+
+
+def parse_statuses(raw: str) -> list[str]:
+    """Split a comma-separated status list, trimming blanks."""
+    return [s.strip() for s in (raw or '').split(',') if s.strip()]
+
+
+def is_eligible_source(current: str, sources: list[str]) -> bool:
+    """True when `current` matches one of `sources` (case-insensitive)."""
+    cf = (current or '').casefold()
+    return any(cf == s.casefold() for s in sources)
 
 
 def detect_ticket_from_branch() -> str | None:
@@ -111,7 +131,9 @@ def main() -> None:
         soft_exit('No JIRA-style ticket detected from branch — skipping Jira sync.')
 
     failed_status = os.environ.get('JIRA_FAILED_STATUS', 'Failed Code Review')
-    passed_status = os.environ.get('JIRA_PASSED_STATUS', 'Code Review')
+    passed_status = os.environ.get('JIRA_PASSED_STATUS', 'Ready To Test')
+    sources = parse_statuses(os.environ.get(
+        'JIRA_SOURCE_STATUSES', 'Code Review,Failed Code Review'))
     target = failed_status if args.has_open_findings == 'true' else passed_status
 
     auth = f'{email}:{token}'
@@ -131,6 +153,14 @@ def main() -> None:
     if current.casefold() == target.casefold():
         print(f'  ✓ Already in "{target}" — no transition needed.', file=sys.stderr)
         return
+
+    # Only move cards sitting in a review column — never yank a card that is
+    # still being worked on, already in QA, or done.
+    if not is_eligible_source(current, sources):
+        soft_exit(
+            f'"{current}" is not an eligible source status '
+            f'({", ".join(sources)}) — leaving the card where it is.'
+        )
 
     # 2) List available transitions.
     status, t_data = jira_curl(

@@ -87,7 +87,7 @@ Add your Bitbucket credentials to `.claude/settings.local.json` in the project r
 
 Create the API token with **Pull requests: write** scope at https://bitbucket.org/account/settings/personal-access-tokens/
 
-**Optional — Jira card status sync.** To transition the linked card after each review (`Failed Code Review` when findings remain, `Code Review` when clean), also set `JIRA_BASE_URL`, `JIRA_EMAIL`, and `JIRA_API_TOKEN` the same way. The email/token fall back to the Bitbucket values if the accounts share an Atlassian login; override the status names with `JIRA_FAILED_STATUS` / `JIRA_PASSED_STATUS` if your workflow labels differ. If any Jira variable is missing, the sync soft-skips — the review itself never fails.
+**Optional — Jira card status sync.** To transition the linked card after each review (`Failed Code Review` when findings remain or are unresolved, `Ready To Test` when clean), also set `JIRA_BASE_URL`, `JIRA_EMAIL`, and `JIRA_API_TOKEN` the same way. Only cards sitting in a review column are moved (`JIRA_SOURCE_STATUSES`, default `Code Review,Failed Code Review`) — a card that is In Progress, in QA, or Done is left alone. The email/token fall back to the Bitbucket values if the accounts share an Atlassian login; override the status names with `JIRA_FAILED_STATUS` / `JIRA_PASSED_STATUS` if your workflow labels differ. If any Jira variable is missing, the sync soft-skips — the review itself never fails.
 
 ## Usage
 

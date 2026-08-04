@@ -261,6 +261,27 @@ class TestUpdateCardStatus(unittest.TestCase):
         # Convention is uppercase prefix; `feat-123` shouldn't be picked up as a ticket.
         self.assertIsNone(update_card.extract_ticket_id('feat-123-something'))
 
+    # ── source-status guard ───────────────────────────────────────────────────
+
+    def test_parse_statuses_splits_and_trims(self):
+        self.assertEqual(
+            update_card.parse_statuses('Code Review, Failed Code Review'),
+            ['Code Review', 'Failed Code Review'])
+
+    def test_parse_statuses_empty_and_blanks(self):
+        self.assertEqual(update_card.parse_statuses(''), [])
+        self.assertEqual(update_card.parse_statuses(' , ,'), [])
+
+    def test_eligible_source_case_insensitive(self):
+        sources = ['Code Review', 'Failed Code Review']
+        self.assertTrue(update_card.is_eligible_source('code review', sources))
+        self.assertTrue(update_card.is_eligible_source('FAILED CODE REVIEW', sources))
+
+    def test_ineligible_source_left_alone(self):
+        sources = ['Code Review', 'Failed Code Review']
+        for status in ('In Progress', 'Ready To Test', 'Done', 'To Do', ''):
+            self.assertFalse(update_card.is_eligible_source(status, sources))
+
 
 # ── update_resolved — body rewriting ──────────────────────────────────────────
 
