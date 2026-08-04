@@ -5,6 +5,18 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.52.0 / code-fixer 1.48.0 — 2026-08-04
+
+### Removed
+- **Findings gate (`AI_REVIEW_FAIL_ON` / exit 3) removed from `ai-review-ci`** — reverting
+  1.48.0. Blocking merges on a probabilistic reviewer contradicts the product's own stance
+  (every comment is "a suggestion to verify, not a verdict"): one false 🔴 and a developer is
+  stuck dismissing + re-running just to merge, and the Jira "Failed Code Review" sync already
+  provides the process signal without a hard block. The wrapper is advisory again — exit codes
+  are back to 0/1/2 only; a stale `AI_REVIEW_FAIL_ON` var is simply ignored. If a team later
+  wants a gate once the reviewer's false-positive rate has earned it, restore from the 1.48.0
+  commit. Reviewer-only; `code-fixer` bumps in lockstep, behaviour unchanged.
+
 ## code-reviewer 1.51.0 / code-fixer 1.47.0 — 2026-08-03
 
 ### Changed

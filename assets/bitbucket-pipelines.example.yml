@@ -20,12 +20,6 @@
 #        AI_REVIEW_MAX_USD      per-run spend cap (default 2.00; ceiling, not target)
 #        AI_REVIEW_BASE_BRANCH  base branch the diff is scoped against
 #                               (default develop; set to master etc. — see below)
-#        AI_REVIEW_FAIL_ON      findings gate: none (default) | critical | warning | any.
-#                               At/above the threshold the wrapper exits 3 — pair it
-#                               with the rc-check form of the run line (see below) so
-#                               findings fail the step but infra errors stay advisory:
-#                                 - export AI_REVIEW_FAIL_ON=critical
-#                                 - .claude/skills/code-reviewer/bin/ai-review-ci || { rc=$?; if [ "$rc" -eq 3 ]; then echo "AI review found blocking findings."; exit 1; fi; echo "AI review errored (rc=$rc) — advisory."; }
 #
 # Base branch: the reviewer diffs against `develop` by default. If this repo
 # integrates into a different branch (e.g. master), set AI_REVIEW_BASE_BRANCH
