@@ -302,7 +302,7 @@ HEAD_SHA=$(git rev-parse HEAD)
 
 The script reads a hidden checkpoint comment on the PR and prints the SHA — or nothing if no checkpoint exists yet.
 
-- `CHECKPOINT_SHA` **non-empty AND equals `HEAD_SHA`** → there are no new commits to analyze. Developer replies are independent of new commits, so **first run Step 7 (respond to developer replies) below**, then **stop** — do not run scoping, the Step 8 analysis, or Step 9 posting. After handling any replies, print exactly this and stop:
+- `CHECKPOINT_SHA` **non-empty AND equals `HEAD_SHA`** → there are no new commits to analyze. Developer replies are independent of new commits, so **first run Step 7 (respond to developer replies) below, then Step 10 (Jira sync)** — a Step 7 concession or resolution changes what the card's correct status is, so the sync must still run (it is idempotent and cheap when nothing changed). Then **stop** — do not run scoping, the Step 8 analysis, or Step 9 posting. After handling any replies and syncing the card, print exactly this and stop:
 
   > `PR #{ID} was last reviewed at {short_sha}, which is still the current tip. 0 new commits to review since the last run. Pass --full-review to re-review the whole branch against $BASE.`
 

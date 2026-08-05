@@ -5,6 +5,16 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.53.4 / code-fixer 1.49.4 — 2026-08-05
+
+### Fixed
+- **Jira sync also runs on 0-new-commit reruns.** The checkpoint short-circuit ("no new
+  commits → handle replies, stop") stopped **before Step 10**, so the very flow where a
+  developer replies and the reviewer concedes/resolves on the rerun could never advance the
+  card — the exact scenario 1.53.3 addressed inside Step 10 was still unreachable from this
+  path. The short-circuit now runs Step 7 → Step 10 → stop. Reviewer-only; `code-fixer`
+  bumps in lockstep, behaviour unchanged.
+
 ## code-reviewer 1.53.3 / code-fixer 1.49.3 — 2026-08-05
 
 ### Fixed
