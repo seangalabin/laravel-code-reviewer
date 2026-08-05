@@ -81,6 +81,34 @@ def detect_ticket_from_branch() -> str | None:
     return extract_ticket_id(r.stdout.strip())
 
 
+def branch_candidates() -> list[str]:
+    """Branch names to scan for a ticket key, most reliable first.
+
+    1. `.ai-review/target.json` — target mode (--pr/--branch, which is what CI
+       runs) checks out a DETACHED worktree, so `git branch --show-current`
+       prints nothing there; the target file carries the real branch.
+    2. `BITBUCKET_BRANCH` — provided by Bitbucket Pipelines even when git
+       state is unhelpful.
+    3. The current git branch — normal local runs.
+    """
+    names: list[str] = []
+    try:
+        with open('.ai-review/target.json') as f:
+            names.append((json.load(f).get('branch') or ''))
+    except (OSError, json.JSONDecodeError):
+        pass
+    names.append(os.environ.get('BITBUCKET_BRANCH', ''))
+    return names
+
+
+def detect_ticket() -> str | None:
+    for name in branch_candidates():
+        ticket = extract_ticket_id(name)
+        if ticket:
+            return ticket
+    return detect_ticket_from_branch()
+
+
 def jira_curl(method: str, url: str, auth: str,
               body: dict | None = None) -> tuple[int, dict | None]:
     """Return (http_status, parsed_body_or_None). status==0 means transport failure."""
@@ -126,9 +154,9 @@ def main() -> None:
     if not (email and token):
         soft_exit('JIRA_EMAIL / JIRA_API_TOKEN not set — skipping Jira sync.')
 
-    ticket = args.ticket or detect_ticket_from_branch()
+    ticket = args.ticket or detect_ticket()
     if not ticket:
-        soft_exit('No JIRA-style ticket detected from branch — skipping Jira sync.')
+        soft_exit('No JIRA-style ticket detected (target.json / BITBUCKET_BRANCH / git branch) — skipping Jira sync.')
 
     failed_status = os.environ.get('JIRA_FAILED_STATUS', 'Failed Code Review')
     passed_status = os.environ.get('JIRA_PASSED_STATUS', 'Ready To Test')

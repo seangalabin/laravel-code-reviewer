@@ -261,6 +261,34 @@ class TestUpdateCardStatus(unittest.TestCase):
         # Convention is uppercase prefix; `feat-123` shouldn't be picked up as a ticket.
         self.assertIsNone(update_card.extract_ticket_id('feat-123-something'))
 
+    # ── ticket detection in CI/target mode ────────────────────────────────────
+
+    def test_ticket_from_target_json_beats_git(self):
+        # Target mode (CI) runs in a DETACHED worktree — git yields no branch;
+        # the ticket must come from .ai-review/target.json.
+        with tempfile.TemporaryDirectory() as d:
+            os.chdir(d)
+            os.makedirs('.ai-review')
+            Path('.ai-review/target.json').write_text(
+                json.dumps({'branch': 'bugfix/B20-11777-jpg-option', 'pr_id': 9}))
+            os.environ.pop('BITBUCKET_BRANCH', None)
+            self.assertEqual(update_card.detect_ticket(), 'B20-11777')
+
+    def test_ticket_from_bitbucket_branch_env(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.chdir(d)  # no target.json, not a git repo
+            os.environ['BITBUCKET_BRANCH'] = 'feature/B20-42-thing'
+            try:
+                self.assertEqual(update_card.detect_ticket(), 'B20-42')
+            finally:
+                del os.environ['BITBUCKET_BRANCH']
+
+    def test_ticket_none_when_no_sources(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.chdir(d)  # no target.json, no env, not a git repo
+            os.environ.pop('BITBUCKET_BRANCH', None)
+            self.assertIsNone(update_card.detect_ticket())
+
     # ── source-status guard ───────────────────────────────────────────────────
 
     def test_parse_statuses_splits_and_trims(self):

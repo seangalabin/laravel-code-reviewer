@@ -5,6 +5,18 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.53.1 / code-fixer 1.49.1 — 2026-08-05
+
+### Fixed
+- **Jira sync now detects the ticket in CI (`update_card_status.py`).** In target mode
+  (`--pr`/`--branch` — exactly what CI runs) the skill executes inside a **detached-HEAD
+  worktree**, where `git branch --show-current` prints nothing — so ticket detection always
+  failed and Step 10 soft-skipped with "No JIRA-style ticket detected", meaning the card
+  never moved (observed live on B20-11777, which sat eligible in Code Review with both
+  transitions available). Detection now tries, in order: `.ai-review/target.json` (the real
+  branch in target mode) → `BITBUCKET_BRANCH` (provided by Pipelines) → the current git
+  branch (local runs). Reviewer-only; `code-fixer` bumps in lockstep, behaviour unchanged.
+
 ## code-reviewer 1.53.0 / code-fixer 1.49.0 — 2026-08-04
 
 ### Changed
