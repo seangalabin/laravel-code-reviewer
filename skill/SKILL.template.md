@@ -530,8 +530,11 @@ After all the comment-state work in Steps 0.5 / 0.6 / 2 is done, transition the 
    - This run posted ≥1 new finding (and the user said `y`).
    - There are pre-existing open findings from prior runs that weren't marked resolved this run (i.e. `check_resolved.py`'s output minus what Step 5 just resolved).
    - **Dismissed findings do NOT count as open** — they're explicit accepts.
+   - **Conceded findings do NOT count as open.** A Step 7 concession is a dismissal — the reply's side effect dismisses the finding. If the dismissal side effect failed or hasn't run, still treat the conceded finding as **not open**: the reviewer has accepted the developer's position, so it must not hold the card in `Failed Code Review`.
 
-   Otherwise → `false` (clean PR, or all findings now resolved/dismissed).
+   Otherwise → `false` (clean PR, or all findings now resolved/dismissed/conceded).
+
+   **Always run this step — never skip it by judgment.** If the computed inputs feel wrong (e.g. a finding was conceded but still shows open), fix the *input* (dismiss the finding), then run the script with the corrected value. Skipping leaves the card stranded in `Code Review`; the script itself is idempotent, no-ops when already correct, and refuses ineligible source statuses — it is always safe to run.
 
 2. **Run:**
 
@@ -541,10 +544,10 @@ After all the comment-state work in Steps 0.5 / 0.6 / 2 is done, transition the 
    ```
 
    The script:
-   - Auto-detects the ticket key from the current branch (regex `[A-Z][A-Z0-9_]*-\d+`); pass `--ticket=KEY` to override.
+   - Auto-detects the ticket key (regex `[A-Z][A-Z0-9_]*-\d+`) from `.ai-review/target.json`, then `BITBUCKET_BRANCH`, then the current git branch; pass `--ticket=KEY` to override.
    - Reads `JIRA_BASE_URL`, `JIRA_EMAIL` (falls back to `BITBUCKET_EMAIL`), `JIRA_API_TOKEN` (falls back to `BITBUCKET_API_TOKEN`).
-   - Fetches the issue's current status. No-op if already correct.
-   - Finds the transition whose target matches the desired status — defaults: `Failed Code Review` (findings exist) or `Code Review` (clean / all-addressed). Override per-repo via `JIRA_FAILED_STATUS` / `JIRA_PASSED_STATUS`.
+   - Fetches the issue's current status. No-op if already correct; skips statuses outside `JIRA_SOURCE_STATUSES`.
+   - Finds the transition whose target matches the desired status — defaults: `Failed Code Review` (findings exist) or `Ready To Test` (clean / all-addressed). Override per-repo via `JIRA_FAILED_STATUS` / `JIRA_PASSED_STATUS`.
    - POSTs the transition.
 
 3. **Soft-fail everywhere.** Missing creds, no JIRA key in branch name, workflow doesn't expose the needed transition — the script prints a `↷ skipped` reason to stderr and exits 0. The review run never fails because of Jira sync.

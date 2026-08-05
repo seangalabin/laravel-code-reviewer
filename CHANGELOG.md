@@ -5,6 +5,20 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.53.3 / code-fixer 1.49.3 — 2026-08-05
+
+### Fixed
+- **Step 10 (Jira sync) must always run, and conceded findings count as not-open.** Observed
+  live: the reviewer conceded a PR's only finding, then *skipped* Step 10 by its own judgment
+  ("moving to Failed Code Review would be wrong") — stranding the card in `Code Review` when
+  the correct outcome was `has_open_findings=false` → `Ready To Test`. Step 10 now states
+  explicitly: a Step 7 concession is a dismissal (and even if the dismissal side effect
+  failed, a conceded finding is never open), and the step is **never skipped by judgment** —
+  if an input looks wrong, fix the input (dismiss the finding) and run the script, which is
+  idempotent and safe. Also refreshed the step's stale doc lines (passed-status default is
+  `Ready To Test`; ticket detection order is target.json → `BITBUCKET_BRANCH` → git branch).
+  Reviewer-only; `code-fixer` bumps in lockstep, behaviour unchanged.
+
 ## code-reviewer 1.53.2 / code-fixer 1.49.2 — 2026-08-05
 
 ### Fixed
