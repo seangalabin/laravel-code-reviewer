@@ -173,7 +173,14 @@ def main() -> None:
         auth,
     )
     if status != 200 or not issue:
-        soft_exit(f'Could not fetch Jira issue {ticket} (HTTP {status}) — skipping.')
+        hint = ''
+        if status in (401, 403, 404):
+            # Jira answers 404 (hiding the issue) when the token authenticates
+            # but has no Jira access — e.g. the BITBUCKET_API_TOKEN fallback
+            # with a Pull-requests-only scope.
+            hint = (' If this card exists, the token has no Jira access — set '
+                    'JIRA_API_TOKEN to a token with read:jira-work + write:jira-work.')
+        soft_exit(f'Could not fetch Jira issue {ticket} (HTTP {status}) — skipping.{hint}')
 
     current = ((issue.get('fields') or {}).get('status') or {}).get('name', '') or '?'
     print(f'  Ticket {ticket}: currently "{current}", target "{target}".', file=sys.stderr)

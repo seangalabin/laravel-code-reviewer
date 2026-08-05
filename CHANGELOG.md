@@ -5,6 +5,17 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.53.2 / code-fixer 1.49.2 — 2026-08-05
+
+### Fixed
+- **Jira sync log now self-diagnoses a no-Jira-access token.** Jira answers **404** (hiding
+  the issue) when the token authenticates but has no Jira access — exactly what happens when
+  the sync falls back to a Pull-requests-scoped `BITBUCKET_API_TOKEN`. The skip line now says
+  so and names the fix (`JIRA_API_TOKEN` with `read:jira-work` + `write:jira-work`) instead of
+  a bare "HTTP 404" on a card that plainly exists. Diagnosed live: B20-11777 / B20-11716 sat
+  eligible in Code Review with both transitions available while the sync skipped on this.
+  Reviewer-only; `code-fixer` bumps in lockstep, behaviour unchanged.
+
 ## code-reviewer 1.53.1 / code-fixer 1.49.1 — 2026-08-05
 
 ### Fixed
