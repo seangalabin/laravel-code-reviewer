@@ -170,6 +170,7 @@ claude --print "$PROMPT" \
     "${BUDGET_ARGS[@]}" \
     "${MODEL_ARGS[@]}" \
     --allowedTools "${ALLOWED_TOOLS[@]}" \
+    --disallowedTools "Task" \
     > "$OUTPUT_FILE"
 RC=$?
 

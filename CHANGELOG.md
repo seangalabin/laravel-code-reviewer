@@ -5,6 +5,15 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.55.1 / code-fixer 1.51.1 — 2026-08-06
+
+### Changed
+- **`ai-review-ci` passes `--disallowedTools "Task"` explicitly.** The CLI has no `--no-agent`
+  flag; subagent spawning was already denied in CI (`dontAsk` + `Task` absent from the
+  allowlist), and the explicit disallow makes the single-agent policy a hard, self-documenting
+  block rather than an implicit one. Reviewer-only; `code-fixer` bumps in lockstep, behaviour
+  unchanged.
+
 ## code-reviewer 1.55.0 / code-fixer 1.51.0 — 2026-08-06
 
 ### Removed
