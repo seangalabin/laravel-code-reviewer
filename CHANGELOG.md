@@ -5,6 +5,13 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.54.1 / code-fixer 1.50.1 — 2026-08-06
+
+### Changed
+- **§6a reworded — generic and straightforward.** Dropped the case-specific framing; the rule
+  now leads with the test ("purity is not the test; ownership is") and generic examples only.
+  Same severity and remedy. Shared-lens change — both skills.
+
 ## code-reviewer 1.54.0 / code-fixer 1.50.0 — 2026-08-06
 
 ### Added
