@@ -1396,6 +1396,8 @@ DB::transaction(function () use ($data, $items) {
 
 Enums are value descriptors. Pure value-derivation on the enum is fine and encouraged — labels, colors, `canTransitionTo()`, grouping, `values()` / `labels()`, mapping helpers. Flag 🟡 Warning **only** side-effecting or cross-layer logic on the enum: a DB query, HTTP / `Auth` / `session` / `request` access, dispatching an event or job, or persistence. Those belong in a Service, not on the enum.
 
+**6a. Infrastructure/strategy classifications don't belong on the enum — even when pure.** The test is not purity, it's *whose fact is it*: an enum method must express something **intrinsic to the case** (its label, key, display form, domain grouping). A method encoding an **operational decision we made about the case** — which storage disk/queue/gateway it uses, whether it's behind a feature flag or mid-migration, retention/routing/tier choices (`usesS3Crops()`, `storageDisk()`, `isMigratedToX()`) — is 🔵 Suggestion: move it to the service that implements the strategy (as a constant/config it owns) or to `config/`. Reasons to give in the finding: the enum is the most stable layer while strategy flags are the least stable (a mid-migration flag mutates and then becomes permanently-true dead weight); it couples the domain layer to infrastructure; and it invites the enum to accrete into a config table. A `label()`-style method is a fact *about REINZ*; "we store REINZ crops on S3 (for now)" is a fact about *our storage layer* — anchor it there. Same single-source-of-truth is preserved by a `const PROVIDERS = [...]` on the owning service.
+
 ---
 
 ### 7. Correctness

@@ -5,6 +5,19 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.54.0 / code-fixer 1.50.0 — 2026-08-06
+
+### Added
+- **§6a Enums — infrastructure/strategy classifications don't belong on the enum, even when
+  pure.** §6 only flagged side-effecting/cross-layer logic, so a pure, declarative method
+  encoding an *operational decision* (`usesS3Crops()`, `storageDisk()`, `isMigratedToX()`)
+  slid through as a "helper" (observed live on B20-11576's `PropertyDataProvider`). The test
+  is now *whose fact is it*: intrinsic-to-the-case (label, key, display, domain grouping)
+  stays; a strategy/infra/migration classification is 🔵 — move it to the service that
+  implements the strategy (as a const/config it owns) or `config/`. Rationale in the rule:
+  enums are the most stable layer, strategy flags the least; domain→infra coupling; enums
+  accreting into config tables. Shared-lens change — both skills.
+
 ## code-reviewer 1.53.4 / code-fixer 1.49.4 — 2026-08-05
 
 ### Fixed
