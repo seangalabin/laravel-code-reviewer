@@ -5,6 +5,19 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.57.0 / code-fixer 1.53.0 — 2026-08-06
+
+### Added
+- **Daily learning digest (`mine_feedback.py --since-hours N --digest FILE`).**
+  `--since-hours 24` scopes mining to yesterday's PR activity (walks the -updated_on sort and
+  stops at the window edge); `--digest` writes an email-ready plain-text summary — per-dimension
+  lifecycle table, dismissal reasons (each a candidate carve-out), still-open counts by PR, and
+  the tune-the-lens call to action. Exits **3** with no file when the window had no activity, so
+  a scheduled pipeline can skip sending on quiet days. `LENS-TUNING.md` gains the turnkey
+  Bitbucket setup: a `custom: ai-review-daily-digest` pipeline + `email-notify` pipe + daily
+  schedule (7am local = pick the matching UTC hour). Reviewer-only; `code-fixer` bumps in
+  lockstep, behaviour unchanged.
+
 ## code-reviewer 1.56.0 / code-fixer 1.52.0 — 2026-08-06
 
 ### Added

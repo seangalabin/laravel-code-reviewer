@@ -30,6 +30,50 @@ examples are boundary markers, never the originating incident retold.**
 4. Ship rule changes like any lens change: edit `src/review-lens.md`, `python3 build.py`,
    bump both VERSIONs, CHANGELOG entry citing the *pattern* (not one PR), push.
 
+## Daily digest by email (optional, feeds Trigger 1 incrementally)
+
+`mine_feedback.py --since-hours 24 --digest digest.txt` mines only yesterday's PR activity
+and writes an email-ready text digest; it exits **3** (and writes nothing) when there was no
+activity, so quiet days send no email.
+
+Bitbucket setup (in the target repo):
+
+1. Add a custom pipeline:
+
+   ```yaml
+   custom:
+     ai-review-daily-digest:
+       - step:
+           name: AI review learning digest
+           image: node:20
+           clone: { enabled: true, depth: 1 }
+           script:
+             - apt-get update && apt-get install -y --no-install-recommends python3 curl git
+             - npx -y github:seangalabin/laravel-code-reviewer .
+             - |
+               .claude/skills/code-reviewer/scripts/mine_feedback.py \
+                   --since-hours 24 --digest digest.txt \
+                 || { rc=$?; [ "$rc" -eq 3 ] && echo "No activity — no email." && exit 0; exit "$rc"; }
+             - pipe: atlassian/email-notify:0.13.0
+               variables:
+                 USERNAME: $SMTP_USERNAME
+                 PASSWORD: $SMTP_PASSWORD
+                 FROM: $SMTP_USERNAME
+                 TO: 'you@company.com'
+                 HOST: 'smtp.gmail.com'
+                 SUBJECT: 'AI review — yesterday''s learnings'
+                 BODY_PLAIN_TEXT_FILE: 'digest.txt'
+   ```
+
+2. Repo variables: `SMTP_USERNAME` / `SMTP_PASSWORD` (secured — e.g. a Google Workspace app
+   password), plus the existing `BITBUCKET_EMAIL` / `BITBUCKET_API_TOKEN`.
+3. Repository → Pipelines → **Schedules** → new schedule on `develop`, pipeline
+   `ai-review-daily-digest`, daily at the hour matching **7am your time in UTC** (7am AEST =
+   21:00 UTC the previous day).
+
+Reading the email each morning + one small lens edit when a pattern shows = the incremental
+version of Trigger 1.
+
 ## Trigger 2 — escaped defect (per incident)
 
 A bug reached staging/production from a reviewed PR:

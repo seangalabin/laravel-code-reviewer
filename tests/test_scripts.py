@@ -463,6 +463,19 @@ class TestMineFeedback(unittest.TestCase):
         self.assertIsNone(mine_feedback.classify_finding('a reply <!-- ai-review:reply -->'))
         self.assertIsNone(mine_feedback.classify_finding('plain human comment'))
 
+    def test_build_digest_contains_stats_and_reasons(self):
+        findings = [
+            {'pr': 7, 'state': 'dismissed', 'dim': '4b', 'reason': 'bounded table'},
+            {'pr': 7, 'state': 'open', 'dim': '3a', 'reason': ''},
+        ]
+        dims = mine_feedback.aggregate(findings)
+        digest = mine_feedback.build_digest(findings, dims, [{'id': 7}], 'last 24h')
+        self.assertIn('learning digest (last 24h)', digest)
+        self.assertIn('§4b', digest)
+        self.assertIn('bounded table', digest)
+        self.assertIn('PR #7: 1 open', digest)
+        self.assertIn('LENS-TUNING.md', digest)
+
     def test_aggregate_groups_by_dim_and_collects_reasons(self):
         dims = mine_feedback.aggregate([
             {'dim': '4b', 'state': 'resolved'},
