@@ -5,6 +5,20 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.56.0 / code-fixer 1.52.0 — 2026-08-06
+
+### Added
+- **Learning loop — `mine_feedback.py` + the lens-tuning workflow (`LENS-TUNING.md`).** The
+  new script walks the last N PRs and extracts every AI finding's lifecycle — resolved /
+  dismissed(+reason) / open — grouped per lens dimension into
+  `.ai-review/feedback-report.json` with a summary table. `LENS-TUNING.md` documents the two
+  triggers that turn the report into lens changes: scheduled mining (monthly / every ~20
+  reviews — high dismissed ratios become carve-outs, recurring dismissal reasons become
+  exemptions, resolved ratios prove rules earn their keep) and the escaped-defect postmortem
+  (bug reaches staging/prod → which dimension should have caught it → sharpened/new rule).
+  All proposals pass the generic-rule standard. Mining script is reviewer-only (Bitbucket
+  data); `code-fixer` bumps in lockstep, behaviour unchanged.
+
 ## code-reviewer 1.55.1 / code-fixer 1.51.1 — 2026-08-06
 
 ### Changed

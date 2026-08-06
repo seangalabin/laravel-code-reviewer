@@ -37,6 +37,7 @@ def load_module(path: Path, name: str):
 REPO_ROOT = Path(__file__).parent.parent
 
 bb              = load_module(SCRIPTS / '_bitbucket.py',      '_bitbucket')
+mine_feedback   = load_module(SCRIPTS / 'mine_feedback.py',   'mine_feedback')
 check_resolved  = load_module(SCRIPTS / 'check_resolved.py',  'check_resolved')
 check_dismissals= load_module(SCRIPTS / 'check_dismissals.py','check_dismissals')
 check_replies   = load_module(SCRIPTS / 'check_replies.py',   'check_replies')
@@ -434,6 +435,44 @@ class TestCheckResolvedPostedIndex(unittest.TestCase):
         idx = check_resolved.build_posted_index(comments)
         self.assertEqual(idx[0]['dim'], '')
         self.assertEqual(idx[0]['path'], 'app/A.php')
+
+
+# ── mine_feedback — finding lifecycle classification ──────────────────────────
+
+class TestMineFeedback(unittest.TestCase):
+
+    def test_classify_open(self):
+        state, meta = mine_feedback.classify_finding(
+            'f\n<!-- ai-review:meta {"dim":"4b","severity":"🟡"} -->\n<!-- ai-review:open:abc -->')
+        self.assertEqual(state, 'open')
+        self.assertEqual(meta['dim'], '4b')
+
+    def test_classify_resolved(self):
+        state, _ = mine_feedback.classify_finding(
+            '✅ fixed\n<!-- ai-review:resolved:def456 -->')
+        self.assertEqual(state, 'resolved')
+
+    def test_classify_dismissed_wins_and_carries_reason(self):
+        # A dismissed body still contains the original text; dismissed must win.
+        state, meta = mine_feedback.classify_finding(
+            '❌ Dismissed\n<!-- ai-review:dismissed {"dim":"3a","reason":"internal endpoint"} -->')
+        self.assertEqual(state, 'dismissed')
+        self.assertEqual(meta['reason'], 'internal endpoint')
+
+    def test_classify_non_finding_returns_none(self):
+        self.assertIsNone(mine_feedback.classify_finding('a reply <!-- ai-review:reply -->'))
+        self.assertIsNone(mine_feedback.classify_finding('plain human comment'))
+
+    def test_aggregate_groups_by_dim_and_collects_reasons(self):
+        dims = mine_feedback.aggregate([
+            {'dim': '4b', 'state': 'resolved'},
+            {'dim': '4b', 'state': 'dismissed', 'reason': 'reference table, bounded'},
+            {'dim': '3a', 'state': 'open'},
+        ])
+        self.assertEqual(dims['4b']['posted'], 2)
+        self.assertEqual(dims['4b']['resolved'], 1)
+        self.assertEqual(dims['4b']['dismissal_reasons'], ['reference table, bounded'])
+        self.assertEqual(dims['3a']['open'], 1)
 
 
 # ── check_dismissals — dismissal parsing ──────────────────────────────────────
