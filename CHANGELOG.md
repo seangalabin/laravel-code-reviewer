@@ -5,6 +5,18 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.54.2 / code-fixer 1.50.2 — 2026-08-06
+
+### Changed
+- **Lens audit — scenario-specific residue removed.** Full pass of every rule against the
+  standard "rules are generic decision procedures; convention-specific stays, incident-specific
+  goes; examples are boundary markers". One offender found: §16g's rationale retold its
+  originating incident ("standing production problem in this stack… disks have repeatedly
+  bloated"; "exactly how the disks got bloated") — rewritten to the generic reasons (files on
+  one server are invisible to others, lost on redeploy/autoscale, fill the host disk). Rule
+  trigger, severity, carve-outs, and the `Asset::storage()` convention hook unchanged.
+  Everything else audited clean. Shared-lens change — both skills.
+
 ## code-reviewer 1.54.1 / code-fixer 1.50.1 — 2026-08-06
 
 ### Changed

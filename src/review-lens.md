@@ -1167,7 +1167,7 @@ Fix first, cache second: caching over an N+1 or a full-table load hides the defe
 
 #### 16g. Files, images, and assets belong in S3, not on the server's disk — 🟡 Warning
 
-Persistent files written to the **local filesystem** are a standing production problem in this stack: app-server disks have repeatedly bloated toward full, and a file written to one server's disk is invisible to the other servers — and gone after a redeploy or autoscale. User uploads, images, and generated output (PDFs, exports, reports) belong in **S3** via Laravel's filesystem abstraction.
+Persistent files written to the **local filesystem** don't survive horizontal scale: a file on one server's disk is invisible to every other server, disappears on redeploy or autoscale, and steadily fills the host's disk. User uploads, images, and generated output (PDFs, exports, reports) belong in **S3** via Laravel's filesystem abstraction.
 
 Flag when the diff writes a **persistent** file to a local path:
 
@@ -1190,7 +1190,7 @@ Asset::storage()->putFileAs('avatars', $request->file('avatar'), $filename);
 
 When suggesting the fix, recommend the project's **`Asset::storage()`** helper as the idiomatic entry point — it centralises the disk choice instead of scattering `'s3'` string literals.
 
-**Temp files are fine — if they're actually temporary.** Some work legitimately needs a local file (image manipulation, zip assembly, buffering a download before upload). Write it under `sys_get_temp_dir()` / `tempnam()` — never a persistent app path — and **guarantee cleanup on every exit path, including failure** (a `finally` block). A temp file created with no visible deletion is 🟡 on its own: leaked temp files are exactly how the disks got bloated.
+**Temp files are fine — if they're actually temporary.** Some work legitimately needs a local file (image manipulation, zip assembly, buffering a download before upload). Write it under `sys_get_temp_dir()` / `tempnam()` — never a persistent app path — and **guarantee cleanup on every exit path, including failure** (a `finally` block). A temp file created with no visible deletion is 🟡 on its own: leaked temp files are how server disks fill.
 
 ```php
 // GOOD — local scratch file, result uploaded to S3, cleanup guaranteed
