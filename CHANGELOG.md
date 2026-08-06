@@ -5,6 +5,20 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.55.0 / code-fixer 1.51.0 — 2026-08-06
+
+### Removed
+- **Subagent fan-out removed — the review is single-agent by policy.** The 25+-line fan-out
+  mode (six parallel lens-slice subagents, reviewer 7b / fixer 6b) is gone: observed in
+  practice, delegation multiplies token spend without improving judgment (the judgment always
+  happened at main-context arbitration anyway). Every diff now runs the dimension-by-dimension
+  **lens walk in one context**; large diffs (~300+ lines / 10+ files) chunk by related file
+  group with the full lens per group — coverage is preserved by the ledger, not by parallelism.
+  Enforced three ways: a new global constraint ("Single agent, always — never use the
+  Task/Agent tool"), the analysis step forbidding delegation regardless of diff size, and
+  `ai-review-ci` dropping `Task` from its allowlist so `dontAsk` auto-denies any stray spawn
+  in CI. Goal: quality review at low cost. Mirrored to both skills.
+
 ## code-reviewer 1.54.2 / code-fixer 1.50.2 — 2026-08-06
 
 ### Changed

@@ -115,6 +115,8 @@ export AI_REVIEW_CI=1
 # privileges"). There is no sanctioned override; dontAsk + a full allowlist is
 # the root-compatible equivalent for this ephemeral, single-purpose container.
 # Anthropic auth uses ANTHROPIC_API_KEY (a CI container has no keychain / OAuth).
+# "Task" is deliberately ABSENT: the skill is single-agent by policy (subagent
+# fan-out multiplies token cost), and dontAsk auto-denies any stray Task call.
 ALLOWED_TOOLS=(
     "Read"
     "Write"
@@ -122,7 +124,6 @@ ALLOWED_TOOLS=(
     "Glob"
     "Grep"
     "Bash"
-    "Task"
     "TodoWrite"
 )
 
