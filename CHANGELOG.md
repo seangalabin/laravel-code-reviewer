@@ -5,6 +5,48 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.60.0 — 2026-08-07
+
+Continuous review is the intended model — every push, like CodeRabbit. 1.58.0 quietly
+optimised against the opposite assumption; this corrects that and makes the every-push
+cadence cheap instead of rare.
+
+### Fixed
+- **The CI batching example shipped broken in 1.59.0.** Two defects, both in guidance
+  rather than executed code, so nothing crashed — but the advice was wrong for the only
+  mode CI ever uses. (1) It set a `S=…` shell shorthand in one Bash block and used it in
+  the next; each Bash call is a fresh shell, so the second block expanded to
+  `/check_resolved.py` and the whole batch would fail. (2) It used normal-mode relative
+  paths while `ai-review-ci` always passes `--pr`/`--branch`, so target mode is always
+  active — and `get_checkpoint.sh` reads `.ai-review/target.json` relative to the working
+  directory, silently missing it from the main repo. Both blocks now `cd "$WORKTREE"` and
+  use `$SKILLS_ROOT`, per the Step 2 rule table, with the independent fetches separated by
+  `;` rather than `&&` so one failure doesn't suppress the rest.
+
+### Added
+- **Pre-flight skip in `ai-review-ci` — no-op builds now cost zero tokens.** In the
+  every-push model a share of builds have nothing new. The skill already detected that,
+  but only at the scoping step *inside* the Claude run, after the skill, worktree, card
+  context and three comment fetches had loaded — a double-digit number of turns to
+  conclude "nothing to do". The gate reaches the same conclusion with three Bitbucket API
+  calls and no model invocation. It skips only when **both** hold: the checkpoint SHA
+  equals HEAD, and no developer reply is awaiting an answer. The second condition is
+  load-bearing — a64e0f3 exists because a 0-commit rerun must still handle replies, and
+  skipping one with a pending reply would leave a developer talking to nobody. The Jira
+  card is still synced on the skip path (pure Python, idempotent, soft-fails). Fails
+  **open** at every branch: a missing script, non-zero exit, or unparseable output runs
+  the review, because a gate that wrongly skips is far worse than one that wrongly runs.
+  Bypass with `AI_REVIEW_NO_PREFLIGHT=1`. Behaviour verified across seven cases.
+
+### Changed
+- **`assets/bitbucket-pipelines.example.yml` defaults to every-push again.**
+  1.58.0 made the on-demand `custom:` pipeline the default and commented every-push out as
+  "expensive — opt in deliberately". That misrepresented the product to anyone installing
+  fresh. `pull-requests: '**'` is the default once more, with the manual pipeline offered
+  alongside it for re-runs, and the cost guidance reframed from "don't do this" to what
+  keeps it affordable — incremental review plus the pre-flight skip — with branch-scoping
+  as the lever if the push rate is still too high.
+
 ## code-reviewer 1.59.1 / code-fixer 1.54.1 — 2026-08-07
 
 Repository audit. Docs and packaging only — no behaviour change in either skill.

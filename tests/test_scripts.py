@@ -1033,6 +1033,11 @@ class TestCIWrapperCostControls(unittest.TestCase):
     def setUp(self):
         self.src = (BIN / 'ai-review-ci').read_text()
 
+    def _gate(self):
+        m = re.search(r'nothing_to_review\(\)\s*\{(.*?)\n\}', self.src, re.S)
+        self.assertIsNotNone(m, 'nothing_to_review() gate not found in ai-review-ci')
+        return m.group(1)
+
     def test_task_tool_is_disallowed(self):
         """Regression: without this the model can spawn subagents in CI even though
         the skill forbids it — dontAsk would otherwise permit an unlisted tool."""
@@ -1048,6 +1053,63 @@ class TestCIWrapperCostControls(unittest.TestCase):
         self.assertNotIn(
             '"Task"', allow.group(1),
             '\nTask was added to ALLOWED_TOOLS — that grants subagent fan-out in CI.',
+        )
+
+    def test_preflight_gate_requires_both_conditions(self):
+        """The gate may skip the Claude run only when there are no new commits AND
+        no reply awaiting an answer. a64e0f3 exists because a 0-commit rerun must
+        still handle replies — skipping one with a pending reply leaves a developer
+        talking to nobody."""
+        body = self._gate()
+        # Assert the *guard clauses*, not mere mentions — the script names also
+        # appear in comments and `[[ -x ... ]]` preconditions, so an `assertIn`
+        # on the filename passes even after the real check is deleted.
+        for pattern, why in (
+            (r'\[\[\s*"\$checkpoint"\s*==\s*"\$head"\s*\]\]\s*\|\|\s*return 1',
+             'the no-new-commits comparison (checkpoint vs HEAD)'),
+            (r'replies=\$\("\$SKILL_SCRIPTS/check_replies\.py"',
+             'the developer-replies fetch'),
+            (r'\[\[\s*"\$n"\s*==\s*"0"\s*\]\]\s*\|\|\s*return 1',
+             'the "zero pending replies" guard'),
+        ):
+            with self.subTest(check=why):
+                self.assertRegex(
+                    body, pattern,
+                    f'\nThe pre-flight gate lost {why}. Both conditions are required '
+                    f'before skipping a run — a64e0f3 exists because a 0-commit rerun '
+                    f'must still answer developer replies.',
+                )
+
+    def test_preflight_gate_fails_open(self):
+        """Every uncertain branch must `return 1` (run the review). A gate that
+        wrongly skips silently drops a review; one that wrongly runs costs tokens."""
+        body = self._gate()
+        returns = re.findall(r'return\s+([01])', body)
+        self.assertEqual(
+            1, returns.count('0'),
+            '\nThe pre-flight gate has more than one skip path. Exactly one branch may '
+            f'return 0; found: {returns}',
+        )
+        self.assertEqual(
+            '0', returns[-1],
+            '\nThe skip is no longer the gate\'s final branch — an earlier guard may '
+            'fall through to a skip instead of failing open.',
+        )
+        # Every precondition must bail with `|| return 1`. Count them so deleting one
+        # is caught even though the surrounding text is unchanged.
+        self.assertGreaterEqual(
+            len(re.findall(r'\|\|\s*return 1', body)), 9,
+            '\nThe pre-flight gate lost a fail-open guard. Each precondition '
+            '(bypass, git, both scripts executable, checkpoint fetch, non-empty '
+            'checkpoint, HEAD, equality, replies fetch, reply count) must `|| return 1`.',
+        )
+
+    def test_preflight_has_a_bypass(self):
+        self.assertRegex(
+            self._gate(), r'\[\[\s*-z\s*"\$\{AI_REVIEW_NO_PREFLIGHT:-\}"\s*\]\]\s*\|\|\s*return 1',
+            '\nThe pre-flight gate lost its AI_REVIEW_NO_PREFLIGHT bypass guard. '
+            'Without it there is no way to force a run when the gate misjudges. '
+            '(The name appearing in a comment is not the guard.)',
         )
 
     def test_budget_cap_has_a_default(self):
@@ -1084,6 +1146,18 @@ class TestCINarrationIsTerse(unittest.TestCase):
     def setUp(self):
         self.src = (REPO_ROOT / 'skill' / 'SKILL.template.md').read_text()
 
+    def _clause(self):
+        m = re.search(r'Narrate tersely and batch.*?re-run its scripts singly',
+                      self.src, re.S)
+        self.assertIsNotNone(m, 'CI narration clause not found')
+        return m.group(0)
+
+    def _bash_blocks(self):
+        blocks = re.findall(r'```bash\n(.*?)```', self._clause(), re.S)
+        self.assertEqual(2, len(blocks),
+                         f'expected 2 batching examples, found {len(blocks)}')
+        return blocks
+
     def test_ci_mode_relaxes_narration(self):
         self.assertIn(
             'Narrate tersely and batch the fetches', self.src,
@@ -1099,6 +1173,49 @@ class TestCINarrationIsTerse(unittest.TestCase):
                     script, self.src,
                     f'\nThe CI batching example no longer mentions {script}.',
                 )
+
+    def test_batching_uses_target_mode_paths(self):
+        """Regression (shipped broken in 1.59.0, fixed same day): the batching example
+        used normal-mode relative paths, but ai-review-ci ALWAYS passes --pr/--branch,
+        so target mode is always active. get_checkpoint.sh reads .ai-review/target.json
+        relative to cwd and silently misses it outside the worktree."""
+        for i, blk in enumerate(self._bash_blocks(), 1):
+            with self.subTest(block=i):
+                self.assertIn(
+                    'cd "$WORKTREE"', blk,
+                    f'\nCI batching block {i} dropped `cd "$WORKTREE"`. CI is always '
+                    f'target mode; scripts run from the main repo read the wrong tree.'
+                    f'\n  {blk.strip()[:120]}',
+                )
+                self.assertIn(
+                    '$SKILLS_ROOT/scripts/', blk,
+                    f'\nCI batching block {i} uses normal-mode script paths. Target '
+                    f'mode requires the absolute $SKILLS_ROOT form (Step 2 rule table).'
+                    f'\n  {blk.strip()[:120]}',
+                )
+
+    def test_batching_defines_no_cross_block_shell_variable(self):
+        """Regression (1.59.0): the example set `S=…` in one Bash block and used it in
+        the next. Each Bash call is a fresh shell, so the second block expanded to
+        `/check_resolved.py` and the whole batch failed."""
+        for i, blk in enumerate(self._bash_blocks(), 1):
+            # A bare NAME=... assignment at the start of a line, other than the
+            # BASE_REF the first block both sets and consumes.
+            assigns = {m.group(1) for m in
+                       re.finditer(r'^\s*([A-Za-z_][A-Za-z0-9_]*)=', blk, re.M)}
+            with self.subTest(block=i):
+                self.assertFalse(
+                    assigns - {'BASE_REF'},
+                    f'\nCI batching block {i} defines shell variable(s) '
+                    f'{sorted(assigns - {"BASE_REF"})}. Shell state does not survive '
+                    f'between Bash calls — a shorthand set in one block expands to '
+                    f'empty in the next (the 1.59.0 break). Spell paths out per block.',
+                )
+        self.assertIn(
+            'no shell variable carries between them', self._clause(),
+            '\nThe CI batching example lost its warning that shell state does not '
+            'persist across Bash calls — the exact trap that broke it in 1.59.0.',
+        )
 
     def test_relay_lines_survive_in_ci(self):
         """Terseness must not cost the diagnostic record — a CI log without the

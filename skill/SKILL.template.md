@@ -107,15 +107,26 @@ When `$AI_REVIEW_CI=1` (or `$CI=true`, set automatically by Bitbucket Pipelines,
   watches a pipeline step live, and each costs a turn that re-reads the whole cached prefix.
   Run each group below as **one** Bash call (order inside a group matters):
 
+  CI always runs in **target mode** (`ai-review-ci` always passes `--pr` or `--branch`), so
+  every batched script takes the target-mode form from Step 2 — `cd "$WORKTREE"` first, and
+  the absolute `$SKILLS_ROOT` path. `get_checkpoint.sh` in particular reads
+  `.ai-review/target.json` relative to the working directory and will miss it from the main
+  repo. Each block is its own Bash call, so **no shell variable carries between them** —
+  substitute the real paths you captured in Step 2 rather than defining a shorthand.
+
   ```bash
-  # Scoping — get_checkpoint resolves BASE_REF for the other two
-  S=.claude/skills/code-reviewer/scripts
-  BASE_REF="$("$S/get_checkpoint.sh")"; : "${BASE_REF:=origin/${AI_REVIEW_BASE_BRANCH:-develop}}"
-  "$S/branch_summary.sh" "$BASE_REF"; "$S/scan_diff.py" --base "$BASE_REF"
+  # Scoping — get_checkpoint resolves BASE_REF for the other two, so this one is ordered
+  cd "$WORKTREE" && BASE_REF="$("$SKILLS_ROOT/scripts/get_checkpoint.sh")" \
+    && : "${BASE_REF:=origin/${AI_REVIEW_BASE_BRANCH:-develop}}" \
+    && "$SKILLS_ROOT/scripts/branch_summary.sh" "$BASE_REF" \
+    && "$SKILLS_ROOT/scripts/scan_diff.py" --base "$BASE_REF"
   ```
   ```bash
-  # Comment state (Steps 5/6/7 fetch) — mutually independent
-  "$S/check_resolved.py"; "$S/check_dismissals.py"; "$S/check_replies.py"
+  # Comment state (Steps 5/6/7 fetch) — independent, so ';' not '&&': one failing
+  # fetch must not suppress the other two.
+  cd "$WORKTREE" && { "$SKILLS_ROOT/scripts/check_resolved.py"; \
+                      "$SKILLS_ROOT/scripts/check_dismissals.py"; \
+                      "$SKILLS_ROOT/scripts/check_replies.py"; }
   ```
 
   Batch **fetches only** — Step 7's reply decisions and the `post_reply.py` /

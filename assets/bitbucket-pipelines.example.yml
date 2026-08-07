@@ -5,18 +5,24 @@
 # already have a bitbucket-pipelines.yml, don't copy this wholesale — add the
 # step into your existing config (see "merge into an existing pipeline" below).
 #
-# ── Pick your trigger, it is the main cost lever ─────────────────────────────
-# A review's cost is dominated by FIXED overhead — loading the skill, scoping,
-# fetching PR state — not by diff size. A 3-line push costs nearly as much as a
-# 300-line one. So the trigger, not the diff, decides your monthly spend:
+# ── How it runs, and what it costs ───────────────────────────────────────────
+# The default below reviews **every push to every PR** — PR creation and each
+# subsequent push to the source branch. That is the intended behaviour: continuous
+# review, the same cadence as CodeRabbit and similar tools.
 #
-#   Option A (default below)  Manual / on-demand. One review when you ask for it.
-#   Option B (commented out)  Every push to every PR. Convenient, and the most
-#                             expensive by a wide margin — a team pushing 40x a
-#                             day across open PRs pays 40 full reviews.
+# Two things keep that affordable, both automatic:
+#   * Incremental review. Each run records a checkpoint SHA and the next one
+#     analyses only the commits since it — not the whole branch again.
+#   * A pre-flight skip. When a build has no new commits and no developer reply
+#     awaiting an answer, ai-review-ci exits before invoking Claude at all, so
+#     that build costs zero tokens. (Bypass with AI_REVIEW_NO_PREFLIGHT=1.)
 #
-# Start with A. Move to B only once you have watched the "─── Usage ───" block
-# that each run prints and are happy with the per-run number times your push rate.
+# Watch the "─── Usage ───" block each run prints. Multiply the per-run figure by
+# your team's push rate to get the real monthly number, and set AI_REVIEW_MAX_USD
+# from measured spend rather than a guess.
+#
+# If that rate is still too high, scope the trigger to the branches that matter
+# rather than turning review off — see the bottom of the pipelines block.
 #
 # ── Auth: read this before using an OAuth token ──────────────────────────────
 # ANTHROPIC_API_KEY bills per token to your Anthropic account.
@@ -75,33 +81,32 @@ definitions:
 
 pipelines:
 
-  # ── Option A: on-demand (default) ───────────────────────────────────────────
-  # Run it from Bitbucket → Pipelines → "Run pipeline" → pick your feature branch
-  # → ai-review. No BITBUCKET_PR_ID is set for custom pipelines, so ai-review-ci
-  # falls back to BITBUCKET_BRANCH and the skill looks up the open PR for that
-  # branch via the API — findings still post inline on the PR.
-  #
-  # The reviewer is incremental: it records a checkpoint SHA on each run and only
-  # analyses commits since then, so re-running after fixes is cheaper than the
-  # first pass. Run it when a PR is ready for review, then again after changes.
+  # ── Continuous review (the default) ─────────────────────────────────────────
+  # Runs on PR creation and on every push to the source branch. Bitbucket sets
+  # BITBUCKET_PR_ID here, so the reviewer targets the PR directly.
+  pull-requests:
+    '**':                          # every PR, any source branch
+      - step: *ai-review
+
+  # ── On-demand, as well ──────────────────────────────────────────────────────
+  # Also exposed as a manual pipeline: Pipelines → "Run pipeline" → pick your
+  # feature branch → ai-review. Useful for re-running after a skipped or failed
+  # build, or for a --full-review pass. Custom pipelines set no BITBUCKET_PR_ID,
+  # so ai-review-ci falls back to BITBUCKET_BRANCH and the skill resolves the
+  # open PR for that branch via the API — findings still post inline.
+  # Pick the feature branch: the skill refuses main / master / develop.
   custom:
     ai-review:
       - step: *ai-review
 
-  # ── Option B: automatic on every PR push (expensive — opt in deliberately) ──
-  # Uncomment to review on PR creation AND every subsequent push to the source
-  # branch. Read the cost note at the top of this file first: this multiplies
-  # your spend by the team's push rate, not by the amount of code reviewed.
+  # ── If the push rate is too expensive ───────────────────────────────────────
+  # Scope the automatic trigger to the branches that matter instead of removing
+  # it — you keep continuous review where it earns its keep. Bitbucket cannot
+  # filter PR pipelines on draft status or labels, so branch patterns are the
+  # only native gate; replace the '**' block above with:
   #
   # pull-requests:
-  #   '**':                        # every PR, any source branch
-  #     - step: *ai-review
-  #
-  # To limit the blast radius while keeping automation, scope it to the branches
-  # that matter instead of '**':
-  #
-  # pull-requests:
-  #   'release/**': [ step: *ai-review ]
+  #   'feature/**': [ step: *ai-review ]
   #   'hotfix/**':  [ step: *ai-review ]
 
 # ─── Merge into an EXISTING pipeline ─────────────────────────────────────────
