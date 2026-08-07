@@ -5,6 +5,54 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.58.0 / code-fixer 1.54.0 — 2026-08-07
+
+Cost pass. Nothing here changes what the reviewer finds — only what it costs to find it.
+
+### Changed
+- **The review lens ships as a sidecar file instead of being inlined into `SKILL.md`.**
+  New `<!-- lensref:src/review-lens.md -->` build marker: `build.py` writes the fragment to
+  `<skill>/review-lens.md` and inlines only a pointer plus a generated dimension index. The
+  lens walk now opens it with an explicit `Read`, once per review. Everything in `SKILL.md`
+  loads the instant the skill is invoked, so the ~23k-token lens was being paid for by every
+  run — including runs that stop at the version check, refuse a protected branch, or find no
+  new commits since the checkpoint and never walk the lens at all. Always-loaded preamble:
+  **code-reviewer ~35k → ~12k tokens, code-fixer ~35k → ~7k.** `install.js` copies the skill
+  directory recursively, so the sidecar ships with no installer change.
+- **`ai-review-ci` caps OAuth runs again — one 2.00 default for both auth modes.**
+  Since 1.47.1 subscription auth ran uncapped, on the reasoning that a USD ceiling can't bill
+  a subscription. True, but it also removed the only runaway killswitch — and on OAuth a
+  runaway spends one person's Pro/Max quota, which every pipeline review in the team shares.
+  `--max-budget-usd` still terminates the run regardless of who's billed, so it's reinstated
+  as a guard rather than a budget. 2.00 is priced off a measured run rather than picked:
+  a sonnet review is ~2M cache-read + 150k cache-write input tokens and ~30k output, which
+  is ~$1.10 at Sonnet 5's introductory $2/$10 per MTok (through 2026-08-31) and ~$1.60 at the
+  standard $3/$15 — so the ceiling sits just above a typical run and trips early on a runaway.
+  A large diff can legitimately exceed it; raise `AI_REVIEW_MAX_USD` rather than removing the
+  cap, using the new per-run usage block to pick the number.
+- **`assets/bitbucket-pipelines.example.yml` no longer defaults to reviewing every push.**
+  A review's cost is dominated by fixed overhead — loading the skill, scoping, fetching PR
+  state — not by diff size, so a 3-line push costs nearly as much as a 300-line one and the
+  trigger sets the bill. The example now ships a `custom: ai-review` pipeline (run on demand,
+  resolves the PR from `BITBUCKET_BRANCH`) with the `pull-requests: '**'` trigger present but
+  commented out and costed. Step is now a reusable `&ai-review` anchor.
+
+### Added
+- **Per-run usage report.** `ai-review-ci` prints a `─── Usage ───` block — input/output
+  tokens, cache read vs write, turns, duration, estimated spend — parsed from the run's JSON
+  output. Printed before the exit-code check, so a run that died mid-review still reports what
+  it spent. Soft-fails on missing or malformed fields. Makes the next cost spike visible in
+  the pipeline log of the run that caused it.
+- **Build guards for the split** (`tests/test_scripts.py`): sidecars must match their source
+  fragment, the generated index must list every dimension, and the lens rules must be *absent*
+  from `SKILL.md` — switching `lensref:` back to `include:` silently restores the ~23k-token
+  cost, so the suite now fails loudly if it happens.
+
+### Fixed
+- README described `claude --print --bare` (the `--bare` flag was dropped in 1.46.1 — it
+  stops project skills loading) and "parallel lens-slice subagents on larger diffs" (fan-out
+  was removed in 1.55.0). Both corrected.
+
 ## code-reviewer 1.57.0 / code-fixer 1.53.0 — 2026-08-06
 
 ### Added

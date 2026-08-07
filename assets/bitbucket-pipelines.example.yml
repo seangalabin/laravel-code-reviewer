@@ -1,11 +1,29 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# Turnkey Bitbucket Pipelines config — run code-reviewer automatically on every
-# pull request (created + each push to the PR's source branch).
+# Bitbucket Pipelines config for code-reviewer.
 #
 # This is a STANDALONE example for a repo that has no pipeline yet. If you
-# already have a bitbucket-pipelines.yml, don't copy this wholesale — instead
-# add the `ai_review` step into your existing `pipelines: pull-requests:`
-# section (see the "merge into an existing pipeline" note at the bottom).
+# already have a bitbucket-pipelines.yml, don't copy this wholesale — add the
+# step into your existing config (see "merge into an existing pipeline" below).
+#
+# ── Pick your trigger, it is the main cost lever ─────────────────────────────
+# A review's cost is dominated by FIXED overhead — loading the skill, scoping,
+# fetching PR state — not by diff size. A 3-line push costs nearly as much as a
+# 300-line one. So the trigger, not the diff, decides your monthly spend:
+#
+#   Option A (default below)  Manual / on-demand. One review when you ask for it.
+#   Option B (commented out)  Every push to every PR. Convenient, and the most
+#                             expensive by a wide margin — a team pushing 40x a
+#                             day across open PRs pays 40 full reviews.
+#
+# Start with A. Move to B only once you have watched the "─── Usage ───" block
+# that each run prints and are happy with the per-run number times your push rate.
+#
+# ── Auth: read this before using an OAuth token ──────────────────────────────
+# ANTHROPIC_API_KEY bills per token to your Anthropic account.
+# CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) draws from ONE PERSON'S
+# Pro/Max subscription quota — every review the whole team triggers comes out of
+# that individual's limit. Fine for a trial, wrong for shared team CI. Prefer the
+# API key for anything beyond evaluation.
 #
 # One-time setup on the repo:
 #   1. Repo Settings → Pipelines → Enable.
@@ -16,8 +34,15 @@
 #      Optional:
 #        JIRA_BASE_URL / JIRA_EMAIL / JIRA_API_TOKEN   card-status sync
 #        AI_REVIEW_MODEL        sonnet (default) or opus — the skill runs on those
-#                               two only; anything else fails pre-flight
-#        AI_REVIEW_MAX_USD      per-run spend cap (default 2.00; ceiling, not target)
+#                               two only; anything else fails pre-flight. Leave it
+#                               unset: opus costs several times sonnet per token
+#                               and the lens work is mechanical.
+#        AI_REVIEW_MAX_USD      per-run ceiling (default 2.00). A runaway guard,
+#                               not a target: a typical sonnet review runs ~$1–1.60
+#                               in equivalent spend, so the default trips just above
+#                               normal. Raise it if large diffs die mid-review —
+#                               read the "Usage" block each run prints to pick the
+#                               number from measured spend.
 #        AI_REVIEW_BASE_BRANCH  base branch the diff is scoped against
 #                               (default develop; set to master etc. — see below)
 #
@@ -25,9 +50,6 @@
 # integrates into a different branch (e.g. master), set AI_REVIEW_BASE_BRANCH
 # (as a repo variable or inline `export` in the step) AND fetch that branch
 # instead of develop in the script below.
-#
-# BITBUCKET_PR_ID and BITBUCKET_BRANCH are provided automatically by Bitbucket
-# on pull-request pipelines; ai-review-ci reads them.
 # ─────────────────────────────────────────────────────────────────────────────
 
 image: node:20
@@ -36,45 +58,56 @@ clone:
   depth: full   # the reviewer diffs against origin/develop + checkpoint SHAs;
                 # a shallow clone hides them and every run degrades to a full re-scan.
 
+definitions:
+  steps:
+    - step: &ai-review
+        name: AI code review
+        script:
+          - git config --global --add safe.directory $BITBUCKET_CLONE_DIR
+          - apt-get update && apt-get install -y python3 curl git
+          - npm install -g @anthropic-ai/claude-code          # the headless engine
+          - npx -y github:seangalabin/laravel-code-reviewer .  # install/refresh the skill
+          - git fetch origin "${AI_REVIEW_BASE_BRANCH:-develop}:refs/remotes/origin/${AI_REVIEW_BASE_BRANCH:-develop}"   # base ref for the diff
+          # Advisory — `|| true` so a review/API error never red-marks the PR.
+          - .claude/skills/code-reviewer/bin/ai-review-ci || true
+        artifacts:
+          - ai-review-output.json
+
 pipelines:
-  pull-requests:
-    '**':                          # every PR, any source branch
-      - step:
-          name: AI code review
-          script:
-            - git config --global --add safe.directory $BITBUCKET_CLONE_DIR
-            - apt-get update && apt-get install -y python3 curl git
-            - npm install -g @anthropic-ai/claude-code          # the headless engine
-            - npx -y github:seangalabin/laravel-code-reviewer .  # install/refresh the skill
-            - git fetch origin "${AI_REVIEW_BASE_BRANCH:-develop}:refs/remotes/origin/${AI_REVIEW_BASE_BRANCH:-develop}"   # base ref for the diff
-            # Advisory — `|| true` so a review/API error never red-marks the PR.
-            - .claude/skills/code-reviewer/bin/ai-review-ci || true
-          artifacts:
-            - ai-review-output.json
+
+  # ── Option A: on-demand (default) ───────────────────────────────────────────
+  # Run it from Bitbucket → Pipelines → "Run pipeline" → pick your feature branch
+  # → ai-review. No BITBUCKET_PR_ID is set for custom pipelines, so ai-review-ci
+  # falls back to BITBUCKET_BRANCH and the skill looks up the open PR for that
+  # branch via the API — findings still post inline on the PR.
+  #
+  # The reviewer is incremental: it records a checkpoint SHA on each run and only
+  # analyses commits since then, so re-running after fixes is cheaper than the
+  # first pass. Run it when a PR is ready for review, then again after changes.
+  custom:
+    ai-review:
+      - step: *ai-review
+
+  # ── Option B: automatic on every PR push (expensive — opt in deliberately) ──
+  # Uncomment to review on PR creation AND every subsequent push to the source
+  # branch. Read the cost note at the top of this file first: this multiplies
+  # your spend by the team's push rate, not by the amount of code reviewed.
+  #
+  # pull-requests:
+  #   '**':                        # every PR, any source branch
+  #     - step: *ai-review
+  #
+  # To limit the blast radius while keeping automation, scope it to the branches
+  # that matter instead of '**':
+  #
+  # pull-requests:
+  #   'release/**': [ step: *ai-review ]
+  #   'hotfix/**':  [ step: *ai-review ]
 
 # ─── Merge into an EXISTING pipeline ─────────────────────────────────────────
-# If you already run tests on PRs, keep the reviewer separate from the test
-# gate so it never blocks a merge. Define it once as a YAML anchor under
-# `definitions: steps:` …
-#
-#   definitions:
-#     steps:
-#       - ai_review: &ai-review
-#           image: node:20
-#           name: AI code review
-#           clone: { enabled: true, depth: full }
-#           script:
-#             - git config --global --add safe.directory $BITBUCKET_CLONE_DIR
-#             - apt-get update && apt-get install -y python3 curl git
-#             - npm install -g @anthropic-ai/claude-code
-#             - npx -y github:seangalabin/laravel-code-reviewer .
-#             - git fetch origin develop:refs/remotes/origin/develop
-#             - .claude/skills/code-reviewer/bin/ai-review-ci || true
-#           artifacts:
-#             - ai-review-output.json
-#
-# … then reference it as its own entry in the PR pipeline, after your test
-# parallel so it doesn't delay the gate:
+# Keep the reviewer separate from the test gate so it never blocks a merge. The
+# `&ai-review` anchor above is already reusable — reference it from wherever you
+# want it, e.g. after your test parallel so it doesn't delay the gate:
 #
 #   pipelines:
 #     pull-requests:
@@ -82,3 +115,12 @@ pipelines:
 #         - parallel:            # your existing test gate
 #             steps: [ { step: *test-php }, { step: *test-js } ]
 #         - step: *ai-review     # advisory review, runs after the gate passes
+#
+# If your existing config sets a different top-level `image` or `clone`, add
+# them to the anchored step itself:
+#
+#   - step: &ai-review
+#       image: node:20
+#       clone: { enabled: true, depth: full }
+#       name: AI code review
+#       ...

@@ -25,11 +25,24 @@
 #   AI_REVIEW_MAX_USD        Caps spend per run. A ceiling, not a target: you pay
 #                            actual usage; the cap kills runaways. Don't set below
 #                            ~2.00 — a run that dies mid-review bills the tokens
-#                            spent but posts nothing. Defaults: 2.00 with an API
-#                            key; UNCAPPED with subscription auth (OAuth has no
-#                            dollar bill — the subscription quota is the limiter,
-#                            and a USD cap only kills runs). Set explicitly to
-#                            force a cap either way.
+#                            spent but posts nothing. Default 2.00 for both auth
+#                            modes; set explicitly to override.
+#                            On OAuth the cap bills nobody — there is no dollar
+#                            invoice — but --max-budget-usd still terminates the
+#                            run at that estimated spend, which makes it the only
+#                            available killswitch on a runaway. Without it a single
+#                            pathological run can eat a large share of one person's
+#                            daily subscription quota, and every pipeline review in
+#                            the team draws from that same quota.
+#                            Why 2.00: a normal sonnet review runs ~$1–1.60 in
+#                            equivalent spend (roughly 2M cache-read + 150k
+#                            cache-write input tokens and ~30k output), so 2.00 sits
+#                            just above a typical run — close enough to catch a
+#                            runaway early. A large diff can legitimately exceed it
+#                            and get killed mid-review; if that happens, raise
+#                            AI_REVIEW_MAX_USD rather than removing the cap, and use
+#                            the per-run "Usage" block below to pick the number from
+#                            your own measured spend instead of guessing.
 #   AI_REVIEW_MODEL          Model for the run: "sonnet" (default) or "opus" — the
 #                            skill refuses to review on anything else, so an
 #                            unsupported value fails pre-flight (exit 1). sonnet is
@@ -70,17 +83,14 @@ elif [[ -n "${BITBUCKET_BRANCH:-}" ]]; then
 fi
 
 PROMPT="/code-reviewer $PR_ARG"
-# Budget: explicit var wins; otherwise cap only API-key runs (subscription/OAuth
-# runs have no dollar bill — a USD cap just kills them mid-review for nothing).
-if [[ -n "${AI_REVIEW_MAX_USD:-}" ]]; then
-    MAX_USD="$AI_REVIEW_MAX_USD"
-elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
-    MAX_USD="2.00"
-else
-    MAX_USD=""   # OAuth/subscription: uncapped
-fi
-BUDGET_ARGS=()
-[[ -n "$MAX_USD" ]] && BUDGET_ARGS=(--max-budget-usd "$MAX_USD")
+# Budget: explicit var wins; otherwise both auth modes get the same ceiling. On
+# OAuth the figure bills nobody, but --max-budget-usd still terminates a runaway
+# run — and a runaway there spends one person's subscription quota, which the whole
+# team's CI shares. Uncapped is not "free", it's just unmetered.
+# 2.00 is a little above a typical sonnet review (~$1–1.60 equivalent), so it trips
+# early on a runaway. Raise AI_REVIEW_MAX_USD if large diffs start dying mid-review.
+MAX_USD="${AI_REVIEW_MAX_USD:-2.00}"
+BUDGET_ARGS=(--max-budget-usd "$MAX_USD")
 OUTPUT_FILE="${AI_REVIEW_OUTPUT:-./ai-review-output.json}"
 
 # The skill runs on sonnet or opus only (see SKILL.md "Model guard") — it refuses to
@@ -130,7 +140,7 @@ ALLOWED_TOOLS=(
 # ── Banner ────────────────────────────────────────────────────────────────────
 echo "🚀 ai-review-ci — running /code-reviewer headlessly"
 echo "  Prompt        : $PROMPT"
-echo "  Max budget    : ${MAX_USD:+\$$MAX_USD}${MAX_USD:-uncapped (subscription quota is the limiter)}"
+echo "  Max budget    : \$$MAX_USD$([[ -n "${ANTHROPIC_API_KEY:-}" ]] || echo " (runaway guard — OAuth spends subscription quota, not dollars)")"
 echo "  Base branch   : ${AI_REVIEW_BASE_BRANCH:-develop}"
 echo "  Auth          : $([[ -n "${ANTHROPIC_API_KEY:-}" ]] && echo "API key" || echo "OAuth token (subscription)")"
 echo "  Model         : ${MODEL}"
@@ -180,6 +190,45 @@ if command -v jq >/dev/null 2>&1; then
     jq -r '.result // .' "$OUTPUT_FILE" 2>/dev/null || cat "$OUTPUT_FILE"
 else
     cat "$OUTPUT_FILE"
+fi
+
+# ── Spend report ──────────────────────────────────────────────────────────────
+# --output-format json carries the CLI's own usage block. Echo it so a cost spike
+# shows up in the pipeline log of the run that caused it, instead of being
+# reconstructed from git history weeks later. Printed before the exit-code check:
+# a run that died mid-review still spent the tokens, and those are the ones worth
+# seeing. Soft-fails — a missing field never fails the step.
+if command -v python3 >/dev/null 2>&1; then
+    python3 - "$OUTPUT_FILE" <<'PYUSAGE' || true
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(0)
+if not isinstance(d, dict):
+    sys.exit(0)
+u = d.get("usage") or {}
+inp   = u.get("input_tokens", 0)
+out   = u.get("output_tokens", 0)
+cread = u.get("cache_read_input_tokens", 0)
+cwrit = u.get("cache_creation_input_tokens", 0)
+cost  = d.get("total_cost_usd")
+turns = d.get("num_turns")
+secs  = (d.get("duration_ms") or 0) / 1000 or None
+if not any([inp, out, cread, cwrit, cost, turns]):
+    sys.exit(0)
+print()
+print("─── Usage ───")
+print(f"  Input tokens  : {inp:,} (+{cwrit:,} cache write, {cread:,} cache read)")
+print(f"  Output tokens : {out:,}")
+if turns is not None:
+    print(f"  Turns         : {turns}")
+if secs:
+    print(f"  Duration      : {secs:.0f}s")
+if cost is not None:
+    # On subscription auth this is an equivalent-spend estimate, not an invoice.
+    print(f"  Est. spend    : ${cost:.4f}")
+PYUSAGE
 fi
 
 if [[ $RC -ne 0 ]]; then

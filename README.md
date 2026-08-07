@@ -17,7 +17,7 @@ Run `/code-reviewer` in Claude Code and it will:
 2. Check previously posted comments — resolve any that have been addressed, and respond to developer replies
 3. Skip findings a developer has already dismissed as won't-fix
 4. Diff the current branch against `develop`
-5. Run the review — a mechanical red-flag pre-scan, parallel lens-slice subagents on larger diffs, then main-context arbitration with a printed per-dimension coverage ledger
+5. Run the review — a mechanical red-flag pre-scan, then a single-context walk of all 16 lens dimensions and arbitration, with a printed per-dimension coverage ledger
 6. Ask: **Post {N} findings to PR #{ID}? [y/n]** — the only interactive prompt
 7. Post each finding as an inline Bitbucket PR comment with a copy-pasteable fix prompt
 
@@ -150,7 +150,7 @@ Each run prints a resolved / open / stale digest and snapshots per-dimension sta
 
 ### CI / headless mode (preview)
 
-`skill/bin/ai-review-ci` runs the skill non-interactively (`claude --print --bare`, auto-confirming prompts) — posts findings and syncs the Jira card with no human in the loop:
+`skill/bin/ai-review-ci` runs the skill non-interactively (`claude --print`, auto-confirming prompts) — posts findings and syncs the Jira card with no human in the loop:
 
 ```bash
 ANTHROPIC_API_KEY=sk-ant-...   # required for headless invocation
@@ -160,9 +160,25 @@ BITBUCKET_PR_ID=42             # auto-set by Bitbucket Pipelines on PR steps
 .claude/skills/code-reviewer/bin/ai-review-ci
 ```
 
-Optional knobs: `AI_REVIEW_MAX_USD` (spend cap, default 2.00 — a runaway ceiling, you pay actual usage; don't set below ~1.00 or a mid-run kill bills tokens but posts nothing), `AI_REVIEW_MODEL` (`sonnet` default or `opus`; anything else fails pre-flight — the skill runs on those two only), `AI_REVIEW_OUTPUT` (JSON output path). Exit codes: `0` ran, `1` infra failure (missing env / no `claude` CLI / unsupported model), `2` the run errored. Works on any host with the `claude` CLI on `PATH`.
+Optional knobs: `AI_REVIEW_MAX_USD` (per-run ceiling, default 2.00 — a runaway guard, you pay actual usage; don't set below ~1.00 or a mid-run kill bills tokens but posts nothing), `AI_REVIEW_MODEL` (`sonnet` default or `opus`; anything else fails pre-flight — the skill runs on those two only), `AI_REVIEW_OUTPUT` (JSON output path). Exit codes: `0` ran, `1` infra failure (missing env / no `claude` CLI / unsupported model), `2` the run errored. Works on any host with the `claude` CLI on `PATH`.
 
-**Run it automatically on every PR.** A Bitbucket Pipelines `pull-requests:` trigger runs the review when a PR is opened and on each push to its source branch — exactly the cadence the incremental checkpoint was built for. Copy [`assets/bitbucket-pipelines.example.yml`](assets/bitbucket-pipelines.example.yml) to your repo root (or, if you already have a pipeline, merge in its `ai_review` anchor — the file shows how). Then enable Pipelines and add three secured repository variables: `ANTHROPIC_API_KEY`, `BITBUCKET_EMAIL`, and `BITBUCKET_API_TOKEN` (Pull requests: write). `BITBUCKET_PR_ID` / `BITBUCKET_BRANCH` are provided by Bitbucket automatically. Two load-bearing details the example handles: `clone: depth: full` (a shallow clone hides the base-branch diff ref) and posting as a dedicated **bot** account (comments appear as whoever owns the API token). The diff base defaults to `develop`; for a repo that integrates into `master` (or any other branch) set `AI_REVIEW_BASE_BRANCH` as a repo variable — the example's fetch and the skill both honour it.
+Every run ends with a **`─── Usage ───`** block — tokens, turns, estimated spend. Watch it; it's the number to multiply by your trigger rate before turning anything on automatically, and the number to set `AI_REVIEW_MAX_USD` from.
+
+**What a run costs.** A sonnet review is dominated by cache reads, not fresh input: roughly 2M cache-read + 150k cache-write input tokens and ~30k output, giving **~$1.10 today** (Sonnet 5 is on introductory $2/$10 per MTok through 2026-08-31) and **~$1.60** at the standard $3/$15. Cache reads bill at 0.1× input, cache writes at 1.25×. `opus` is ~2.5× that per token — leave `AI_REVIEW_MODEL` unset. The 2.00 default therefore sits just above a typical run, which is what makes it a useful killswitch; a large diff can legitimately exceed it, so raise the variable rather than removing the cap if runs start dying mid-review.
+
+#### Cost: the trigger is the lever
+
+A review's cost is dominated by **fixed overhead** — loading the skill, scoping the diff, fetching PR state — not by how much code changed. A 3-line push costs nearly as much as a 300-line one. The incremental checkpoint helps (re-runs only analyse commits since the last run) but it doesn't remove that floor. So what you pay is set by *how often the reviewer fires*, not by how much it reviews:
+
+| Trigger | Cost | When it fits |
+|---|---|---|
+| Custom pipeline, run on demand | 1 review per request | The default in the example. Start here. |
+| `pull-requests:` scoped to some branches | 1 per push on those branches | Automation where it earns its keep. |
+| `pull-requests: '**'` | 1 per push, every PR | Convenient and by far the most expensive — a team pushing 40× a day pays 40 full reviews. |
+
+**On auth.** `ANTHROPIC_API_KEY` bills per token to your Anthropic account. `CLAUDE_CODE_OAUTH_TOKEN` (from `claude setup-token`) draws from **one person's** Pro/Max subscription quota — every review the whole team triggers comes out of that individual's limit, with no invoice to notice. Fine for a trial; the wrong choice for shared team CI.
+
+**Setup.** Copy [`assets/bitbucket-pipelines.example.yml`](assets/bitbucket-pipelines.example.yml) to your repo root (or, if you already have a pipeline, merge in its `&ai-review` anchor — the file shows how). It ships with the on-demand trigger active and the every-push one commented out. Then enable Pipelines and add three secured repository variables: `ANTHROPIC_API_KEY`, `BITBUCKET_EMAIL`, and `BITBUCKET_API_TOKEN` (Pull requests: write). On a `pull-requests:` trigger, `BITBUCKET_PR_ID` / `BITBUCKET_BRANCH` are provided by Bitbucket automatically; on a custom pipeline only `BITBUCKET_BRANCH` is set, and the skill looks up that branch's open PR via the API. Two load-bearing details the example handles: `clone: depth: full` (a shallow clone hides the base-branch diff ref) and posting as a dedicated **bot** account (comments appear as whoever owns the API token). The diff base defaults to `develop`; for a repo that integrates into `master` (or any other branch) set `AI_REVIEW_BASE_BRANCH` as a repo variable — the example's fetch and the skill both honour it.
 
 ## Updating
 
@@ -200,18 +216,27 @@ Each applied fix is verified immediately — **Pint**, **Pest** (scoped to the c
 
 ### Editing the skills — source of truth
 
-**`skill/SKILL.md` and `skill-fixer/SKILL.md` are generated. Never edit them by hand.** Edit the inputs and rebuild:
+**`SKILL.md` and `review-lens.md` in both skill directories are generated. Never edit them by hand.** Edit the inputs and rebuild:
 
 - The 16-dimension review lens (shared by both skills) lives in `src/review-lens.md`.
-- Everything else lives in the per-skill templates: `skill/SKILL.template.md` and `skill-fixer/SKILL.template.md` (each pulls in the lens via `<!-- include:src/review-lens.md -->`).
+- Everything else lives in the per-skill templates: `skill/SKILL.template.md` and `skill-fixer/SKILL.template.md`.
 
-After editing a template or the lens, regenerate and commit the inputs together with the regenerated `SKILL.md` files:
+After editing a template or the lens, regenerate and commit the inputs together with everything `build.py` writes:
 
 ```bash
 python3 build.py
 ```
 
-> A hand-edit to a generated `SKILL.md` is silently destroyed by the next `python3 build.py`. The `TestBuildIdempotency` test fails if any committed `SKILL.md` differs from `expand(template)`.
+**Two include markers, and the difference is cost:**
+
+| Marker | Effect |
+|---|---|
+| `<!-- include:path -->` | Inlines the fragment into `SKILL.md`. Loaded on **every** run. |
+| `<!-- lensref:path -->` | Ships the fragment as a sibling `review-lens.md` and inlines only a pointer + dimension index. Loaded **only** when the run reaches the lens walk. |
+
+The lens uses `lensref` deliberately: it's ~23k tokens, and everything in `SKILL.md` loads the moment the skill is invoked. Runs that stop early — version check, protected-branch refusal, no new commits since the checkpoint — would otherwise pay for rules they never apply, on every push, with a cold prompt cache in CI. Keeping it out took `skill/SKILL.md` from ~35k to ~12k tokens of always-loaded preamble. Switching it back to `include:` silently undoes that, so `TestBuildIdempotency` asserts the lens rules are *absent* from the generated `SKILL.md`.
+
+> A hand-edit to a generated file is silently destroyed by the next `python3 build.py`. `TestBuildIdempotency` fails if any committed `SKILL.md` or `review-lens.md` differs from a fresh render.
 
 ### Shared scripts
 

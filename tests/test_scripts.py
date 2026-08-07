@@ -675,10 +675,10 @@ class TestBuildIdempotency(unittest.TestCase):
     SKILL.md drifts from `expand(template)`."""
 
     def test_generated_skill_md_matches_template(self):
-        for template, output in build.BUILDS:
+        for template, output, skill_name in build.BUILDS:
             with self.subTest(output=output.name):
-                expected = build.expand(template)
-                actual   = output.read_text()
+                expected, _ = build.expand(template, output.parent, skill_name)
+                actual      = output.read_text()
                 self.assertEqual(
                     expected, actual,
                     f'\n{output.relative_to(REPO_ROOT)} is out of sync with '
@@ -686,6 +686,57 @@ class TestBuildIdempotency(unittest.TestCase):
                     f'Edit the TEMPLATE (not the generated file), then run '
                     f'`python3 build.py` and commit the result.',
                 )
+
+    def test_generated_sidecars_match_their_fragment(self):
+        """Same drift guard, for files shipped beside SKILL.md rather than
+        inlined into it. A stale review-lens.md is worse than a stale SKILL.md:
+        the skill still loads and reviews, just against yesterday's rules."""
+        for template, output, skill_name in build.BUILDS:
+            _, sidecars = build.expand(template, output.parent, skill_name)
+            self.assertTrue(sidecars, f'{template.name} produced no sidecars')
+            for path, expected in sidecars.items():
+                with self.subTest(sidecar=str(path.relative_to(REPO_ROOT))):
+                    self.assertTrue(
+                        path.exists(),
+                        f'\n{path.relative_to(REPO_ROOT)} is missing — run '
+                        f'`python3 build.py` and commit the result.',
+                    )
+                    self.assertEqual(
+                        expected, path.read_text(),
+                        f'\n{path.relative_to(REPO_ROOT)} is out of sync with its '
+                        f'source fragment.\nEdit the FRAGMENT (not the generated '
+                        f'file), then run `python3 build.py` and commit the result.',
+                    )
+
+    def test_lens_is_not_inlined_into_skill_md(self):
+        """The lens is shipped as a sidecar so it is not loaded on every run —
+        that split is the whole point (SKILL.md went 35k -> 12k tokens). Inlining
+        it again, e.g. by switching lensref back to include, silently restores
+        the cost. Assert the rules are absent and only the pointer remains."""
+        for template, output, skill_name in build.BUILDS:
+            with self.subTest(output=output.name):
+                skill_md = output.read_text()
+                self.assertIn(build.LENS_FILENAME, skill_md,
+                              f'{output.name} does not point at the lens file')
+                self.assertNotIn(
+                    'Controller → Service → Repository → Model', skill_md,
+                    f'\n{output.relative_to(REPO_ROOT)} has the lens inlined again — '
+                    f'that puts ~23k tokens back into every run. Use the '
+                    f'`lensref:` marker, not `include:`.',
+                )
+
+    def test_lens_index_lists_every_dimension(self):
+        """The stub's index is what the skill uses to build its coverage ledger.
+        If a dimension is added to the fragment but missing from the index, the
+        ledger silently stops accounting for it."""
+        lens = (REPO_ROOT / 'src' / 'review-lens.md').read_text()
+        dims = build.DIMENSION_RE.findall(lens)
+        self.assertGreaterEqual(len(dims), 16, 'lens lost dimensions?')
+        for template, output, skill_name in build.BUILDS:
+            skill_md = output.read_text()
+            for num, title in dims:
+                with self.subTest(output=output.name, dim=num):
+                    self.assertIn(f'| §{num} | {title.strip()} |', skill_md)
 
 
 # ── Shared files must stay identical across the two skills ────────────────────

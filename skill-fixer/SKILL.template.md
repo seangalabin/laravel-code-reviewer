@@ -101,7 +101,7 @@ These apply in all modes and cannot be overridden by project config:
 
 ## Step 2 — Check for project-specific overrides (optional)
 
-**Company standards live in the project's `CLAUDE.md`.** If the project root has a `CLAUDE.md`, read it and apply its conventions and rules **in addition to** the built-in lens below. These are first-class:
+**Company standards live in the project's `CLAUDE.md`.** If the project root has a `CLAUDE.md`, read it and apply its conventions and rules **in addition to** the built-in review lens (`review-lens.md`, loaded at the lens walk). These are first-class:
 
 - A company rule takes **precedence** over a built-in rule when they conflict.
 - A company rule may **disable** a built-in dimension (e.g. "Disable dimension 6") — honour that and skip the built-in check.
@@ -238,7 +238,9 @@ Before invoking each script in Steps -1 → 0.1 and the scoping scripts in Step 
 4. **Read for context, not findings.** When a hunk references a Repository, Service, or Vuex store not in the diff, read the relevant part to understand intent — findings on those files are out of scope unless changed.
 5. **Single-context analysis — never spawn subagents.** The entire review runs in this context: do **not** use the Task/Agent tool or delegate any slice of the analysis to a subagent, regardless of diff size — fan-out multiplies token cost for no judgment gain. Count the diff's changed lines for narration and chunking (`git diff --shortstat "origin/${AI_REVIEW_BASE_BRANCH:-develop}...HEAD"`). The `scan_diff.py` pre-pass output from the scoping step is Phase 1 input to item 7; if it failed or was skipped (no Python), continue — the lens walk still runs; note `scan: skipped` in the ledger.
 
-6. **Lens walk.** Apply the full review lens dimension by dimension — do not free-associate. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §16 Scalability) plus the company rules from Step 2, deliberately check the diff against that dimension before moving on. A dimension is only "done" once you've recorded a finding or confirmed the diff is clean for it. **Large diffs (roughly 300+ changed lines or 10+ files): chunk by file group** — walk related files together (a feature's controller + service + tests), complete the full lens per group, then merge the per-group results into one ledger; never trim the lens to save context. Then run a completeness-critic pass: re-scan the diff once more focused only on dimensions you marked clean — "genuinely fine, or did I skim?" Watch the easily-missed: §2i magic literals, §2m `count()` emptiness, §2p name-matches-behaviour, §3i hardcoded secrets, §4b N+1, §10 `report()` on caught exceptions. Ledger `Source` column: `inline`.
+6. **Lens walk.** **First, load the lens:** `Read .claude/skills/code-fixer/review-lens.md`. It is not part of this file; this is the point in the run where it gets read, and it is read **once** for the whole review, not per file or per chunk. If the Read fails, stop and report it — do not attempt the walk from the dimension index, which contains no rules.
+
+   Then apply the full review lens dimension by dimension — do not free-associate. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §16 Scalability) plus the company rules from Step 2, deliberately check the diff against that dimension before moving on. A dimension is only "done" once you've recorded a finding or confirmed the diff is clean for it. **Large diffs (roughly 300+ changed lines or 10+ files): chunk by file group** — walk related files together (a feature's controller + service + tests), complete the full lens per group, then merge the per-group results into one ledger; never trim the lens to save context. Then run a completeness-critic pass: re-scan the diff once more focused only on dimensions you marked clean — "genuinely fine, or did I skim?" Watch the easily-missed: §2i magic literals, §2m `count()` emptiness, §2p name-matches-behaviour, §3i hardcoded secrets, §4b N+1, §10 `report()` on caught exceptions. Ledger `Source` column: `inline`.
 
 7. **Arbitrate.**
    - **Adjudicate every `scan_diff.py` line.** Each pre-pass hit must end as either a confirmed finding or a rejection with a stated reason (e.g. "env() hit is in config/ — exempt", "print_r has `true` second arg into Log — exempt"). Silent drops are forbidden; if the pre-pass printed 12 hits, your arbitration must account for 12.
@@ -382,7 +384,7 @@ Each run appends a new dated entry with the timestamp + the template above, sepa
 
 ---
 
-<!-- include:src/review-lens.md -->
+<!-- lensref:src/review-lens.md -->
 ## Output format
 
 ### Global rules
