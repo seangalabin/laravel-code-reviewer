@@ -48,9 +48,18 @@ const srcDir    = isFixer ? 'skill-fixer'   : 'skill';
 const src       = path.join(__dirname, '..', srcDir);
 const dest      = path.join(target, '.claude', 'skills', skillName);
 
+// Build inputs and Python artefacts that live in the skill dir but have no job in an
+// installed skill. `package.json`'s files[] excludes these from an npm tarball, but the
+// install path is `npx github:…` → this script, which reads neither files[] nor .npmignore
+// — so without this filter a 50KB SKILL.template.md landed in every install, where it is
+// never loaded (Claude Code reads SKILL.md) and is easy to mistake for the editable source.
+const SKIP = name =>
+    name.endsWith('.template.md') || name.endsWith('.pyc') || name.endsWith('.pyo');
+
 function copyDir(from, to) {
     fs.mkdirSync(to, { recursive: true });
     for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+        if (entry.name === '__pycache__' || SKIP(entry.name)) continue;
         const srcPath  = path.join(from, entry.name);
         const destPath = path.join(to, entry.name);
         if (entry.isDirectory()) {

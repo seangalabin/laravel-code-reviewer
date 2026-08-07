@@ -59,7 +59,7 @@ Teams can extend or override the lens (disable a check, change a severity, add a
 - Node.js 16+
 - Laravel project with [PestPHP](https://pestphp.com/) and [Laravel Pint](https://laravel.com/docs/pint)
 - [Claude Code](https://claude.ai/code) CLI
-- **Model: Sonnet or Opus.** Both skills refuse to run on anything else (Fable, Haiku) — run `/model sonnet` before invoking. The fan-out slice agents are always Sonnet regardless of the session model.
+- **Model: Sonnet or Opus.** Both skills refuse to run on anything else (Fable, Haiku) — run `/model sonnet` before invoking. Reviews run single-agent by policy: the skill never delegates to subagents, whatever the session model.
 - A Bitbucket repository with an open PR on the current branch
 - **Shell:** Linux, macOS, or WSL/Git Bash (`.sh` scripts). Native **Windows** is supported via PowerShell variants and additionally needs **Python 3** and **curl** on `PATH`; the skill auto-detects the OS.
 
@@ -117,13 +117,23 @@ Add a marker above the line (the skill skips findings within 2 lines below it). 
 | Blade | `{{-- ai-review:ignore Trusted internal value --}}` |
 | Vue `<template>` / HTML | `<!-- ai-review:ignore Markdown rendered from CMS -->` |
 
-### Dismissing a posted finding
+### Acting on a posted finding
+
+Apply the suggested fix from a comment, or dismiss it as won't-fix:
 
 ```bash
+# Apply — pulls the diff from the comment's "Suggested fix (code)" section,
+# writes it to the local file, and logs to .ai-review/applied-{timestamp}.log
+.claude/skills/code-reviewer/bin/ai-review fix --comment-id=1234
+
+# Dismiss
 .claude/skills/code-reviewer/bin/ai-review dismiss \
   --comment-id=1234 \
   --reason="Internal-only endpoint, auth handled by middleware"
 ```
+
+`fix` is manual-only — posted comments stopped carrying an auto-generated `fix` line in
+code-reviewer 1.22.0, so nothing invokes it for you.
 
 The comment gets a ❌ banner and its inline thread is resolved (collapses in the Bitbucket UI). Subsequent runs skip matching findings (same file and dimension, line within ±5) — and won't re-post a finding already on the PR, open or resolved, so `--full-review` or a later edit near a fixed line won't resurrect it.
 

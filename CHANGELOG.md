@@ -5,6 +5,54 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.59.1 / code-fixer 1.54.1 — 2026-08-07
+
+Repository audit. Docs and packaging only — no behaviour change in either skill.
+
+### Removed
+- **`docs/superpowers/` (hybrid-recall engine plan + design spec).** The work shipped —
+  `TestScanDiffHybridRules` covers it with 26 test methods — but the plan's 19 checkboxes were
+  never ticked, so it read as outstanding. More importantly it was obsolete: the design's
+  stated decision is *"parallel subagent fan-out over lens slices … User accepted the ~4–6×
+  token cost"*, and a plan step says "Replace items 6–8 of Step 8" — the Step 8 layout deleted
+  in 1.55.0 when fan-out was removed. Following it would have reintroduced the architecture
+  behind the July–August quota blowup. Nothing referenced either file; history is in git.
+- **`.npmignore`.** Exact duplicate of the `files[]` negations in `package.json`
+  (`__pycache__/`, `*.pyc`, `*.template.md`); its only unique entry, `*.pyo`, lives inside
+  `__pycache__/` and was already covered.
+
+### Fixed
+- **README described fan-out as live** — "the fan-out slice agents are always Sonnet" — three
+  releases after 1.55.0 removed it. Now states the single-agent policy. Third stale fan-out
+  claim found; the other two went in 1.58.0.
+- **`skill-fixer/bin/ai-review` docstring named the wrong skill** — "helper for the
+  code-reviewer skill", installed at `.claude/skills/code-reviewer/bin/ai-review`. It installs
+  to `code-fixer`. Docstring only; no runtime path reads it.
+
+- **The installer shipped build inputs into every install** (`bin/install.js`, bundle 1.2.0).
+  `copyDir` had no filter, and it reads neither `package.json`'s `files[]` nor `.npmignore` —
+  those apply only to an npm tarball, while the real path is `npx github:…` → this script. So
+  a 50KB `SKILL.template.md` (30KB for the fixer) landed in every installed skill directory,
+  where Claude Code never loads it and a maintainer could easily mistake it for the editable
+  source. `copyDir` now skips `*.template.md`, `__pycache__/`, `*.pyc`, and `*.pyo`. Found
+  while verifying that removing `.npmignore` was inert — it was, but only because the file
+  had never been doing the job it looked like it was doing.
+
+### Added
+- **README documents `ai-review fix`** alongside `dismiss`. The subcommand has been
+  manual-only since 1.22.0 dropped the auto-generated `fix` line from posted comments, and
+  nothing documented the manual form — so it read as orphaned code.
+- **`TestInstallerExcludesBuildInputs`** — guards the `copyDir` filter above (predicate
+  present, actually applied in the loop, and templates still present to exclude). Mutation-
+  tested: deleting the filter line fails the suite.
+
+### Audited and deliberately kept
+`review-lens.md` tracked 3× (source + two generated skill copies, needed for self-contained
+installs, drift-guarded), `scan_diff.py` duplicated byte-identically across both skills
+(guarded by `TestSharedFilesNoDrift`), all 16 `.ps1` files (parity with `.sh` is complete in
+both skills), and `package.json`'s `files[]` / `prepack` (inert under GitHub-only
+distribution, but correct and free to keep).
+
 ## code-reviewer 1.59.0 — 2026-08-07
 
 ### Changed

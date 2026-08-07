@@ -934,5 +934,47 @@ class TestScanDiffHybridRules(unittest.TestCase):
         self.assertIn('no-console-log', self.rules_hit(diff))
 
 
+# ── installer — build inputs must not ship into an installed skill ────────────
+
+class TestInstallerExcludesBuildInputs(unittest.TestCase):
+    """`bin/install.js` copies the skill directory wholesale. It reads neither
+    package.json's files[] nor .npmignore — those only apply to an npm tarball,
+    and the real install path is `npx github:…` → install.js. Without an explicit
+    filter, SKILL.template.md (50KB) lands in every installed skill, where it is
+    never loaded and is easy to mistake for the editable source. Guard the filter
+    so a future refactor of copyDir doesn't silently drop it."""
+
+    INSTALLER = REPO_ROOT / 'bin' / 'install.js'
+
+    def setUp(self):
+        self.src = self.INSTALLER.read_text()
+
+    def test_copydir_skips_templates_and_pycache(self):
+        for token in ("'.template.md'", "'__pycache__'", "'.pyc'", "'.pyo'"):
+            with self.subTest(token=token):
+                self.assertIn(
+                    token, self.src,
+                    f'\nbin/install.js no longer excludes {token} from copyDir.\n'
+                    f'Build inputs would ship into every installed skill.',
+                )
+
+    def test_skip_is_actually_applied_in_the_copy_loop(self):
+        """Defining the predicate isn't enough — it has to gate the loop."""
+        self.assertRegex(
+            self.src, r'if\s*\(.*SKIP\(.*\)\)\s*continue',
+            '\nbin/install.js defines a SKIP predicate but does not use it to skip '
+            'entries in copyDir.',
+        )
+
+    def test_templates_exist_to_be_excluded(self):
+        """If templates ever stop living inside the skill dirs, this guard is moot
+        and should be revisited rather than left as dead weight."""
+        for d in ('skill', 'skill-fixer'):
+            self.assertTrue(
+                (REPO_ROOT / d / 'SKILL.template.md').exists(),
+                f'{d}/SKILL.template.md no longer exists — revisit the installer filter.',
+            )
+
+
 if __name__ == '__main__':
     unittest.main()

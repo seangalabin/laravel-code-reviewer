@@ -1,5 +1,0 @@
-# Build artefacts and inputs — not needed at install time.
-__pycache__/
-*.pyc
-*.pyo
-*.template.md

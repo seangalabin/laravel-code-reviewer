@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-ai-review — code review helper for the code-reviewer Claude Code skill.
+ai-review — code review helper for the code-fixer Claude Code skill.
 
-Installed at: .claude/skills/code-reviewer/bin/ai-review
+Installed at: .claude/skills/code-fixer/bin/ai-review
 
 Usage:
     ai-review fix --comment-id=<ID>    Apply a suggested fix from a posted PR comment
