@@ -8,6 +8,7 @@ Run:  python3 -m pytest tests/          (if pytest is available)
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -974,6 +975,138 @@ class TestInstallerExcludesBuildInputs(unittest.TestCase):
                 (REPO_ROOT / d / 'SKILL.template.md').exists(),
                 f'{d}/SKILL.template.md no longer exists — revisit the installer filter.',
             )
+
+
+# ── cost controls — regression guards ─────────────────────────────────────────
+#
+# Between 2026-07-16 and 2026-08-06 four independently reasonable changes compounded
+# into a quota blowup: subagent fan-out (~6x tokens/review), the Task tool that
+# enables it, the spend cap removed on OAuth runs, and the full lens loaded on every
+# run. Each fix is one line in one file, and the lens split is the only one that was
+# guarded. These classes cover the other three plus the CI narration rule, so a
+# well-meant "restore consistency" edit fails the suite instead of the budget.
+#
+# Each guard names the regression it prevents. If one fails, read that before
+# "fixing" the test.
+
+TEMPLATES = [REPO_ROOT / 'skill' / 'SKILL.template.md',
+             REPO_ROOT / 'skill-fixer' / 'SKILL.template.md']
+GENERATED = [REPO_ROOT / 'skill' / 'SKILL.md',
+             REPO_ROOT / 'skill-fixer' / 'SKILL.md']
+
+
+class TestSingleAgentPolicy(unittest.TestCase):
+    """Regression: 80bed86 (2026-07-16) introduced a six-way subagent fan-out on any
+    diff >=25 changed lines; 19daffd (1.55.0) removed it. Fan-out multiplied token
+    cost ~6x for no judgment gain. The prohibition must stay in both skills, and no
+    document may describe fan-out as live behaviour again."""
+
+    def test_prohibition_present_in_every_skill_surface(self):
+        for path in TEMPLATES + GENERATED:
+            with self.subTest(file=path.name, dir=path.parent.name):
+                self.assertIn(
+                    'Single agent, always', path.read_text(),
+                    f'\n{path.relative_to(REPO_ROOT)} lost the single-agent constraint.\n'
+                    f'Subagent fan-out costs ~6x tokens per review (see 1.55.0).',
+                )
+
+    def test_fanout_only_ever_appears_as_a_prohibition(self):
+        """The word may appear only in the sentence forbidding it — never as a
+        description of what the skill does."""
+        for path in TEMPLATES:
+            text = path.read_text()
+            for line in text.splitlines():
+                if 'fan-out' not in line.lower():
+                    continue
+                with self.subTest(file=path.parent.name, line=line[:60]):
+                    self.assertIn(
+                        'never spawn subagents', line.lower(),
+                        f'\n{path.relative_to(REPO_ROOT)} mentions fan-out outside the '
+                        f'prohibition:\n  {line.strip()[:160]}\n'
+                        f'Fan-out was removed in 1.55.0 — do not describe it as live.',
+                    )
+
+
+class TestCIWrapperCostControls(unittest.TestCase):
+    """Guards the two spend controls in `skill/bin/ai-review-ci`."""
+
+    def setUp(self):
+        self.src = (BIN / 'ai-review-ci').read_text()
+
+    def test_task_tool_is_disallowed(self):
+        """Regression: without this the model can spawn subagents in CI even though
+        the skill forbids it — dontAsk would otherwise permit an unlisted tool."""
+        self.assertRegex(
+            self.src, r'--disallowedTools\s+"?Task"?',
+            '\nai-review-ci no longer passes --disallowedTools Task. Combined with a '
+            'lost single-agent constraint this re-enables fan-out in CI (a01e2a9).',
+        )
+
+    def test_task_is_not_in_the_allowlist(self):
+        allow = re.search(r'ALLOWED_TOOLS=\((.*?)\)', self.src, re.S)
+        self.assertIsNotNone(allow, 'ALLOWED_TOOLS array not found in ai-review-ci')
+        self.assertNotIn(
+            '"Task"', allow.group(1),
+            '\nTask was added to ALLOWED_TOOLS — that grants subagent fan-out in CI.',
+        )
+
+    def test_budget_cap_has_a_default(self):
+        """Regression: 05ca819 set MAX_USD="" on OAuth so no cap was passed at all.
+        The cap bills nobody on a subscription, but it is the only killswitch on a
+        runaway — and a runaway spends one person's quota that the whole team shares."""
+        self.assertRegex(
+            self.src, r'MAX_USD="\$\{AI_REVIEW_MAX_USD:-\d+\.\d\d\}"',
+            '\nai-review-ci lost its default spend cap. Every auth mode needs one: '
+            'uncapped is not free, just unmetered (see 1.58.0).',
+        )
+
+    def test_budget_arg_is_passed_unconditionally(self):
+        """The historical break was not a missing default but a conditional arg —
+        `[[ -n "$MAX_USD" ]] && BUDGET_ARGS=(...)` silently produced no cap."""
+        self.assertIn(
+            'BUDGET_ARGS=(--max-budget-usd "$MAX_USD")', self.src,
+            '\nBUDGET_ARGS is no longer assigned unconditionally. A guarded assignment '
+            'is how the cap disappeared on OAuth runs in 05ca819.',
+        )
+        self.assertNotRegex(
+            self.src, r'MAX_USD=""',
+            '\nai-review-ci assigns an empty MAX_USD somewhere — that is the 05ca819 '
+            'regression: an empty value means no --max-budget-usd is passed at all.',
+        )
+
+
+class TestCINarrationIsTerse(unittest.TestCase):
+    """Regression guard for 1.59.0. The Narration rule ("every step must produce at
+    least one visible line") is written for a developer watching a run. In CI nobody
+    is, and each of those lines costs a turn that re-reads the whole cached prefix —
+    which after Step 8 includes the ~23k-token lens."""
+
+    def setUp(self):
+        self.src = (REPO_ROOT / 'skill' / 'SKILL.template.md').read_text()
+
+    def test_ci_mode_relaxes_narration(self):
+        self.assertIn(
+            'Narrate tersely and batch the fetches', self.src,
+            '\nskill/SKILL.template.md lost the CI narration clause. Restoring full '
+            'narration in CI adds ~10-14 turns per run (1.59.0).',
+        )
+
+    def test_ci_mode_batches_the_read_only_fetches(self):
+        for script in ('get_checkpoint', 'branch_summary', 'scan_diff',
+                       'check_resolved', 'check_dismissals', 'check_replies'):
+            with self.subTest(script=script):
+                self.assertIn(
+                    script, self.src,
+                    f'\nThe CI batching example no longer mentions {script}.',
+                )
+
+    def test_relay_lines_survive_in_ci(self):
+        """Terseness must not cost the diagnostic record — a CI log without the
+        script progress lines is unreadable when a run fails."""
+        self.assertIn(
+            'Keep relaying every', self.src,
+            '\nThe CI narration clause no longer preserves the script relay lines.',
+        )
 
 
 if __name__ == '__main__':

@@ -45,6 +45,19 @@ Repository audit. Docs and packaging only — no behaviour change in either skil
 - **`TestInstallerExcludesBuildInputs`** — guards the `copyDir` filter above (predicate
   present, actually applied in the loop, and templates still present to exclude). Mutation-
   tested: deleting the filter line fails the suite.
+- **Regression guards for the cost controls** (`TestSingleAgentPolicy`,
+  `TestCIWrapperCostControls`, `TestCINarrationIsTerse`). Between 2026-07-16 and 2026-08-06,
+  four independently reasonable changes compounded into a quota blowup, and each fix is a
+  single line in a single file. The lens split was the only one guarded. Now covered:
+  the single-agent constraint in all four skill surfaces; fan-out mentioned *only* as a
+  prohibition, never as live behaviour; `--disallowedTools Task` present and `Task` absent
+  from `ALLOWED_TOOLS`; a `MAX_USD` default that exists, is never empty, and is passed
+  unconditionally (the 05ca819 break was a *conditional* arg, not a missing default); and
+  the CI narration clause with its batching example and surviving relay lines.
+  Each guard names the regression it prevents in its failure message. All seven mutations
+  were verified to fail the suite. No version bump — tests are not shipped (`files[]`
+  excludes `tests/`), so bumping would prompt users to update for something they never
+  receive.
 
 ### Audited and deliberately kept
 `review-lens.md` tracked 3× (source + two generated skill copies, needed for self-contained
