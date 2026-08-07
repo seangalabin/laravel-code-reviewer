@@ -5,6 +5,36 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.59.0 — 2026-08-07
+
+### Changed
+- **CI narration is terse, and the state-gathering scripts batch.** The Narration rule
+  ("print a one-line header … end each step with a one-line outcome summary … quiet success
+  is a regression") is written for a developer watching a run. In CI nobody is, the output
+  goes to a pipeline log, and each of those lines costs a turn — and every turn re-reads the
+  whole cached prefix, which after Step 8 includes the ~23k-token lens. Under
+  `$AI_REVIEW_CI=1` the headers and outcome summaries are now dropped while the
+  `🔍 / ✓ / ↷ / ⚠️` relay lines are kept (they are the diagnostic record), and the read-only
+  fetches run as two Bash calls instead of six: `get_checkpoint` → `branch_summary` →
+  `scan_diff` in one, `check_resolved` / `check_dismissals` / `check_replies` in the other.
+  Fetches only — Step 7's reply decisions and the `post_reply.py` / `update_resolved.py`
+  calls after them are unchanged, as are the lens walk, arbitration, and coverage ledger.
+  Costs +486 tokens of always-loaded preamble to save an estimated 10–14 turns per CI run.
+  Interactive runs are unaffected. `code-fixer` is interactive-only (no CI mode) and does
+  not change.
+
+### Not done, deliberately
+- **No wording pass on the lens.** Evaluated and declined on measurement: pressure language
+  is already clean (2 caps `MUST/NEVER/CRITICAL` instances), there is no fat outlier (76
+  units, median 855 chars, largest 4.3k, top-10 = 35%), and 84% is prose whose rule text,
+  reasons, project context, and boundary examples are all load-bearing. `LENS-TUNING.md`
+  has been running this audit continuously. Realistic yield was 2–3% of run cost against
+  unmeasurable recall risk — the wrong trade for a file that *is* the specification.
+- **No output-compression skill** (e.g. caveman). It compresses output only; output is 27%
+  of run cost, its own agentic-run figure is 8.5%, and its ~1–1.5k input tokens per turn
+  put the net under 1%. Its evals explicitly do not measure fidelity, and single-line PR
+  comments conflict with the four-section comment contract.
+
 ## code-reviewer 1.58.0 / code-fixer 1.54.0 — 2026-08-07
 
 Cost pass. Nothing here changes what the reviewer finds — only what it costs to find it.

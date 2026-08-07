@@ -102,7 +102,25 @@ When `$AI_REVIEW_CI=1` (or `$CI=true`, set automatically by Bitbucket Pipelines,
 - **Skip the Step 9 post-confirmation prompt.** Treat the answer as `y` and post the findings without asking.
 - **Skip the Step 7 reply-confirmation prompt(s).** Take the analysed action without asking.
 - **Skip the disk write in Step 11 (Learning summary).** Print the summary to stdout but do **not** append to `.ai-review/learning-log.md` — CI runners are ephemeral and may be shared across users; the personal log doesn't belong there.
-- Narration unchanged — print every `🔍 / ✓ / ↷ / ⚠️` line so CI logs show what happened.
+- **Narrate tersely and batch the fetches.** Keep relaying every `🔍 / ✓ / ↷ / ⚠️` line — that
+  is the diagnostic record. Drop the per-step **headers** and **outcome summaries**: no one
+  watches a pipeline step live, and each costs a turn that re-reads the whole cached prefix.
+  Run each group below as **one** Bash call (order inside a group matters):
+
+  ```bash
+  # Scoping — get_checkpoint resolves BASE_REF for the other two
+  S=.claude/skills/code-reviewer/scripts
+  BASE_REF="$("$S/get_checkpoint.sh")"; : "${BASE_REF:=origin/${AI_REVIEW_BASE_BRANCH:-develop}}"
+  "$S/branch_summary.sh" "$BASE_REF"; "$S/scan_diff.py" --base "$BASE_REF"
+  ```
+  ```bash
+  # Comment state (Steps 5/6/7 fetch) — mutually independent
+  "$S/check_resolved.py"; "$S/check_dismissals.py"; "$S/check_replies.py"
+  ```
+
+  Batch **fetches only** — Step 7's reply decisions and the `post_reply.py` /
+  `update_resolved.py` calls that follow stay separate. The lens walk, arbitration, and
+  ledger are unchanged. If a group fails, re-run its scripts singly to isolate the failure.
 
 The CI wrapper is `.claude/skills/code-reviewer/bin/ai-review-ci`. Devs can set `AI_REVIEW_CI=1` locally to dry-run the CI flow before committing the pipeline yaml.
 
@@ -444,6 +462,8 @@ Print a summary before continuing:
 ### Narration — show the run, don't run it silently
 
 Before invoking each script in Steps -1 → 0.7 and the scoping scripts in Step 8, print a one-line header naming the step in plain language (e.g. `Step 5 — Checking previously posted comments`). After each script returns, **always relay the script's own progress lines** (the `🔍 / ✓ / ↷ / ⚠️` messages it prints to stdout/stderr) — never swallow them. End each step with a one-line outcome summary so the developer can follow the run without reading raw script output. Quiet success is a regression — every step must produce at least one visible line.
+
+**This rule is for a human watching the run.** In CI (`$AI_REVIEW_CI=1`) it is relaxed — headers and outcome summaries are dropped and the state-gathering scripts are batched, because there is no live reader and each extra turn re-reads the cached prefix. The `🔍 / ✓ / ↷ / ⚠️` relay survives in both modes. See **CI / headless mode** above.
 
 ### Step 8 — Analyze
 
