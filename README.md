@@ -170,11 +170,16 @@ BITBUCKET_PR_ID=42             # auto-set by Bitbucket Pipelines on PR steps
 .claude/skills/code-reviewer/bin/ai-review-ci
 ```
 
-Optional knobs: `AI_REVIEW_MAX_USD` (per-run ceiling, default 2.00 — a runaway guard, you pay actual usage; don't set below ~1.00 or a mid-run kill bills tokens but posts nothing), `AI_REVIEW_MODEL` (`sonnet` default or `opus`; anything else fails pre-flight — the skill runs on those two only), `AI_REVIEW_OUTPUT` (JSON output path). Exit codes: `0` ran, `1` infra failure (missing env / no `claude` CLI / unsupported model), `2` the run errored. Works on any host with the `claude` CLI on `PATH`.
+Optional knobs: `AI_REVIEW_MAX_USD` (per-run ceiling, default 5.00 — a runaway killswitch, not a budget; don't tune it down without measuring, since a mid-run kill bills every token spent and posts nothing), `AI_REVIEW_MODEL` (`sonnet` default or `opus`; anything else fails pre-flight — the skill runs on those two only), `AI_REVIEW_OUTPUT` (JSON output path). Exit codes: `0` ran, `1` infra failure (missing env / no `claude` CLI / unsupported model), `2` the run errored. Works on any host with the `claude` CLI on `PATH`.
 
 Every run ends with a **`─── Usage ───`** block — tokens, turns, estimated spend. Watch it; it's the number to multiply by your trigger rate before turning anything on automatically, and the number to set `AI_REVIEW_MAX_USD` from.
 
-**What a run costs.** A sonnet review is dominated by cache reads, not fresh input: roughly 2M cache-read + 150k cache-write input tokens and ~30k output, giving **~$1.10 today** (Sonnet 5 is on introductory $2/$10 per MTok through 2026-08-31) and **~$1.60** at the standard $3/$15. Cache reads bill at 0.1× input, cache writes at 1.25×. `opus` is ~2.5× that per token — leave `AI_REVIEW_MODEL` unset. The 2.00 default therefore sits just above a typical run, which is what makes it a useful killswitch; a large diff can legitimately exceed it, so raise the variable rather than removing the cap if runs start dying mid-review.
+**What a run costs.** Measured on a real review of a substantial diff — 30 turns, 2.06M cache-read + 178k cache-write input tokens, 21k output — **$2.05**. Two things about that figure are counter-intuitive:
+
+- **It is computed at standard Sonnet rates ($3/$15), not the introductory $2/$10.** The cap gates on this number, so introductory pricing has no bearing on whether a run survives.
+- **Cache *writes* were 52% of it**, not reads. The CLI uses a 1-hour cache TTL, billed at 2× input, while a CI container lives ~5 minutes and never reuses the entry. There is no flag to shorten it (checked on CLI 2.1.224). Cache reads bill at 0.1×.
+
+`opus` is ~2.5× that per token — leave `AI_REVIEW_MODEL` unset. Re-derive your own figure from the `─── Usage ───` block rather than trusting this one as diffs and the lens grow.
 
 #### Cost: the trigger is the lever
 

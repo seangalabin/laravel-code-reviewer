@@ -43,12 +43,14 @@
 #                               two only; anything else fails pre-flight. Leave it
 #                               unset: opus costs several times sonnet per token
 #                               and the lens work is mechanical.
-#        AI_REVIEW_MAX_USD      per-run ceiling (default 2.00). A runaway guard,
-#                               not a target: a typical sonnet review runs ~$1–1.60
-#                               in equivalent spend, so the default trips just above
-#                               normal. Raise it if large diffs die mid-review —
-#                               read the "Usage" block each run prints to pick the
-#                               number from measured spend.
+#        AI_REVIEW_MAX_USD      per-run ceiling (default 5.00). A runaway killswitch,
+#                               not a budget. A measured review of a substantial diff
+#                               came to $2.05 — computed at STANDARD Sonnet rates,
+#                               which is what the cap gates on, so introductory
+#                               pricing does not apply. Don't tune it down without
+#                               measuring: a run killed mid-review bills every token
+#                               it spent and posts nothing. Read the "Usage" block
+#                               each run prints to derive your own number.
 #        AI_REVIEW_BASE_BRANCH  base branch the diff is scoped against
 #                               (default develop; set to master etc. — see below)
 #

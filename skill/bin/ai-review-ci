@@ -22,27 +22,36 @@
 #   JIRA_API_TOKEN           (falls back to BITBUCKET_API_TOKEN)
 #   BITBUCKET_PR_ID          Auto-set by Bitbucket Pipelines on PR steps.
 #   BITBUCKET_BRANCH         Auto-set by Bitbucket Pipelines.
-#   AI_REVIEW_MAX_USD        Caps spend per run. A ceiling, not a target: you pay
-#                            actual usage; the cap kills runaways. Don't set below
-#                            ~2.00 — a run that dies mid-review bills the tokens
-#                            spent but posts nothing. Default 2.00 for both auth
-#                            modes; set explicitly to override.
-#                            On OAuth the cap bills nobody — there is no dollar
-#                            invoice — but --max-budget-usd still terminates the
-#                            run at that estimated spend, which makes it the only
-#                            available killswitch on a runaway. Without it a single
-#                            pathological run can eat a large share of one person's
-#                            daily subscription quota, and every pipeline review in
-#                            the team draws from that same quota.
-#                            Why 2.00: a normal sonnet review runs ~$1–1.60 in
-#                            equivalent spend (roughly 2M cache-read + 150k
-#                            cache-write input tokens and ~30k output), so 2.00 sits
-#                            just above a typical run — close enough to catch a
-#                            runaway early. A large diff can legitimately exceed it
-#                            and get killed mid-review; if that happens, raise
-#                            AI_REVIEW_MAX_USD rather than removing the cap, and use
-#                            the per-run "Usage" block below to pick the number from
-#                            your own measured spend instead of guessing.
+#   AI_REVIEW_MAX_USD        Caps spend per run. A runaway killswitch, not a budget.
+#                            Default 5.00 for both auth modes; set explicitly to
+#                            override. Do not tune it down without measuring first:
+#                            a run killed mid-review bills every token it spent and
+#                            posts nothing, so a cap set too tight converts working
+#                            reviews into pure waste.
+#                            On OAuth the figure bills nobody — there is no dollar
+#                            invoice — but --max-budget-usd still terminates the run
+#                            at that estimated spend, which makes it the only
+#                            available killswitch. Without it a single pathological
+#                            run can eat a large share of one person's daily
+#                            subscription quota, and every pipeline review in the
+#                            team draws from that same quota.
+#                            Why 5.00, measured not guessed. A real review on a
+#                            substantial diff (30 turns, 2.06M cache-read + 178k
+#                            cache-write input, 21k output) came to $2.05. Two things
+#                            about that number are easy to get wrong:
+#                              * It is computed at STANDARD Sonnet rates ($3/$15),
+#                                not the introductory $2/$10 — and the cap gates on
+#                                this figure, so introductory pricing is irrelevant
+#                                to whether a run survives.
+#                              * Cache WRITES were 52% of it. The CLI uses a 1-hour
+#                                cache TTL, billed at 2x input, while a CI container
+#                                lives ~5 minutes and never reuses the entry. There
+#                                is no flag to shorten it (checked on 2.1.224).
+#                            A 2.00 default killed exactly that review. 5.00 is ~2.4x
+#                            a known-real run: loose enough to let a large diff
+#                            finish, tight enough that a true runaway (10x+) still
+#                            trips. Re-derive it from the per-run "Usage" block below
+#                            rather than from this comment as diffs and the lens grow.
 #   AI_REVIEW_MODEL          Model for the run: "sonnet" (default) or "opus" — the
 #                            skill refuses to review on anything else, so an
 #                            unsupported value fails pre-flight (exit 1). sonnet is
@@ -87,9 +96,10 @@ PROMPT="/code-reviewer $PR_ARG"
 # OAuth the figure bills nobody, but --max-budget-usd still terminates a runaway
 # run — and a runaway there spends one person's subscription quota, which the whole
 # team's CI shares. Uncapped is not "free", it's just unmetered.
-# 2.00 is a little above a typical sonnet review (~$1–1.60 equivalent), so it trips
-# early on a runaway. Raise AI_REVIEW_MAX_USD if large diffs start dying mid-review.
-MAX_USD="${AI_REVIEW_MAX_USD:-2.00}"
+# 5.00 is ~2.4x a measured real review ($2.05 — at STANDARD Sonnet rates, which is
+# what this figure is computed at, so introductory pricing does not apply). A 2.00
+# default killed a legitimate review mid-flight, wasting everything it had spent.
+MAX_USD="${AI_REVIEW_MAX_USD:-5.00}"
 BUDGET_ARGS=(--max-budget-usd "$MAX_USD")
 OUTPUT_FILE="${AI_REVIEW_OUTPUT:-./ai-review-output.json}"
 

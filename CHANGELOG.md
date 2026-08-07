@@ -5,6 +5,31 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.60.1 — 2026-08-07
+
+### Changed
+- **`AI_REVIEW_MAX_USD` default raised 2.00 → 5.00.** A real pipeline review was killed
+  mid-flight by the 2.00 cap: 30 turns, 2.06M cache-read + 178k cache-write input tokens,
+  21k output, terminated at `error_max_budget_usd` having posted nothing. The cap is a
+  runaway killswitch, not a budget, and set that tight it converted a working review into
+  pure waste — the run consumed the quota either way.
+
+  Two corrections to what this file previously documented, both from measured data:
+  - **The figure is computed at standard Sonnet rates ($3/$15), not the introductory
+    $2/$10.** The arithmetic matches `$2.0464929` exactly at standard and $1.3643 at
+    introductory. Since `--max-budget-usd` gates on this number, introductory pricing has
+    no bearing on whether a run survives — the earlier "~$1–1.60 per run" note was
+    measuring the wrong thing and is why the default was set too low.
+  - **Cache *writes* were 52% of the cost**, not reads. The CLI uses a 1-hour cache TTL
+    billed at 2× input, while a CI container lives ~5 minutes and never reuses the entry.
+    At a 5-minute TTL (1.25×) the same run would have cost $1.65 and finished inside the
+    old cap. No CLI flag shortens it — verified against 2.1.224, where `--max-budget-usd`
+    is also the *only* run-level ceiling; there is no token-denominated equivalent.
+
+  On subscription auth none of this is an invoice: the dollar figure is a synthetic
+  yardstick and the real constraint is the account's usage quota. The dollar cap is simply
+  the only proxy the CLI exposes for bounding it.
+
 ## code-reviewer 1.60.0 — 2026-08-07
 
 Continuous review is the intended model — every push, like CodeRabbit. 1.58.0 quietly
