@@ -5,6 +5,35 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.61.0 / code-fixer 1.55.0 — 2026-08-07
+
+### Added
+- **§9 Existence checks — `->exists()`, not a count** (canonical for "does any row match?").
+  Replaces the narrower `->get()` then `->isEmpty()` / `->count()` bullet, which only caught
+  the hydration case and named builder-level `->count()` as an acceptable fix. Three shapes,
+  graded by what the database actually does:
+  - `count($user->orders) > 0` / `$user->orders->count() > 0` / `->get()` then `->isEmpty()` —
+    hydrates **every** matching row into models to answer a yes/no question. 🟡 Warning on an
+    unbounded / growing relation, 🔵 on a small reference set.
+  - `$user->orders()->count() > 0` — 🔵 Suggestion. No hydration, but `select count(*)` still
+    counts every matching row.
+  - `$user->orders()->exists()` / `->doesntExist()` — the target: `EXISTS` lets the database
+    stop at the first match, so the gap widens with row count and holds even on an indexed
+    column.
+
+  Two carve-outs keep it from over-firing: only flag when **the number itself is unused** (a
+  count that is displayed, logged, returned, or compared against anything but zero is a
+  count), and never suggest `exists()` immediately before a write — `->exists()` then
+  `->create()` is the check-then-act race §8 already owns, whose fix is `firstOrCreate()`.
+
+### Changed
+- **§2m scoped to in-memory data** and cross-referenced to §9. It advises `isEmpty()` /
+  `empty()` for a loaded array or collection; without the pointer it could be read as
+  licensing a `->get()` to satisfy a builder-level count, which is the opposite of the
+  intent.
+- **Step 8's easily-missed list** now names §9 existence checks in place of §2m — the
+  canonical rule moved, and that list is what the completeness-critic pass re-checks.
+
 ## code-reviewer 1.60.1 — 2026-08-07
 
 ### Changed

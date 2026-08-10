@@ -325,6 +325,8 @@ A negatively-named variable then tested negatively — `$notReady` with `if (! $
 
 `count($x) > 0` / `count($x) === 0` to test emptiness — 🔵 Suggestion. Use `! empty($x)` / `empty($x)` for arrays, or `$collection->isNotEmpty()` / `->isEmpty()` for Eloquent collections — clearer intent and (for collections) avoids materialising a count.
 
+This rule is about **readability on data already in memory**. If `$x` is a relation or query builder rather than a loaded array/collection, the finding is a database one, not a style one — see §9 **Existence checks** (canonical), which prefers `->exists()` over any count. Don't answer a builder-level count with `isEmpty()`; that would hydrate the rows.
+
 #### 2n. Descriptive, meaningful names — 🔵 Suggestion
 
 §2d governs *casing*; this rule governs whether the name actually says what the thing is. A name that is correctly `camelCase` but opaque (`$tmp`, `$d`) is worth a nudge. It's 🔵 — an opaque-but-honest name is a readability suggestion; a name that actively *misleads* about behaviour is the 🟡 case in §2p. Flag identifiers — variables, properties, parameters — whose name does not convey their role (**method** names are governed by §2p):
@@ -821,7 +823,23 @@ Enums are value descriptors. Pure value-derivation on the enum is fine and encou
 ### 9. Performance
 
 - **N+1** — §4b (🟡 Warning).
-- **`->get()` then `->isEmpty()` / `->count()`** — 🔵 Suggestion — use `->exists()` / `->count()` on the builder **only when the result is used solely for the emptiness test and then discarded**. If the collection is iterated or returned afterwards, `->get()` + `->isEmpty()` is correct — don't flag it (swapping would force a redundant re-query).
+- **Existence checks — `->exists()`, not a count** (canonical for "does any row match?"). Three shapes, worst first:
+  - `count($user->orders) > 0` / `$user->orders->count() > 0` / `->get()` then `->isEmpty()` — hydrates **every** matching row into models to learn whether one exists. 🟡 Warning on an unbounded / growing relation; 🔵 on a small reference set.
+  - `$user->orders()->count() > 0` / `=== 0` — 🔵 Suggestion. Better (no hydration, `select count(*)`), but the database still counts every matching row.
+  - `$user->orders()->exists()` / `->doesntExist()` — the target. `EXISTS` lets the database stop at the first matching row instead of counting to the end, so the gap widens with row count and holds even on an indexed column.
+
+  ```php
+  // BAD — hydrates every order to answer a yes/no question
+  if (count($user->orders) > 0) { ... }
+  // BETTER — no hydration, but still counts every matching row
+  if ($user->orders()->count() > 0) { ... }
+  // GOOD — stops at the first match
+  if ($user->orders()->exists()) { ... }
+  ```
+
+  **Only flag when the number itself is unused.** If the count is displayed, logged, returned, or compared against anything other than zero (`> 1`, `>= $limit`), it is a count — leave it. If the collection is iterated or returned afterwards, `->get()` + `->isEmpty()` is correct; swapping would force a redundant re-query. `withCount()` for display is fine.
+
+  **Do not suggest `exists()` immediately before a write.** `->exists()` then `->create()` is a check-then-act race — see §8 (canonical); the fix there is `firstOrCreate()` / `updateOrCreate()`, not an existence check.
 - **`Http::` without `->timeout(N)`** — 🟡 Warning. Without a timeout the request can hang indefinitely under network issues, blocking the worker/request thread. Suggest `->timeout(30)`.
 - **Full-table loads** — `Model::all()`, or an unbounded `->get()` / `->pluck()` with no `where` / `limit` / pagination, on an **unbounded, growing** table (users, orders, events, logs) — 🟡 Warning; use `->chunk()` / `->cursor()` / pagination. On a **mutable** table prefer `->chunkById()` over `->chunk()` (§16a); for very large workloads, chunk-and-queue (§16b). Don't flag it on an obviously small reference table (roles, statuses, countries, config) — absence of a growth signal is not a finding.
 - **Over-selecting columns** — a large or hot-path read (`->get()` / `->cursor()` / `->paginate()` on an unbounded / growing table, per the full-table-loads rule above) that pulls every column via the Eloquent default when its consumer (API Resource, Blade view, export, `pluck`) uses only a few — 🟡 Warning; add an explicit `->select([...])` naming only the columns actually used, and drop heavy unused columns (TEXT / BLOB / JSON / serialized payloads) especially. **Guard against under-selecting — any `select([...])` MUST still include `id`, every foreign key the model's loaded relations / `with()` / `$with` rely on, and every column an accessor, `$appends`, or a cast reads. Omitting those silently breaks relations, appended attributes, and casts — do not push a `select()` that drops them.** Exempt: small reference tables (same growth-signal exemptions as full-table-loads), a query whose model is then mutated and `save()`d (it needs the full row), and reads feeding a Resource / response that exposes most columns. **If you cannot see from the diff which columns the consumer uses — or the model file (its `$appends`, casts, relations, `$with`) isn't in the diff — do not name a column list; at most suggest dropping a column that is demonstrably heavy and demonstrably unused, otherwise say nothing. Don't guess.** Separately, flag an explicit `->select('*')` / `DB::raw('select *')` as redundant (🔵) and `->get()->pluck('x')` — loads every column then plucks — as `->pluck('x')` on the builder (🔵).
