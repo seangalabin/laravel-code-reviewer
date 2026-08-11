@@ -798,6 +798,24 @@ class TestReviewerWindowsParity(unittest.TestCase):
                                 f'missing Windows variant skill/scripts/{name}.ps1')
 
 
+# ── scan_diff — diff command construction (--files scoping) ───────────────────
+
+class TestScanDiffCmd(unittest.TestCase):
+
+    def test_no_files_plain_diff(self):
+        self.assertEqual(scan_diff.build_diff_cmd('abc123'),
+                         ['git', 'diff', 'abc123...HEAD'])
+
+    def test_files_appended_after_separator(self):
+        cmd = scan_diff.build_diff_cmd('abc123', ['app/A.php', 'app/B.php'])
+        self.assertEqual(cmd, ['git', 'diff', 'abc123...HEAD', '--',
+                               'app/A.php', 'app/B.php'])
+
+    def test_empty_file_list_means_unscoped(self):
+        self.assertEqual(scan_diff.build_diff_cmd('abc123', []),
+                         ['git', 'diff', 'abc123...HEAD'])
+
+
 # ── scan_diff — hybrid-recall rules ───────────────────────────────────────────
 
 def _mkdiff(path: str, *added_lines: str) -> str:

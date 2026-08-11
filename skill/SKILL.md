@@ -274,6 +274,7 @@ Before analyzing the diff, fetch the linked issue-tracker card. The goal is to j
 - Pre-existing lines **inside a touched hunk** — fair game when the surrounding change makes them newly relevant.
 - Pre-existing lines **outside any hunk, in a file the branch did not touch** — out of scope. Do not surface.
 - Files the branch did not touch — out of scope. Do not open them looking for issues.
+- Code that arrived via a **merge from the base branch** (checkpoint mode) — out of scope even though it appears in the diff: findings must anchor to lines changed by **branch-own commits** (see *Branch-own scope* in the scoping section).
 
 When a pre-existing issue is in a touched hunk, label it `(pre-existing, but touched)`.
 
@@ -343,12 +344,31 @@ The script reads a hidden checkpoint comment on the PR and prints the SHA — or
 
 > `--since-last-review` is accepted as an alias for the default behaviour (no-op).
 
+### Branch-own scope (checkpoint mode only)
+
+When `BASE_REF` is a checkpoint SHA, the diff `$BASE_REF...HEAD` contains **everything that became reachable since the checkpoint** — including the entire base-branch delta whenever the developer merged `$BASE` into the branch ("Merged develop into …"). That merged-in code is **other people's already-integrated work, not this PR's changes** — reviewing it produces findings "not part of the recent commits". Scope it out:
+
+```bash
+git log --merges --oneline "$BASE_REF..HEAD"          # any merges in range?
+git log "$BASE_REF..HEAD" --not "origin/$BASE" --no-merges --name-only --format= | sort -u
+```
+
+(target mode: prefix both with `git -C "$WORKTREE"`.) The second command lists **branch-own files** — touched by commits since the checkpoint that are not reachable from `origin/$BASE`.
+
+- **No merges in range** → scope is the plain diff; continue as normal.
+- **Merges present** → restrict every scoping command below to the branch-own files (`git diff "$BASE_REF...HEAD" -- <files>`, `scan_diff.py --base "$BASE_REF" --files <files>`). Print: `↷ Merge from $BASE detected in range — excluded {N} file(s) that rode in via merge.`
+- **Branch-own list empty** (the push was only a merge commit) → treat exactly like the 0-new-commits case above: run Step 7, then Step 10, print the no-new-commits message, and stop — no analysis, no posting.
+
+This does not apply when `BASE_REF=origin/$BASE` — the three-dot diff already excludes base-branch changes via the merge-base.
+
 ### Run the scoping scripts
 
 ```bash
 .claude/skills/code-reviewer/scripts/branch_summary.sh "$BASE_REF"
 .claude/skills/code-reviewer/scripts/scan_diff.py --base "$BASE_REF"
 ```
+
+(Checkpoint mode with merges in range: append `--files <branch-own files>` to `scan_diff.py` and `-- <files>` to the diff below.)
 
 Then read the full diff:
 

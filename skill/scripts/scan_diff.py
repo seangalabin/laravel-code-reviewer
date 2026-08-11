@@ -470,8 +470,18 @@ def scan_text(diff_text: str):
     return findings
 
 
-def scan(base_ref: str):
+def build_diff_cmd(base_ref: str, files: list[str] | None = None) -> list[str]:
+    """git-diff invocation, optionally scoped to a file list (checkpoint mode
+    with merges in range: restrict to branch-own files)."""
     cmd = ["git", "diff", f"{base_ref}...HEAD"]
+    if files:
+        cmd.append("--")
+        cmd.extend(files)
+    return cmd
+
+
+def scan(base_ref: str, files: list[str] | None = None):
+    cmd = build_diff_cmd(base_ref, files)
     try:
         diff = subprocess.check_output(cmd, text=True, stderr=subprocess.PIPE)
     except subprocess.CalledProcessError as e:
@@ -510,11 +520,14 @@ def main():
     )
     parser.add_argument("--base", default="origin/develop",
                         help="Base ref to diff against (default: origin/develop)")
+    parser.add_argument("--files", nargs="+", default=None, metavar="PATH",
+                        help="Restrict the scan to these paths (checkpoint mode with "
+                             "merges in range: pass the branch-own file list)")
     parser.add_argument("--no-snippets", action="store_true",
                         help="Hide the code snippet under each finding")
     args = parser.parse_args()
 
-    findings = scan(args.base)
+    findings = scan(args.base, args.files)
     render(findings, show_snippets=not args.no_snippets)
 
 

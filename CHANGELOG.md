@@ -5,6 +5,25 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.62.0 / code-fixer 1.56.0 — 2026-08-07
+
+### Fixed
+- **Incremental review no longer reviews code that rode in via a merge from the base
+  branch.** In checkpoint mode the diff base is an ancestor of HEAD, so `checkpoint...HEAD`
+  contains *everything reachable since the checkpoint* — including the entire base-branch
+  delta whenever the developer merges the base into the branch. The reviewer then flagged
+  other people's already-integrated code as if the PR changed it ("findings not part of the
+  recent commits", varying run to run). Now, when merges exist in the checkpoint range, the
+  scope is restricted to **branch-own files** (`git log checkpoint..HEAD --not origin/$BASE
+  --no-merges --name-only`), with narration of how many files were excluded; a push that is
+  *only* a merge commit short-circuits like the 0-new-commits case (replies + Jira sync,
+  stop). `scan_diff.py` gains a `--files` filter for the same scoping (both copies, kept
+  byte-identical). The scope rule states it explicitly: findings anchor to branch-own
+  commits; merged-in base-branch code is out of scope even though it appears in the diff.
+  Full-review mode was never affected (three-dot vs the base excludes it via the merge-base).
+  Reviewer template change (the fixer always diffs the base branch and is merge-base-safe);
+  `code-fixer` bumps in lockstep for the shared `scan_diff.py`.
+
 ## code-reviewer 1.61.0 / code-fixer 1.55.0 — 2026-08-07
 
 ### Added
