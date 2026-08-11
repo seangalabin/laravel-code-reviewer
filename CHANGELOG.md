@@ -5,6 +5,17 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.63.1 / code-fixer 1.57.1 — 2026-08-11
+
+### Changed
+- **§2a legacy-retrofit suggestions are now self-guarding.** Before suggesting
+  `declare(strict_types=1)` on an edited legacy file, the reviewer must scan that file for
+  §7 runtime-data boundaries (`json_decode()`, raw payloads, `unserialize()`, external API
+  responses feeding scalar-typed parameters) and name them in the finding, requiring those
+  call sites be normalized *first* — otherwise the suggestion guides the developer into the
+  intermittent `TypeError` crash instead of around it. A clean scan is stated explicitly so
+  the developer knows it happened. Shared-lens change — both skills.
+
 ## code-reviewer 1.63.0 / code-fixer 1.57.0 — 2026-08-11
 
 ### Added

@@ -158,6 +158,7 @@ All new PHP files under `app/` must open with `declare(strict_types=1)` as the f
 - **Do flag:** new files; edited files where the diff adds/changes methods or logic.
 - **Don't flag:** a trivial touch to a legacy file (one-line unrelated fix, rename ripple, formatting) — demanding a semantics-affecting declaration on a file the PR barely touches is scope creep.
 - **Phrase with the risk in view:** adding `strict_types` changes coercion semantics for the *whole file*, not just the diff'd lines — a latent loose-type call elsewhere in the file can start throwing. Suggest it alongside a check that the file's tests cover the untouched paths (or a quick scan of the file's other call sites), not as a blind one-liner.
+- **Self-guarding suggestion — scan before you suggest.** Before flagging a legacy file, scan that file for runtime-data boundaries (the §7 strict-types-boundary pattern: `json_decode()` results, raw request/JSON payloads, `unserialize()`, external API responses flowing into scalar-typed parameters). If any exist, the finding MUST name them and require normalizing those call sites **first** (`is_numeric()` + cast, DTO/cast layer) — under strict mode each one becomes a runtime `TypeError` on the payloads that carry strings. A finding that says "add `declare(strict_types=1)`" without listing the file's boundary call sites is incomplete: it guides the developer into the crash instead of around it. If the scan finds none, say so ("no runtime-data boundaries spotted in this file") so the developer knows it was checked.
 
 ```php
 <?php
