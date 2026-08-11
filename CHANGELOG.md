@@ -5,6 +5,19 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.63.0 / code-fixer 1.57.0 — 2026-08-11
+
+### Added
+- **§7 strict-types boundary rule.** New correctness bullet: runtime-untyped data
+  (`json_decode()`, raw request/JSON payloads, `unserialize()`, CSV, external API responses)
+  passed to a scalar-typed parameter **from inside a `strict_types` file** — 🟡, escalating to
+  🔴 when the unguarded throw sits on a request path. Under strict mode coercion no longer
+  rescues a numeric string, so the call throws `TypeError` only on payloads that happen to
+  carry strings — an intermittent production crash. Remedy: normalize at the boundary
+  (`is_numeric()` + cast, or a DTO/cast layer). Scoped tightly: fires only when the calling
+  file declares strict_types and the value provenance is runtime data — Eloquent-cast, DTO,
+  and validated-FormRequest values don't count. Shared-lens change — both skills.
+
 ## code-reviewer 1.62.0 / code-fixer 1.56.0 — 2026-08-07
 
 ### Fixed
