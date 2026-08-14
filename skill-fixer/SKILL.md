@@ -163,7 +163,7 @@ Before analyzing, fetch the linked issue-tracker card so the lens evaluates your
 
 When a pre-existing issue is in a touched hunk, label it `(pre-existing, but touched)`.
 
-**Reading existing code for context is allowed; *flagging* it is not.** You may open untouched files to understand how the change fits — a called Service, a sibling class, an existing interface or Repository — and the **architecture/consistency dimensions (§1, incl. §1c Repository granularity and §1g OOP structure) require it**: a duplication or missing-contract smell only shows when the new code is compared to what already exists. The rule is about *where the finding lands*, not what you may read: **anchor every finding to the changed lines** ("this **new** class duplicates the existing X — extract a shared contract"), never to a pre-existing problem inside an untouched file.
+**Reading existing code for context is allowed; *flagging* it is not.** You may open untouched files to understand how the change fits — a called Service, a sibling class, an existing interface or Repository — and the **architecture/consistency dimensions (§1, incl. §1c Repository granularity, §1g OOP structure and §1h reuse scan) require it**: a duplication or missing-contract smell only shows when the new code is compared to what already exists. The rule is about *where the finding lands*, not what you may read: **anchor every finding to the changed lines** ("this **new** class duplicates the existing X — extract a shared contract"), never to a pre-existing problem inside an untouched file.
 
 **Do not flag issues already caught by Pint (formatting/style) or the Pest ArchitectureTest (suffix rules, base-class rules, enum rules).** Those run in CI before the card reaches code review.
 
@@ -387,7 +387,7 @@ Each run appends a new dated entry with the timestamp + the template above, sepa
 ## Review lens
 
 **The lens is not in this file.** It lives beside it, at
-`.claude/skills/code-fixer/review-lens.md` (~24k tokens), and you must
+`.claude/skills/code-fixer/review-lens.md` (~25k tokens), and you must
 **Read it in full at the lens-walk step — and not before.**
 
 This is deliberate, and it is about cost. Runs that stop early — version check,
@@ -509,7 +509,7 @@ Prefix each comment's title with one of:
 ## What not to do
 
 - Don't comment on style issues already caught by the linter (Pint, ESLint).
-- Don't open untouched files to look for new issues.
+- Don't open untouched files to look for new issues — with the §1 exception above (§1c, §1g, §1h): those dimensions *require* reading existing code to judge the change, but the finding still lands on the changed lines, never on the untouched file.
 - Don't grade the whole architecture from a small change.
 - Don't flag issues caught by Pint or the Pest ArchitectureTest as *findings* — they're CI's job. (You still **run** Pint/Pest/lint to verify each applied fix, per Step 6.4 — that's verification, not a finding.)
 - Don't invent issues to fill buckets. An empty 🔴/🟡 list is a valid and welcome outcome.

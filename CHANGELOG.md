@@ -5,6 +5,50 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.64.0 / code-fixer 1.58.0 — 2026-08-14
+
+### Added
+- **§1h reuse scan — find the existing implementation before accepting new logic.** The lens
+  already said to prefer reuse over rebuilding, but only as a judgement note inside §1g: it named
+  no place to look, so the rule fired only when the duplicate happened to sit in a collaborator the
+  diff already referenced. §1h makes the search a procedure. When the diff adds a method (or
+  rewrites one's body) whose contents are real logic — a calculation, query, parse/format routine
+  or business rule — the reviewer checks three bounded axes: the changed file, its sibling
+  directory, and the conventional home for that layer (Services / Actions / Support, Repositories
+  and Model scopes, Helpers, FormRequests, the shared front-end module). Names and signatures are
+  read first; bodies only on a name hit.
+
+  **The scan is budgeted across the review, not just per method** — at most 8 directory listings
+  per run, spent first on new public methods of Services, Actions, Repositories, Helpers and
+  Models, then on everything else; when the budget is spent the reviewer stops and records
+  `§1h: scan budget reached` in the coverage ledger. Two misses are accepted deliberately: a
+  duplicate parked outside the layer it belongs to, and anything past the budget. This dimension
+  is the one lens rule that spends read calls proportional to diff size, and an unbounded version
+  of it would undo the cost discipline the rest of the skill is built on.
+
+  **Relatedness is the gate, not resemblance.** Two implementations are duplication only when they
+  encode the same piece of domain knowledge — the test being whether a change to the underlying
+  rule would force a change in both places. Where they would legitimately diverge, the resemblance
+  is incidental and merging them is *itself* the defect: it couples two things that must move
+  independently. Shape and name similarity produce a candidate, never a verdict. Because that is a
+  domain question the diff often cannot answer, the linked card (acceptance criteria, comment
+  thread, `ai-review:context` block) is the tiebreaker — and where it stays unsettled the finding
+  is **not** raised, since an unsure duplication claim argues for coupling code that may need to
+  move independently.
+
+  Severity splits on consequence rather than size: 🔵 by default, 🟡 only when divergence produces
+  a **wrong result** — a reference or ID format, a pricing / tax / rounding rule, a permission or
+  eligibility check. Carve-outs cover same-shape-different-meaning, trivial bodies,
+  framework-required repetition, cross-layer near-matches, and consolidations already in progress.
+  The "reuse before rebuild / extract an inline responsibility" bullets move here from §1g, which
+  keeps its focus on interfaces, inheritance and `final`. Shared-lens change — both skills.
+
+### Changed
+- **The read-existing-code allowance now names §1h**, and the "don't open untouched files" line in
+  *What not to do* is qualified to point at the §1 exception. The two instructions previously
+  contradicted each other, which would have left the new scan under-firing. Findings still anchor
+  to the changed lines, never to the untouched file. Both skills.
+
 ## code-reviewer 1.63.1 / code-fixer 1.57.1 — 2026-08-11
 
 ### Changed

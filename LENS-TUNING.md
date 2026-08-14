@@ -27,6 +27,15 @@ examples are boundary markers, never the originating incident retold.**
    - **Dimensions that never fire** → dead weight or mis-scoped triggers; investigate before
      deleting.
 
+   **Mind the dimension boundaries.** Findings are grouped by the `dim` code recorded when they
+   were posted, so a rule that moves to a new sub-dimension splits its own history: the same
+   `dim` means different things either side of the release that moved it. Check this list before
+   reading a ratio that spans one.
+
+   | Release | Split | How to read the old data |
+   |---|---|---|
+   | code-reviewer 1.64.0 / code-fixer 1.58.0 | reuse rule moved §1g → §1h | pre-1.64 `1g` is "OOP structure **+** reuse", not OOP structure alone; `1h` has no history before it |
+
 4. Ship rule changes like any lens change: edit `src/review-lens.md`, `python3 build.py`,
    bump both VERSIONs, CHANGELOG entry citing the *pattern* (not one PR), push.
 

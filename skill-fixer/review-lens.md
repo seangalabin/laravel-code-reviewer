@@ -131,11 +131,6 @@ Suggest OOP structure **only when the code shows a concrete need** — all 🔵 
 
   **Do NOT flag** a Service/Repository with **one** implementation and no polymorphism or test-double need just for "missing an interface" — an interface-per-class with a single impl is cargo-cult; Laravel binds concretes fine. No speculative "might have another impl someday."
 
-**Reuse before rebuild; extract when a responsibility is inline** (judgement):
-- The change adds logic an **existing** class / Service / Action / helper already provides → reuse it instead of duplicating (🔵; 🟡 when it duplicates non-trivial existing behaviour — a real DRY/maintenance risk). This uses the same read-existing-code allowance above; anchor the finding to the new code ("this new block re-implements `App\Support\PriceCalculator`").
-- The change crams a **distinct responsibility** inline — a chunk of business logic inside a controller/model/command, a substantial repeated block with its own reason to change → suggest extracting a dedicated class (Service, Action, DTO, value object, Job) — 🔵.
-- Don't invert it into noise: no new class when an existing one is the right home, and no extraction of a trivial one-liner.
-
 **Abstract base class vs trait vs composition.** When sibling classes share real duplicated behaviour:
 - A genuine **is-a** family with shared state + template steps → an `abstract` base class (and mark it `abstract` if it's only meaningful as a parent yet is currently instantiable).
 - Cross-cutting reuse with **no** is-a relationship → a **trait** or a collaborator, **not** inheritance.
@@ -144,6 +139,66 @@ Suggest OOP structure **only when the code shows a concrete need** — all 🔵 
 **`final` for new leaf classes.** A new class not designed for extension (no `protected` extension points, not abstract, not a framework base you must subclass) *may* be `final`. Flag a missing `final` **only when sibling leaf classes in the same diff or directory are already `final`** — i.e. the codebase demonstrably uses it as a convention. Never mass-suggest `final` on a codebase that doesn't. 🔵.
 
 **Program to the abstraction.** Once a contract exists, inject and type-hint the **interface**, not the concrete class.
+
+#### 1h. Reuse scan — find the existing implementation before accepting new logic
+
+Uses the **read-existing-code allowance** in §1g: to apply this rule you must look outside the diff. Findings still anchor to the changed lines.
+
+**Trigger.** The diff **adds a method/function, or rewrites an existing one's body**, and that body is real logic — a calculation, a transformation, a query, a parse/format routine, a business rule. A one-line delegate, an accessor, a config return or a framework-required stub is not a trigger.
+
+**The gate — relatedness, not resemblance.** Two implementations are duplication only when they encode **the same piece of domain knowledge**. The test:
+
+> If the underlying rule changed, would **both** places have to change?
+
+**Yes** → duplication; reuse one of them. **No** → the resemblance is incidental, and **merging them is itself the defect** — it couples two things that must move independently, so the next change to one silently breaks the other. Identical bodies serving unrelated concepts are correctly separate, and the reviewer's job is to leave them alone.
+
+Shape and name similarity only ever produce a **candidate**. Every candidate passes this gate before it becomes a finding.
+
+**When the diff can't settle it, the card can.** Whether two rules are the same is a domain question, and the diff often doesn't carry the answer. The linked card — acceptance criteria, the comment thread, any `<!-- ai-review:context -->` block — usually says whether the two concepts are one thing or two. **If it is still unsettled after that, don't raise the finding.** An unsure duplication claim is the expensive kind: it argues for merging code that may need to move independently.
+
+**Finding candidates — where to look**, in this order; stop at the first genuine hit:
+
+1. **The changed file** — a method on the same class already doing it.
+2. **The sibling directory** — the other classes sitting beside the changed file.
+3. **The conventional home for the layer the logic belongs to:**
+
+| The new logic is… | Look in |
+|---|---|
+| a domain calculation or business rule | `app/Services/`, `app/Actions/`, `app/Support/` |
+| a query or persistence concern | `app/Repositories/`, and scopes on the Model being queried |
+| derivation of a model's own state | the Model itself — accessors, scopes, casts |
+| formatting, parsing, or a pure utility | `app/Support/`, `app/Helpers/`, the project's helper file |
+| validation shared across requests | the FormRequests already covering that resource |
+| shared front-end behaviour | the composable / util / store module the project already uses |
+
+Follow the **project's actual layout**, not these paths verbatim — an app that keeps calculators in `app/Domain/` is checked there.
+
+**How to look — cheaply.** Read **names and signatures first** (directory listing, method names); open a body only when a name or signature suggests the same job. Bound each candidate to the three axes above — changed file, sibling directory, layer home — and stop there. A duplicate parked outside the layer it belongs to will be missed, and that is the accepted trade: an exhaustive codebase search is not this dimension's job, and a missed duplicate is a cheaper failure than a review that reads thirty files to find one.
+
+**Budget the scan across the whole review, not just per method.** The axes bound one candidate; this bounds the run. Spend at most **8 directory listings per review** on this dimension, in priority order:
+
+1. **new public methods on a Service, Action, Repository, Helper or Model** — the reuse-prone surface, where a duplicate is both likeliest and costliest;
+2. everything else.
+
+When the budget is spent, **stop and record `§1h: scan budget reached` in the coverage ledger**. An unscanned method is not a finding, and a stated stop is honest where silently continuing is not.
+
+**Report** — anchor to the new code and **name the existing symbol** so the developer can verify it:
+
+> this new `OrderTotals::compute()` re-implements `App\Support\PriceCalculator::forOrder()` — call it instead
+
+🔵 Suggestion by default. **🟡 Warning when divergence produces a wrong result** — the duplicated knowledge is a contract (a reference or ID format, a pricing / tax / rounding rule, a permission or eligibility check) where the two copies drifting yields incorrect output, not merely maintenance cost.
+
+**Reuse before rebuild; extract when a responsibility is inline** (judgement):
+- The change adds logic an **existing** class / Service / Action / helper already provides → reuse it instead of duplicating.
+- The change crams a **distinct responsibility** inline — a chunk of business logic inside a controller/model/command, a substantial repeated block with its own reason to change → suggest extracting a dedicated class (Service, Action, DTO, value object, Job) — 🔵.
+- Don't invert it into noise: no new class when an existing one is the right home, and no extraction of a trivial one-liner.
+
+**Do NOT flag:**
+- **Same shape, different meaning** — the gate's corollary, and the most common false positive in this dimension. Two methods that read alike but encode rules that will legitimately diverge. Similar code is not duplicated code.
+- **Trivial bodies** — a delegate, a getter, a single Eloquent call with no logic around it.
+- **Framework-required repetition** — `up()` / `down()`, `rules()`, `authorize()`, `toArray()`, and the Resource/Request boilerplate convention forces per class.
+- **Cross-layer near-matches** — a Repository query method and a Service method that mention the same concept sit at different layers by design.
+- **A consolidation already in progress** — when the diff or the card says the copy is deliberate and temporary.
 
 ---
 

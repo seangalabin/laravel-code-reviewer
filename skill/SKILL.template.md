@@ -278,7 +278,7 @@ Before analyzing the diff, fetch the linked issue-tracker card. The goal is to j
 
 When a pre-existing issue is in a touched hunk, label it `(pre-existing, but touched)`.
 
-**Reading existing code for context is allowed; *flagging* it is not.** You may open untouched files to understand how the change fits — a called Service, a sibling class, an existing interface or Repository — and the **architecture/consistency dimensions (§1, incl. §1c Repository granularity and §1g OOP structure) require it**: a duplication or missing-contract smell only shows when the new code is compared to what already exists. The rule is about *where the finding lands*, not what you may read: **anchor every finding to the changed lines** ("this **new** class duplicates the existing X — extract a shared contract"), never to a pre-existing problem inside an untouched file.
+**Reading existing code for context is allowed; *flagging* it is not.** You may open untouched files to understand how the change fits — a called Service, a sibling class, an existing interface or Repository — and the **architecture/consistency dimensions (§1, incl. §1c Repository granularity, §1g OOP structure and §1h reuse scan) require it**: a duplication or missing-contract smell only shows when the new code is compared to what already exists. The rule is about *where the finding lands*, not what you may read: **anchor every finding to the changed lines** ("this **new** class duplicates the existing X — extract a shared contract"), never to a pre-existing problem inside an untouched file.
 
 **Do not flag issues already caught by Pint (formatting/style) or the Pest ArchitectureTest (suffix rules, base-class rules, enum rules).** Those run in CI before the card reaches code review.
 
@@ -758,7 +758,7 @@ If developers want to fix issues locally instead, they should use the `/code-fix
 ## What not to do
 
 - Don't comment on style issues already caught by the linter (Pint, ESLint).
-- Don't open untouched files to look for new issues.
+- Don't open untouched files to look for new issues — with the §1 exception above (§1c, §1g, §1h): those dimensions *require* reading existing code to judge the change, but the finding still lands on the changed lines, never on the untouched file.
 - Don't grade the whole architecture from a small change.
 - Don't flag issues caught by Pint or the Pest ArchitectureTest.
 - Don't invent issues to fill buckets. An empty 🔴/🟡 list is a valid and welcome outcome.
