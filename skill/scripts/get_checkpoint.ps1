@@ -1,13 +1,16 @@
 # get_checkpoint.ps1 - print the last-reviewed SHA from the PR's checkpoint
 # comment, or nothing if no checkpoint exists. Windows port of get_checkpoint.sh.
 #
-# Prints nothing (caller falls back to a full diff against develop) when there is
+# Prints nothing (caller falls back to a full diff against the base branch,
+# $env:AI_REVIEW_BASE_BRANCH or develop) when there is
 # no checkpoint, no creds, or no PR. A persistent Bitbucket API error (after
 # retries) is reported distinctly on stderr rather than passed off as "no
 # checkpoint", so a transient API blip doesn't read as if the saved checkpoint
 # vanished. Transient failures (network, 429, 5xx) are retried with backoff.
 #
 # Required env vars: BITBUCKET_EMAIL, BITBUCKET_API_TOKEN
+
+$BaseLabel = if ($env:AI_REVIEW_BASE_BRANCH) { $env:AI_REVIEW_BASE_BRANCH } else { "develop" }
 
 if ([string]::IsNullOrEmpty($env:BITBUCKET_EMAIL) -or [string]::IsNullOrEmpty($env:BITBUCKET_API_TOKEN)) { exit 0 }
 
@@ -110,13 +113,13 @@ $CheckpointSha = "$CheckpointSha".Trim()
 
 if ($PyStatus -eq 3) {
     [Console]::Error.WriteLine("  WARNING: Couldn't read the checkpoint - Bitbucket API error after retries.")
-    [Console]::Error.WriteLine("      Running a full review against develop. Your saved checkpoint likely still")
+    [Console]::Error.WriteLine("      Running a full review against $BaseLabel. Your saved checkpoint likely still")
     [Console]::Error.WriteLine("      exists; the next run should pick it up once the API is reachable.")
 } elseif (-not [string]::IsNullOrEmpty($CheckpointSha)) {
     $short = if ($CheckpointSha.Length -ge 7) { $CheckpointSha.Substring(0, 7) } else { $CheckpointSha }
     [Console]::Error.WriteLine("  Found checkpoint at $short - incremental review.")
     Write-Output $CheckpointSha
 } else {
-    [Console]::Error.WriteLine("  No checkpoint comment on PR yet - full review against develop.")
+    [Console]::Error.WriteLine("  No checkpoint comment on PR yet - full review against $BaseLabel.")
 }
 exit 0

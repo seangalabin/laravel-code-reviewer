@@ -1,0 +1,6 @@
+{
+  "description": "An API Resource field renamed name -> full_name. Every existing client reading `name` gets nothing.",
+  "must_fire": [{"dim": "17a", "path": "app/Http/Resources/CustomerResource.php"}],
+  "must_not_fire": ["2d", "2n", "4a"],
+  "notes": "§17a's core case, and visible from the diff alone (a removed - line in toArray). §2d/§2n must not fire on the key name: it is a JSON key, not an identifier, and casing rules left the lens anyway."
+}

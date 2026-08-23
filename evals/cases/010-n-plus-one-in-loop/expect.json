@@ -1,0 +1,6 @@
+{
+  "description": "Relation accessed inside a loop with no eager load — two queries per order.",
+  "must_fire": [{"dim": "4b", "path": "app/Repositories/OrderRepository.php"}],
+  "must_not_fire": ["2n", "13a"],
+  "notes": "The canonical true positive. §2n must stay quiet: $order and $summaries are honest names. §13a must stay quiet: this is a repository read, not branching business logic."
+}

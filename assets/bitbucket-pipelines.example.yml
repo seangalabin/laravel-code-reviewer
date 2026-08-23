@@ -39,11 +39,15 @@
 #        BITBUCKET_API_TOKEN    token with "Pull requests: write" scope
 #      Optional:
 #        JIRA_BASE_URL / JIRA_EMAIL / JIRA_API_TOKEN   card-status sync
-#        AI_REVIEW_MODEL        sonnet (default) or opus — the skill runs on those
-#                               two only; anything else fails pre-flight. Leave it
-#                               unset: opus costs several times sonnet per token
-#                               and the lens work is mechanical.
-#        AI_REVIEW_MAX_USD      per-run ceiling (default 5.00). A runaway killswitch,
+#        AI_REVIEW_MODEL        opus (default) or sonnet — the skill runs on those
+#                               two only; anything else fails pre-flight. opus is the
+#                               default deliberately: the mechanical style rules moved
+#                               out to Rector/PHPStan, so what the lens still judges
+#                               (structure, naming-vs-behaviour, correctness, scale,
+#                               contract breaks) is where model quality shows. Set
+#                               sonnet if spend matters more than depth.
+#        AI_REVIEW_MAX_USD      per-run ceiling. The default tracks the model: 15.00
+#                               on opus, 5.00 on sonnet. A runaway killswitch,
 #                               not a budget. A measured review of a substantial diff
 #                               came to $2.05 — computed at STANDARD Sonnet rates,
 #                               which is what the cap gates on, so introductory
@@ -51,6 +55,13 @@
 #                               measuring: a run killed mid-review bills every token
 #                               it spent and posts nothing. Read the "Usage" block
 #                               each run prints to derive your own number.
+#        AI_REVIEW_MIN_SEVERITY critical | warning | suggestion. Findings below the
+#                               floor are withheld from the PR (still listed in the
+#                               run's coverage ledger). Defaults to `warning` in CI:
+#                               a pipeline posts to a PR other people have to read,
+#                               and a review that is mostly style nits gets skimmed.
+#                               Set `suggestion` to post everything.
+#        AI_REVIEW_MAX_SUGGESTIONS  cap on suggestion comments per PR (default 3).
 #        AI_REVIEW_BASE_BRANCH  base branch the diff is scoped against
 #                               (default develop; set to master etc. — see below)
 #

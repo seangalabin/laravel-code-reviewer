@@ -1,0 +1,6 @@
+{
+  "description": "New Service method with three branches deciding what a customer is charged, and no test in the diff.",
+  "must_fire": [{"dim": "13a", "path": "app/Services/ShippingService.php"}],
+  "must_not_fire": ["2i", "2b", "2a"],
+  "notes": "§13a is the rule that reverses the lens's old stance. §2i must NOT fire — the magic numbers are already named constants, which is the point. §2b must not fire — everything is typed."
+}

@@ -189,7 +189,7 @@ if (isFixer) {
 The skill will:
   1. Refuse to run on main, master, or develop
   2. Diff the current branch against develop
-  3. Run the 15-dimension analysis
+  3. Run the 17-dimension analysis
   4. Walk you through fixes interactively [y/n/s/q]
 
 No Bitbucket credentials needed — fixes are applied locally only.

@@ -72,6 +72,12 @@ def main() -> None:
         die(f'no open PR for branch "{branch}".')
 
     url  = f'{api_base}/pullrequests/{pr_id}/comments'
+
+    if os.environ.get('AI_REVIEW_DRY_RUN'):
+        print(f'  \u21b7 DRY RUN — would reply to comment #{args.parent_id} '
+              f'on PR #{pr_id} ({len(body)} chars). Nothing posted.')
+        return
+
     resp = bb_post(url, auth, {
         'content': {'raw': body},
         'parent':  {'id': args.parent_id},

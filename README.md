@@ -2,7 +2,7 @@
 
 A [Claude Code](https://claude.ai/code) skill that reviews pull requests on Laravel / Bitbucket projects and posts inline comments directly to the PR. It's an **opinionated reviewer that encodes one team's standards** — diff-scoped (only the lines your branch changed), severity-tagged, and run on your own Anthropic + Bitbucket credentials (code never goes to a third-party review service).
 
-Two skills share the same 16-dimension review lens:
+Two skills share the same 17-dimension review lens:
 
 | Skill | For | What it does |
 |---|---|---|
@@ -59,7 +59,7 @@ Teams can extend or override the lens (disable a check, change a severity, add a
 - Node.js 16+
 - Laravel project with [PestPHP](https://pestphp.com/) and [Laravel Pint](https://laravel.com/docs/pint)
 - [Claude Code](https://claude.ai/code) CLI
-- **Model: Sonnet or Opus.** Both skills refuse to run on anything else (Fable, Haiku) — run `/model sonnet` before invoking. Reviews run single-agent by policy: the skill never delegates to subagents, whatever the session model.
+- **Model: Opus or Sonnet.** Both skills refuse to run on anything else (Fable, Haiku) — run `/model opus` before invoking. Reviews run single-agent by policy: the skill never delegates to subagents, whatever the session model.
 - A Bitbucket repository with an open PR on the current branch
 - **Shell:** Linux, macOS, or WSL/Git Bash (`.sh` scripts). Native **Windows** is supported via PowerShell variants and additionally needs **Python 3** and **curl** on `PATH`; the skill auto-detects the OS.
 
@@ -170,7 +170,7 @@ BITBUCKET_PR_ID=42             # auto-set by Bitbucket Pipelines on PR steps
 .claude/skills/code-reviewer/bin/ai-review-ci
 ```
 
-Optional knobs: `AI_REVIEW_MAX_USD` (per-run ceiling, default 5.00 — a runaway killswitch, not a budget; don't tune it down without measuring, since a mid-run kill bills every token spent and posts nothing), `AI_REVIEW_MODEL` (`sonnet` default or `opus`; anything else fails pre-flight — the skill runs on those two only), `AI_REVIEW_OUTPUT` (JSON output path). Exit codes: `0` ran, `1` infra failure (missing env / no `claude` CLI / unsupported model), `2` the run errored. Works on any host with the `claude` CLI on `PATH`.
+Optional knobs: `AI_REVIEW_MAX_USD` (per-run ceiling; the default tracks the model — 15.00 on opus, 5.00 on sonnet. A runaway killswitch, not a budget; don't tune it down without measuring, since a mid-run kill bills every token spent and posts nothing), `AI_REVIEW_MODEL` (`opus` default or `sonnet`; anything else fails pre-flight — the skill runs on those two only), `AI_REVIEW_MIN_SEVERITY` (`critical`/`warning`/`suggestion`; defaults to `warning` in CI and `suggestion` locally — findings below the floor are withheld from the PR but still listed in the coverage ledger), `AI_REVIEW_MAX_SUGGESTIONS` (cap on 🔵 comments per PR, default 3), `AI_REVIEW_OUTPUT` (JSON output path). Exit codes: `0` ran, `1` infra failure (missing env / no `claude` CLI / unsupported model), `2` the run errored. Works on any host with the `claude` CLI on `PATH`.
 
 Every run ends with a **`─── Usage ───`** block — tokens, turns, estimated spend. Watch it; it's the number to multiply by your trigger rate before turning anything on automatically, and the number to set `AI_REVIEW_MAX_USD` from.
 
@@ -179,7 +179,7 @@ Every run ends with a **`─── Usage ───`** block — tokens, turns, e
 - **It is computed at standard Sonnet rates ($3/$15), not the introductory $2/$10.** The cap gates on this number, so introductory pricing has no bearing on whether a run survives.
 - **Cache *writes* were 52% of it**, not reads. The CLI uses a 1-hour cache TTL, billed at 2× input, while a CI container lives ~5 minutes and never reuses the entry. There is no flag to shorten it (checked on CLI 2.1.224). Cache reads bill at 0.1×.
 
-`opus` is ~2.5× that per token — leave `AI_REVIEW_MODEL` unset. Re-derive your own figure from the `─── Usage ───` block rather than trusting this one as diffs and the lens grow.
+`opus` is the default and costs several times that per token — it is the deliberate trade for review depth, since the mechanical style rules now live in Rector/PHPStan and what remains in the lens is judgement work. Set `AI_REVIEW_MODEL=sonnet` if spend matters more than depth; the cap follows the model automatically. Re-derive your own figure from the `─── Usage ───` block rather than trusting this one as diffs and the lens grow.
 
 #### Cost: the trigger is the lever
 
@@ -203,14 +203,14 @@ Each run checks its installed version against GitHub and offers to update before
 
 ## code-fixer (developer skill)
 
-The same 16-dimension analysis for your **own** branch before pushing — no posting, no credentials, fixes applied interactively on your machine.
+The same 17-dimension analysis for your **own** branch before pushing — no posting, no credentials, fixes applied interactively on your machine.
 
 ```bash
 npx github:seangalabin/laravel-code-reviewer --skill=fixer                  # current directory
 npx github:seangalabin/laravel-code-reviewer --skill=fixer /path/to/project
 ```
 
-On your feature branch, run `/code-fixer`. It diffs against `develop`, scans all 16 dimensions, warns about uncommitted changes, then walks each issue Critical → Warning → Suggestion. For every issue it prints the problem, a copy-pasteable AI fix prompt, the suggested diff, why it matters, and — only when the fix changes behaviour — a suggested Pest test. Then:
+On your feature branch, run `/code-fixer`. It diffs against `develop`, scans all 17 dimensions, warns about uncommitted changes, then walks each issue Critical → Warning → Suggestion. For every issue it prints the problem, a copy-pasteable AI fix prompt, the suggested diff, why it matters, and — only when the fix changes behaviour — a suggested Pest test. Then:
 
 ```
 Apply this fix? [y/n/s/q]
@@ -233,7 +233,7 @@ Each applied fix is verified immediately — **Pint**, **Pest** (scoped to the c
 
 **`SKILL.md` and `review-lens.md` in both skill directories are generated. Never edit them by hand.** Edit the inputs and rebuild:
 
-- The 16-dimension review lens (shared by both skills) lives in `src/review-lens.md`.
+- The 17-dimension review lens (shared by both skills) lives in `src/review-lens.md`.
 - Everything else lives in the per-skill templates: `skill/SKILL.template.md` and `skill-fixer/SKILL.template.md`.
 
 After editing a template or the lens, regenerate and commit the inputs together with everything `build.py` writes:

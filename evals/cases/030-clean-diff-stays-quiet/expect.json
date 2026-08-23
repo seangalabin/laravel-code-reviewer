@@ -1,0 +1,6 @@
+{
+  "description": "A small, correct, well-typed pure function. Nothing should be raised at all.",
+  "must_fire": [],
+  "must_not_fire": ["1a", "1b", "1d", "2b", "2i", "2n", "2o", "2p", "4f", "7", "13a", "16f"],
+  "notes": "The silence test, and the hardest case to pass. A lens that flags everything scores perfect recall elsewhere; the whole difficulty of review is knowing when to say nothing. §2i must not fire on the sprintf format string. §13a must not fire: a pure one-line formatter with no branching."
+}

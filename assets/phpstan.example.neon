@@ -1,0 +1,77 @@
+# PHPStan / Larastan config to pair with code-reviewer.
+#
+# Division of labour: PHPStan proves things about types and reachability. The review
+# lens judges things that need a reader — whether a literal encodes meaning, whether a
+# method name tells the truth, whether a comment earns its place. Run PHPStan first;
+# anything it can decide should never reach a review comment.
+#
+# The lens's §2b (every parameter and return type declared) is the one type rule the
+# reviewer still raises, because it is about *intent* — PHPStan will tell you a param is
+# untyped, but only a reader can say whether `mixed` was a deliberate choice or a
+# placeholder someone gave up on. Level 5+ below reports the mechanical half; the lens
+# handles the judgement half.
+#
+# ── Setup ────────────────────────────────────────────────────────────────────────────
+#   composer require --dev larastan/larastan
+#   cp vendor/redhq/code-reviewer/assets/phpstan.example.neon phpstan.neon
+#   vendor/bin/phpstan analyse
+#
+# Start at the level your codebase actually passes, then ratchet. Shipping level 8 on a
+# legacy app produces thousands of errors, everyone adds a baseline, and the tool stops
+# meaning anything. Raise one level per PR instead.
+
+includes:
+    - vendor/larastan/larastan/extension.neon
+    # Uncomment once you are ready to hold the line rather than pay down debt:
+    # - phpstan-baseline.neon
+
+parameters:
+    level: 5
+
+    paths:
+        - app
+        - database
+        - routes
+
+    # Mirrors the lens's scope: the reviewer never graded generated or vendored code,
+    # so PHPStan should not either.
+    excludePaths:
+        - app/**/*.blade.php
+        - bootstrap/cache
+        - storage
+
+    # ── Laravel-specific noise suppression ──────────────────────────────────────────
+    # Eloquent's magic makes a handful of PHPStan complaints structurally unavoidable
+    # even when the code is correct. Larastan handles most; these cover the rest.
+    ignoreErrors:
+        # Facade roots and container magic resolve at runtime.
+        - identifier: staticMethod.notFound
+          path: app/**/*.php
+          reportUnmatched: false
+
+    # Report the things that ARE real bugs rather than style:
+    checkUninitializedProperties: true      # a typed property never assigned = TypeError
+    checkMissingIterableValueType: false    # array<int, X> generics — noisy at first, raise later
+    treatPhpDocTypesAsCertain: false        # a wrong @var should not create phantom errors
+
+    # ── What this replaces from the old lens ────────────────────────────────────────
+    # §2c property type declarations — level 5+ with checkUninitializedProperties
+    # §2b (mechanical half) — missing param/return types surface from level 2 up
+    # dead code / unreachable branches — level 4+
+    #
+    # Not covered by PHPStan, handled elsewhere:
+    #   formatting, casing, import order        → Pint
+    #   early return, redundant else, count()>0 → Rector (see rector.example.php)
+    #   nested ternaries                        → PHPCS sniff, see below
+
+# ── Nested ternaries (the deleted §2h) ──────────────────────────────────────────────
+# Neither PHPStan nor Rector has a rule for this. It needs a PHPCS sniff:
+#
+#   composer require --dev slevomat/coding-standard
+#
+# then in phpcs.xml:
+#
+#   <rule ref="SlevomatCodingStandard.ControlStructures.DisallowNestedTernary"/>
+#
+# Skip it if you would rather not add a third static-analysis tool for one rule — PHP 8
+# already errors on un-parenthesised nesting, which is the form that actually bites.

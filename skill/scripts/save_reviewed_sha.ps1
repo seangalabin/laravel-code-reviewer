@@ -109,6 +109,12 @@ while url:
 
 payload = json.dumps({'content': {'raw': body}})
 
+if os.environ.get('AI_REVIEW_DRY_RUN'):
+    action = 'update' if existing_id else 'post'
+    print(f'  [dry-run] DRY RUN — would {action} the checkpoint comment \u2192 {short}. '
+          'Nothing posted.')
+    sys.exit(0)
+
 if existing_id:
     r = curl('-X', 'PUT', '-H', 'Content-Type: application/json',
              '-d', payload, f'{comments_url}/{existing_id}')

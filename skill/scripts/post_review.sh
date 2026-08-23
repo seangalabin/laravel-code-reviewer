@@ -35,9 +35,15 @@ REMOTE_URL=$(git remote get-url origin 2>/dev/null) || {
     exit 1
 }
 
-if [[ "$REMOTE_URL" =~ bitbucket\.org[:/]([^/]+)/([^/]+?)(\.git)?$ ]]; then
+# NOTE: the trailing `.git` is stripped with ${...%.git} rather than matched by an
+# optional group. The previous pattern used `([^/]+?)` — a NON-GREEDY quantifier,
+# which is not valid POSIX ERE. glibc tolerates it, so CI (node:20/Debian) matched
+# fine, but BSD libc does not: on macOS bash 3.2 this failed to match EVERY remote
+# URL form, so the script bailed with "not a recognised Bitbucket URL" for every
+# local run. Keep this POSIX-clean.
+if [[ "$REMOTE_URL" =~ bitbucket\.org[:/]([^/]+)/([^/]+)$ ]]; then
     WORKSPACE="${BASH_REMATCH[1]}"
-    REPO_SLUG="${BASH_REMATCH[2]}"
+    REPO_SLUG="${BASH_REMATCH[2]%.git}"
 else
     echo "ERROR: remote URL is not a recognised Bitbucket URL: $REMOTE_URL" >&2
     exit 1
@@ -84,6 +90,14 @@ else
     PR_ID=""
 fi
 
+# In a dry run there is nothing to post, so resolving the real PR is pointless — and
+# resolving it requires a live Bitbucket call, which the eval harness has no
+# credentials for and must not depend on. Use a placeholder and let the reporting
+# path downstream describe what would have happened.
+if [[ -n "${AI_REVIEW_DRY_RUN:-}" && -z "$PR_ID" ]]; then
+    PR_ID="DRY-RUN"
+fi
+
 if [[ -z "$PR_ID" ]]; then
     # quote(..., safe='') so a "/" in the branch (e.g. feature/B20-1) is encoded
     # too — an unescaped "/" inside the already-encoded BBQL value breaks the
@@ -127,7 +141,7 @@ HEAD_SHA=$(git rev-parse HEAD)
 
 # ── Post each finding as an inline (or top-level) comment ────────────────────
 python3 - "$FINDINGS_FILE" "$API_BASE" "$PR_ID" "$BASIC_AUTH" "$WORKSPACE" "$REPO_SLUG" "$HEAD_SHA" <<'PYEOF'
-import json, sys, subprocess
+import json, os, sys, subprocess
 
 findings_file = sys.argv[1]
 api_base      = sys.argv[2]
@@ -140,7 +154,109 @@ head_sha      = sys.argv[7]
 with open(findings_file) as f:
     findings = json.load(f)
 
+# ── Severity gate ─────────────────────────────────────────────────────────────
+# Enforced here, in the script, and not only in the prompt: a prompt instruction is
+# a strong suggestion, a filter is a guarantee. The lens carries far more 🔵
+# Suggestion rules than 🔴/🟡 ones, and a review whose output is mostly style nits
+# gets skimmed instead of read — so cap what actually reaches the PR.
+#
+#   AI_REVIEW_MIN_SEVERITY    critical | warning | suggestion   (default: see below)
+#   AI_REVIEW_MAX_SUGGESTIONS integer, 0 = none                 (default 3)
+#
+# Default floor is `warning` in CI and `suggestion` locally: a developer who ran the
+# skill by hand asked for everything, whereas a pipeline posts to a PR other people
+# have to read. Set AI_REVIEW_MIN_SEVERITY explicitly to override either way.
+#
+# Withheld findings are counted and reported, never silently dropped — the operator
+# must be able to see that the gate did something.
+RANK = {'critical': 3, 'warning': 2, 'suggestion': 1}
+EMOJI_RANK = {'\U0001F534': 3, '\U0001F7E1': 2, '\U0001F535': 1}
+
+
+def severity_rank(finding):
+    """Rank a finding, preferring the explicit field and falling back to the emoji.
+
+    Anything unrecognised ranks as critical: a finding whose severity we cannot read
+    must not be silently discarded by a gate meant to remove noise.
+    """
+    s = str(finding.get('severity', '')).strip().lower()
+    if s in RANK:
+        return RANK[s]
+    head = finding.get('body', '')[:200]
+    for glyph, rank in EMOJI_RANK.items():
+        if glyph in head:
+            return rank
+    return 3
+
+
+def apply_severity_gate(findings):
+    ci = os.environ.get('AI_REVIEW_CI') or os.environ.get('CI', '').lower() == 'true'
+    floor_name = os.environ.get(
+        'AI_REVIEW_MIN_SEVERITY', 'warning' if ci else 'suggestion').strip().lower()
+    floor = RANK.get(floor_name)
+    if floor is None:
+        print(f'  \u21b7 AI_REVIEW_MIN_SEVERITY="{floor_name}" is not one of '
+              'critical/warning/suggestion — ignoring the floor.', file=sys.stderr)
+        floor = 1
+        floor_name = 'suggestion'
+
+    raw_cap = os.environ.get('AI_REVIEW_MAX_SUGGESTIONS', '3').strip()
+    try:
+        cap = max(0, int(raw_cap))
+    except ValueError:
+        print(f'  \u21b7 AI_REVIEW_MAX_SUGGESTIONS="{raw_cap}" is not an integer — '
+              'using the default of 3.', file=sys.stderr)
+        cap = 3
+
+    kept, below_floor, over_cap = [], 0, 0
+    suggestions_kept = 0
+    for f in findings:
+        rank = severity_rank(f)
+        if rank < floor:
+            below_floor += 1
+            continue
+        if rank == 1:
+            if suggestions_kept >= cap:
+                over_cap += 1
+                continue
+            suggestions_kept += 1
+        kept.append(f)
+
+    if below_floor:
+        print(f'  \u21b7 {below_floor} finding(s) withheld: below the '
+              f'AI_REVIEW_MIN_SEVERITY={floor_name} floor.')
+    if over_cap:
+        print(f'  \u21b7 {over_cap} suggestion(s) withheld: over the '
+              f'AI_REVIEW_MAX_SUGGESTIONS={cap} cap.')
+    if below_floor or over_cap:
+        print(f'  \u2192 posting {len(kept)} of {len(findings)} finding(s). '
+              'Withheld findings are still listed in the run\'s coverage ledger.')
+    return kept
+
+
+findings = apply_severity_gate(findings)
+if not findings:
+    print('  \u21b7 Nothing left to post after the severity gate.')
+    sys.exit(0)
+
+# ── Dry run ───────────────────────────────────────────────────────────────────
+# AI_REVIEW_DRY_RUN=1 makes every Bitbucket write a no-op: the findings file is
+# still produced and the plan is printed, but nothing reaches the PR. Two users:
+# the eval harness (which scores findings and must never touch a real PR), and a
+# developer testing the skill against a live PR without spraying comments on it.
+if os.environ.get('AI_REVIEW_DRY_RUN'):
+    print('  \u21b7 DRY RUN — no comments, tasks, or checkpoints will be posted.')
+    for f in findings:
+        loc = (f"{f['path']}:{f['line']}"
+               if 'path' in f and 'line' in f else 'PR level')
+        sev = str(f.get('severity', '?')).lower()
+        print(f'     would post [{sev}] {loc}'
+              + ('  + blocking task' if sev == 'critical' else ''))
+    print(f'  \u21b7 {len(findings)} finding(s) would post to PR #{pr_id}.')
+    sys.exit(0)
+
 comments_url = f'{api_base}/pullrequests/{pr_id}/comments'
+tasks_url    = f'{api_base}/pullrequests/{pr_id}/tasks'
 
 def post_comment(payload):
     return subprocess.run(
@@ -161,6 +277,32 @@ def update_comment(comment_id, body):
          f'{comments_url}/{comment_id}'],
         capture_output=True, text=True
     )
+
+def create_task(comment_id, text):
+    """Create a Bitbucket PR task linked to a comment. Returns (ok, detail).
+
+    A 🔴 Critical finding is supposed to block the merge, and a comment cannot do
+    that — only a PR task can, via the repo's "Check for unresolved tasks" merge
+    check. Best-effort by design: some workspaces/plans do not expose the tasks
+    endpoint, and a review that posted its findings must not be reported as failed
+    just because the task could not be created.
+    """
+    r = subprocess.run(
+        ['curl', '-sS', '-o', '/dev/null', '-w', '%{http_code}', '-u', auth,
+         '-X', 'POST',
+         '-H', 'Content-Type: application/json',
+         '-d', json.dumps({'content': {'raw': text},
+                           'comment': {'id': int(comment_id)}}),
+         tasks_url],
+        capture_output=True, text=True
+    )
+    if r.returncode != 0:
+        return (False, 'transport failure')
+    code = (r.stdout or '').strip()
+    if code.startswith('2'):
+        return (True, code)
+    return (False, f'HTTP {code}')
+
 
 # ── Post AI disclaimer header once per PR (skip if already present) ───────────
 DISCLAIMER_MARKER = '<!-- ai-review:disclaimer -->'
@@ -205,6 +347,8 @@ else:
 
 posted = 0
 failed = 0
+tasks_created = 0
+tasks_failed  = 0
 
 for finding in findings:
     body      = finding['body']
@@ -242,12 +386,36 @@ for finding in findings:
 
         print(f'  ✓ comment #{comment_id} → {location}')
         posted += 1
+
+        # 🔴 Critical → also create a blocking PR task. The severity field is the
+        # source of truth; fall back to the emoji in the body for older callers
+        # that omit it.
+        severity = str(finding.get('severity', '')).lower()
+        is_critical = severity == 'critical' or (not severity and '🔴' in body[:200])
+        if is_critical and comment_id != '?':
+            ok, detail = create_task(
+                comment_id,
+                f'🔴 Critical (AI review): resolve or dismiss — {location}',
+            )
+            if ok:
+                tasks_created += 1
+                print(f'    ✓ blocking task created for {location}')
+            else:
+                tasks_failed += 1
+                print(f'    ↷ could not create blocking task for {location} ({detail}) '
+                      '— the comment still posted', file=sys.stderr)
     else:
         print(f'  ✗ failed ({location}): {result.stderr.strip() or result.stdout.strip()}',
               file=sys.stderr)
         failed += 1
 
-print(f'\nPosted {posted} comment(s), {failed} failed.')
+summary = f'\nPosted {posted} comment(s), {failed} failed.'
+if tasks_created or tasks_failed:
+    summary += f' Blocking tasks: {tasks_created} created'
+    if tasks_failed:
+        summary += f', {tasks_failed} could not be created'
+    summary += '.'
+print(summary)
 print(f'https://bitbucket.org/{workspace}/{repo_slug}/pull-requests/{pr_id}')
 sys.exit(1 if failed > 0 else 0)
 PYEOF

@@ -1,0 +1,80 @@
+# The repo's own test suite. Nothing ran it before this workflow existed: there was
+# no CI config here, and `tests/` is excluded from package.json `files[]`, so the
+# suite never shipped and never executed anywhere but a developer's terminal.
+#
+# What it guards is not incidental. The suite holds the cost-control regression
+# tests (TestCIWrapperCostControls, TestSingleAgentPolicy, TestCINarrationIsTerse)
+# written after a quota blowout, plus TestBuildIdempotency, which is the only thing
+# stopping a hand-edited SKILL.md from drifting away from its template.
+name: tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.10 is the floor: the scripts use `X | None` annotations at runtime.
+        python-version: ['3.10', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run the suite
+        run: python3 -m unittest discover tests -v
+
+      - name: Verify generated files match their templates
+        # TestBuildIdempotency covers this, but assert it standalone too: a green
+        # suite with a dirty tree means someone edited a generated SKILL.md by hand.
+        run: |
+          python3 build.py
+          if ! git diff --quiet; then
+            echo "::error::build.py output differs from the committed files."
+            echo "Run 'python3 build.py' and commit the result."
+            git --no-pager diff --stat
+            exit 1
+          fi
+          echo "Generated files are in sync."
+
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python syntax — every .py script
+        run: |
+          find . -name '*.py' -not -path './.git/*' -print0 \
+            | xargs -0 -n1 python3 -m py_compile
+          echo "All .py files compile."
+
+      - name: Bash syntax — every .sh script and the bin wrappers
+        run: |
+          for f in $(find . -name '*.sh' -not -path './.git/*') \
+                   skill/bin/ai-review-ci; do
+            bash -n "$f" || { echo "::error file=$f::bash syntax error"; exit 1; }
+          done
+          echo "All shell scripts parse."
+
+      - name: PowerShell syntax — every .ps1 script
+        shell: pwsh
+        run: |
+          $bad = 0
+          Get-ChildItem -Recurse -Filter *.ps1 | ForEach-Object {
+            $errs = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName, [ref]$null, [ref]$errs) | Out-Null
+            if ($errs) {
+              Write-Output "::error file=$($_.FullName)::$($errs[0].Message)"
+              $bad = 1
+            }
+          }
+          if ($bad) { exit 1 }
+          Write-Output "All .ps1 files parse."

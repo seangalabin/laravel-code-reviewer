@@ -37,9 +37,15 @@ REMOTE_URL=$(git remote get-url origin 2>/dev/null) || {
 IS_BITBUCKET=false
 WORKSPACE=""
 REPO_SLUG=""
-if [[ "$REMOTE_URL" =~ bitbucket\.org[:/]([^/]+)/([^/]+?)(\.git)?$ ]]; then
+# NOTE: the trailing `.git` is stripped with ${...%.git} rather than matched by an
+# optional group. The previous pattern used `([^/]+?)` — a NON-GREEDY quantifier,
+# which is not valid POSIX ERE. glibc tolerates it, so CI (node:20/Debian) matched
+# fine, but BSD libc does not: on macOS bash 3.2 this failed to match EVERY remote
+# URL form, so the script bailed with "not a recognised Bitbucket URL" for every
+# local run. Keep this POSIX-clean.
+if [[ "$REMOTE_URL" =~ bitbucket\.org[:/]([^/]+)/([^/]+)$ ]]; then
     WORKSPACE="${BASH_REMATCH[1]}"
-    REPO_SLUG="${BASH_REMATCH[2]}"
+    REPO_SLUG="${BASH_REMATCH[2]%.git}"
     IS_BITBUCKET=true
 fi
 

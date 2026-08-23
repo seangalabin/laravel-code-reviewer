@@ -24,13 +24,19 @@ if [[ -z "${BITBUCKET_EMAIL:-}" || -z "${BITBUCKET_API_TOKEN:-}" ]]; then
 fi
 
 REMOTE_URL=$(git remote get-url origin 2>/dev/null) || exit 0
-if [[ ! "$REMOTE_URL" =~ bitbucket\.org[:/]([^/]+)/([^/]+?)(\.git)?$ ]]; then
+# NOTE: the trailing `.git` is stripped with ${...%.git} rather than matched by an
+# optional group. The previous pattern used `([^/]+?)` — a NON-GREEDY quantifier,
+# which is not valid POSIX ERE. glibc tolerates it, so CI (node:20/Debian) matched
+# fine, but BSD libc does not: on macOS bash 3.2 this failed to match EVERY remote
+# URL form, so the script bailed with "not a recognised Bitbucket URL" for every
+# local run. Keep this POSIX-clean.
+if [[ ! "$REMOTE_URL" =~ bitbucket\.org[:/]([^/]+)/([^/]+)$ ]]; then
     echo "  ↷ Skipping checkpoint — not a Bitbucket remote." >&2
     exit 0
 fi
 
 WORKSPACE="${BASH_REMATCH[1]}"
-REPO_SLUG="${BASH_REMATCH[2]}"
+REPO_SLUG="${BASH_REMATCH[2]%.git}"
 HEAD_SHA=$(git rev-parse HEAD)
 SHORT_SHA=$(git rev-parse --short HEAD)
 
@@ -47,7 +53,7 @@ API_BASE="https://api.bitbucket.org/2.0/repositories/$WORKSPACE/$REPO_SLUG"
 AUTH="$BITBUCKET_EMAIL:$BITBUCKET_API_TOKEN"
 
 python3 - "$API_BASE" "$AUTH" "$BRANCH" "$HEAD_SHA" "$SHORT_SHA" "${TARGET_PR_ID:-}" <<'PYEOF'
-import json, sys, subprocess, urllib.parse, re
+import os, json, sys, subprocess, urllib.parse, re
 
 api_base, auth, branch, head_sha, short, target_pr_id = sys.argv[1:7]
 
@@ -100,6 +106,12 @@ while url:
     url = page.get('next')
 
 payload = json.dumps({'content': {'raw': body}})
+
+if os.environ.get('AI_REVIEW_DRY_RUN'):
+    action = 'update' if existing_id else 'post'
+    print(f'  \u21b7 DRY RUN — would {action} the checkpoint comment \u2192 {short}. '
+          'Nothing posted.')
+    sys.exit(0)
 
 if existing_id:
     r = curl('-X', 'PUT', '-H', 'Content-Type: application/json',

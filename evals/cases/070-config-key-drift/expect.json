@@ -1,0 +1,6 @@
+{
+  "description": "New config('services.slack.ops_webhook') read, but config/services.php defines no slack key and .env.example is not updated.",
+  "must_fire": [{"dim": "17b", "path": "app/Services/NotifierService.php"}],
+  "must_not_fire": ["3g", "9", "10"],
+  "notes": "§17b is the mirror of §3g: not 'don't read env at runtime' but 'make sure the value exists to read'. config/services.php IS in the tree, so the reviewer can verify the key is genuinely absent. §3g must not fire (this is config(), not env()). §9 must not fire — ->timeout(10) is present."
+}

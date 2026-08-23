@@ -5,7 +5,8 @@
 # Used by SKILL.md when `--since-last-review` is passed:
 #   CHECKPOINT_SHA=$(.claude/skills/code-reviewer/scripts/get_checkpoint.sh)
 #
-# Prints nothing (letting the caller fall back to a full diff against develop)
+# Prints nothing (letting the caller fall back to a full diff against the base
+# branch, $AI_REVIEW_BASE_BRANCH or develop)
 # when there is no checkpoint, no creds, or no PR. A *persistent* Bitbucket API
 # error (after retries) is reported distinctly on stderr rather than being
 # passed off as "no checkpoint" — a transient API blip must not read as if the
@@ -16,22 +17,31 @@
 
 set -euo pipefail
 
+# The base branch is overridable; keep messages honest about which one ran.
+BASE_LABEL="${AI_REVIEW_BASE_BRANCH:-develop}"
+
 echo "🔍 Checking PR for previous review checkpoint..." >&2
 
 if [[ -z "${BITBUCKET_EMAIL:-}" || -z "${BITBUCKET_API_TOKEN:-}" ]]; then
-    echo "  ↷ Bitbucket creds not set — full review against develop." >&2
+    echo "  ↷ Bitbucket creds not set — full review against $BASE_LABEL." >&2
     exit 0
 fi
 
 REMOTE_URL=$(git remote get-url origin 2>/dev/null) || {
-    echo "  ↷ No git remote — full review against develop." >&2; exit 0; }
-if [[ ! "$REMOTE_URL" =~ bitbucket\.org[:/]([^/]+)/([^/]+?)(\.git)?$ ]]; then
-    echo "  ↷ Not a Bitbucket remote — full review against develop." >&2
+    echo "  ↷ No git remote — full review against $BASE_LABEL." >&2; exit 0; }
+# NOTE: the trailing `.git` is stripped with ${...%.git} rather than matched by an
+# optional group. The previous pattern used `([^/]+?)` — a NON-GREEDY quantifier,
+# which is not valid POSIX ERE. glibc tolerates it, so CI (node:20/Debian) matched
+# fine, but BSD libc does not: on macOS bash 3.2 this failed to match EVERY remote
+# URL form, so the script bailed with "not a recognised Bitbucket URL" for every
+# local run. Keep this POSIX-clean.
+if [[ ! "$REMOTE_URL" =~ bitbucket\.org[:/]([^/]+)/([^/]+)$ ]]; then
+    echo "  ↷ Not a Bitbucket remote — full review against $BASE_LABEL." >&2
     exit 0
 fi
 
 WORKSPACE="${BASH_REMATCH[1]}"
-REPO_SLUG="${BASH_REMATCH[2]}"
+REPO_SLUG="${BASH_REMATCH[2]%.git}"
 API_BASE="https://api.bitbucket.org/2.0/repositories/$WORKSPACE/$REPO_SLUG"
 AUTH="$BITBUCKET_EMAIL:$BITBUCKET_API_TOKEN"
 
@@ -116,11 +126,11 @@ PYEOF
 
 if [[ "$PY_STATUS" -eq 3 ]]; then
     echo "  ⚠️  Couldn't read the checkpoint — Bitbucket API error after retries." >&2
-    echo "      Running a full review against develop. Your saved checkpoint likely still" >&2
+    echo "      Running a full review against $BASE_LABEL. Your saved checkpoint likely still" >&2
     echo "      exists; the next run should pick it up once the API is reachable." >&2
 elif [[ -n "$CHECKPOINT_SHA" ]]; then
     echo "  ✓ Found checkpoint at ${CHECKPOINT_SHA:0:7} — incremental review." >&2
     echo "$CHECKPOINT_SHA"
 else
-    echo "  ↷ No checkpoint comment on PR yet — full review against develop." >&2
+    echo "  ↷ No checkpoint comment on PR yet — full review against $BASE_LABEL." >&2
 fi

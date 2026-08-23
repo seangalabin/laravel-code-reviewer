@@ -16,6 +16,12 @@ If those all match, the finding is skipped unless --ignore-dismissals was passed
 Required env vars: BITBUCKET_EMAIL, BITBUCKET_API_TOKEN
 Exits silently (writing an empty dismissals.json) if creds are missing,
 the remote is not Bitbucket, or no PR is open for the current branch.
+
+stdout discipline: this script writes its result to .ai-review/dismissals.json
+and prints NOTHING to stdout. Every progress line goes to stderr. CI batches
+this script alongside check_resolved.py and check_replies.py in a single Bash
+call, and those two emit pure JSON on stdout — prose here would interleave with
+their arrays and corrupt the stream the model parses.
 """
 
 from __future__ import annotations
@@ -57,26 +63,26 @@ def parse_dismissal(body: str) -> dict | None:
 
 def main() -> None:
     target = load_target()
-    print('🔍 Refreshing dismissal memory from PR...')
+    print('🔍 Refreshing dismissal memory from PR...', file=sys.stderr)
 
     auth   = get_creds()
     if auth is None:
-        print('  ↷ Bitbucket creds not set — skipping dismissal refresh.')
+        print('  ↷ Bitbucket creds not set — skipping dismissal refresh.', file=sys.stderr)
         soft_exit()
     repo = get_repo_info()
     if repo is None:
-        print('  ↷ Not a Bitbucket remote — skipping dismissal refresh.')
+        print('  ↷ Not a Bitbucket remote — skipping dismissal refresh.', file=sys.stderr)
         soft_exit()
 
     branch = get_branch(target)
     if not branch or branch in ('main', 'master', 'develop'):
-        print('  ↷ On a protected branch — skipping dismissal refresh.')
+        print('  ↷ On a protected branch — skipping dismissal refresh.', file=sys.stderr)
         soft_exit()
 
     api_base = repo_api_base(repo)
     pr_id    = find_pr_id(api_base, auth, branch, target)
     if pr_id is None:
-        print('  ↷ No open PR for this branch — skipping dismissal refresh.')
+        print('  ↷ No open PR for this branch — skipping dismissal refresh.', file=sys.stderr)
         soft_exit()
 
     comments   = fetch_all_comments(api_base, pr_id, auth)
@@ -106,9 +112,9 @@ def main() -> None:
     Path('.ai-review/dismissals.json').write_text(json.dumps(out, indent=2))
     n = len(dismissals)
     if n:
-        print(f'  ✓ Loaded {n} dismissal(s) → .ai-review/dismissals.json')
+        print(f'  ✓ Loaded {n} dismissal(s) → .ai-review/dismissals.json', file=sys.stderr)
     else:
-        print('  ↷ No dismissals on this PR — .ai-review/dismissals.json written (empty).')
+        print('  ↷ No dismissals on this PR — .ai-review/dismissals.json written (empty).', file=sys.stderr)
 
 
 if __name__ == '__main__':

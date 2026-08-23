@@ -1,0 +1,6 @@
+{
+  "description": "Deliberately style-sloppy: redundant else, nested ternary, count()>0, triple nesting, untyped properties, no strict_types.",
+  "must_fire": [{"dim": "2b", "path": "app/Support/BadgeBuilder.php"}],
+  "must_not_fire": ["2a", "2c", "2d", "2e", "2f", "2g", "2h", "2l", "2m"],
+  "notes": "The offload verification. Every §2 rule moved to Rector/PHPStan must stay silent even when the code visibly trips it. §2b (missing param/return types) is the ONE type rule the lens still owns, so it should fire."
+}

@@ -222,6 +222,9 @@ def main() -> None:
         )
 
     # 3) Apply the transition.
+    if os.environ.get('AI_REVIEW_DRY_RUN'):
+        soft_exit(f'DRY RUN — would transition {ticket} "{current}" → "{target}".')
+
     status, _ = jira_curl(
         'POST',
         f'{base_url}/rest/api/3/issue/{ticket}/transitions',

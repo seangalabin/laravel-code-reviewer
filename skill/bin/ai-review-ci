@@ -17,14 +17,15 @@
 #   BITBUCKET_API_TOKEN
 #
 # Optional env vars:
-#   JIRA_BASE_URL            For Step 3 — Sync Jira card status.
+#   JIRA_BASE_URL            For Step 10 — Sync Jira card status.
 #   JIRA_EMAIL               (falls back to BITBUCKET_EMAIL)
 #   JIRA_API_TOKEN           (falls back to BITBUCKET_API_TOKEN)
 #   BITBUCKET_PR_ID          Auto-set by Bitbucket Pipelines on PR steps.
 #   BITBUCKET_BRANCH         Auto-set by Bitbucket Pipelines.
 #   AI_REVIEW_MAX_USD        Caps spend per run. A runaway killswitch, not a budget.
-#                            Default 5.00 for both auth modes; set explicitly to
-#                            override. Do not tune it down without measuring first:
+#                            Default tracks the model: 15.00 on opus (the default
+#                            model), 5.00 on sonnet. Set explicitly to override.
+#                            Do not tune it down without measuring first:
 #                            a run killed mid-review bills every token it spent and
 #                            posts nothing, so a cap set too tight converts working
 #                            reviews into pure waste.
@@ -35,7 +36,8 @@
 #                            run can eat a large share of one person's daily
 #                            subscription quota, and every pipeline review in the
 #                            team draws from that same quota.
-#                            Why 5.00, measured not guessed. A real review on a
+#                            Why these numbers. The sonnet figure is measured, not
+#                            guessed. A real review on a
 #                            substantial diff (30 turns, 2.06M cache-read + 178k
 #                            cache-write input, 21k output) came to $2.05. Two things
 #                            about that number are easy to get wrong:
@@ -50,12 +52,22 @@
 #                            A 2.00 default killed exactly that review. 5.00 is ~2.4x
 #                            a known-real run: loose enough to let a large diff
 #                            finish, tight enough that a true runaway (10x+) still
-#                            trips. Re-derive it from the per-run "Usage" block below
-#                            rather than from this comment as diffs and the lens grow.
-#   AI_REVIEW_MODEL          Model for the run: "sonnet" (default) or "opus" — the
+#                            trips. The opus figure (15.00) holds that same ~2.4x
+#                            ratio against opus's ~5x per-token cost — it is DERIVED,
+#                            not measured. Re-derive BOTH from the per-run "Usage"
+#                            block below rather than from this comment, as diffs,
+#                            the lens, and model pricing all change.
+#   AI_REVIEW_MODEL          Model for the run: "opus" (default) or "sonnet" — the
 #                            skill refuses to review on anything else, so an
-#                            unsupported value fails pre-flight (exit 1). sonnet is
-#                            the big cost lever; opus buys depth on a gnarly diff.
+#                            unsupported value fails pre-flight (exit 1).
+#                            opus is the default because the lens is judgement work,
+#                            not pattern matching: the mechanical style rules moved
+#                            out to Rector/PHPStan, and what is left (§1g structure,
+#                            §2p name-matches-behaviour, §4a logic-vs-presentation,
+#                            §7 correctness, §13a untested logic, §16 scale, §17
+#                            contract breaks) is exactly where model quality shows.
+#                            sonnet remains the big cost lever if spend matters more
+#                            than depth — set it explicitly and the cap follows.
 #   AI_REVIEW_OUTPUT         Path for the JSON output. Default: ./ai-review-output.json
 #   AI_REVIEW_BASE_BRANCH    Base branch the diff is scoped against. Default: develop.
 #                            Set to "master" (etc.) for a repo with a different
@@ -92,31 +104,46 @@ elif [[ -n "${BITBUCKET_BRANCH:-}" ]]; then
 fi
 
 PROMPT="/code-reviewer $PR_ARG"
-# Budget: explicit var wins; otherwise both auth modes get the same ceiling. On
-# OAuth the figure bills nobody, but --max-budget-usd still terminates a runaway
-# run — and a runaway there spends one person's subscription quota, which the whole
-# team's CI shares. Uncapped is not "free", it's just unmetered.
-# 5.00 is ~2.4x a measured real review ($2.05 — at STANDARD Sonnet rates, which is
-# what this figure is computed at, so introductory pricing does not apply). A 2.00
-# default killed a legitimate review mid-flight, wasting everything it had spent.
-MAX_USD="${AI_REVIEW_MAX_USD:-5.00}"
-BUDGET_ARGS=(--max-budget-usd "$MAX_USD")
-OUTPUT_FILE="${AI_REVIEW_OUTPUT:-./ai-review-output.json}"
-
 # The skill runs on sonnet or opus only (see SKILL.md "Model guard") — it refuses to
-# review on anything else. Default to sonnet rather than the CLI default, and reject an
-# unsupported override in pre-flight so the run dies here (exit 1) instead of at the
-# guard after the container has already spun up.
-MODEL="${AI_REVIEW_MODEL:-sonnet}"
+# review on anything else. Resolve and validate the model FIRST: the budget default
+# below is derived from it, and an unsupported override must die here (exit 1) rather
+# than at the in-skill guard after the container has already spun up.
+MODEL="${AI_REVIEW_MODEL:-opus}"
 case "$MODEL" in
     sonnet|opus) ;;
     *)
         echo "ERROR: AI_REVIEW_MODEL='$MODEL' — code-reviewer only runs on sonnet or opus." >&2
-        echo "       Unset AI_REVIEW_MODEL (defaults to sonnet) or set it to 'sonnet' or 'opus'." >&2
+        echo "       Unset AI_REVIEW_MODEL (defaults to opus) or set it to 'sonnet' or 'opus'." >&2
         exit 1
         ;;
 esac
 MODEL_ARGS=(--model "$MODEL")
+
+# Budget: explicit var wins; otherwise the default tracks the model. On OAuth the
+# figure bills nobody, but --max-budget-usd still terminates a runaway run — and a
+# runaway there spends one person's subscription quota, which the whole team's CI
+# shares. Uncapped is not "free", it's just unmetered.
+#
+# The sonnet figure (5.00) is ~2.4x a measured real review ($2.05, at STANDARD sonnet
+# rates — introductory pricing does not apply, the cap gates on the standard figure).
+# The opus figure (15.00) holds the same ~2.4x ratio against opus's ~5x per-token
+# cost. It is DERIVED, not measured: re-derive both from the "─── Usage ───" block
+# this script prints once you have real opus runs, and correct them here.
+#
+# The cap MUST track the model, and is derived from the validated $MODEL above so the
+# two can never drift. Opus costs roughly 5x sonnet per token, so the measured $2.05
+# sonnet review lands near $10 on opus — straight through a 5.00 cap, mid-review,
+# which bills every token spent and posts nothing. That is the exact failure the 2.00
+# default caused before; repeating it via a model change instead of a cap change would
+# be the same bug wearing a hat. An explicit AI_REVIEW_MAX_USD still wins.
+if [[ "$MODEL" == "sonnet" ]]; then
+    DEFAULT_MAX_USD=5.00
+else
+    DEFAULT_MAX_USD=15.00
+fi
+MAX_USD="${AI_REVIEW_MAX_USD:-$DEFAULT_MAX_USD}"
+BUDGET_ARGS=(--max-budget-usd "$MAX_USD")
+OUTPUT_FILE="${AI_REVIEW_OUTPUT:-./ai-review-output.json}"
 
 # Tells the skill (via SKILL.md "CI / headless mode" section) to skip prompts.
 export AI_REVIEW_CI=1
@@ -153,7 +180,7 @@ echo "  Prompt        : $PROMPT"
 echo "  Max budget    : \$$MAX_USD$([[ -n "${ANTHROPIC_API_KEY:-}" ]] || echo " (runaway guard — OAuth spends subscription quota, not dollars)")"
 echo "  Base branch   : ${AI_REVIEW_BASE_BRANCH:-develop}"
 echo "  Auth          : $([[ -n "${ANTHROPIC_API_KEY:-}" ]] && echo "API key" || echo "OAuth token (subscription)")"
-echo "  Model         : ${MODEL}"
+echo "  Model         : ${MODEL}$([[ -n "${AI_REVIEW_MODEL:-}" ]] || echo " (default)")"
 echo "  Output JSON   : $OUTPUT_FILE"
 echo
 
