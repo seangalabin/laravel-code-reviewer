@@ -207,7 +207,7 @@ The CI wrapper is `.claude/skills/code-reviewer/bin/ai-review-ci`. Devs can set 
 - A company rule may **disable** a built-in dimension (e.g. "Disable dimension 6") — honour that and skip the built-in check.
 - Apply company rules at the severity they state; where a convention is stated without a severity, treat a violation as 🟡 Warning.
 
-Also honour, if present: `.cursorrules` / `.github/copilot-instructions.md`. Do **not** read `.coderabbit.yaml` or `.claude/code-review-rules.md` — CLAUDE.md is the single source for company rules.
+Also honour, if present: `.cursorrules` / `.github/copilot-instructions.md`. Do **not** read `.claude/code-review-rules.md` — CLAUDE.md is the single source for company rules.
 
 If none exist, skip this step. The skill's built-in rules are reasonable Laravel defaults and work standalone.
 

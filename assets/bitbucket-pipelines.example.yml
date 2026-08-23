@@ -8,7 +8,7 @@
 # ── How it runs, and what it costs ───────────────────────────────────────────
 # The default below reviews **every push to every PR** — PR creation and each
 # subsequent push to the source branch. That is the intended behaviour: continuous
-# review, the same cadence as CodeRabbit and similar tools.
+# review on every push, not a once-per-PR pass.
 #
 # Two things keep that affordable, both automatic:
 #   * Incremental review. Each run records a checkpoint SHA and the next one

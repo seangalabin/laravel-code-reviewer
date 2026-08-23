@@ -139,6 +139,9 @@ either of those was an improvement.
   cwd, leaving later tests with a cwd that no longer existed; it passed only because of the order
   it happened to run in.
 - `bin/install.js` said "15-dimension analysis"; the lens has 17.
+- **CodeRabbit references removed** now that the team is no longer subscribed. The Step 3
+  guard no longer names `.coderabbit.yaml`; `.claude/code-review-rules.md` remains
+  excluded, and CLAUDE.md is still the single source for company rules.
 
 ## code-reviewer 1.64.0 / code-fixer 1.58.0 — 2026-08-14
 
@@ -283,7 +286,7 @@ either of those was an improvement.
 
 ## code-reviewer 1.60.0 — 2026-08-07
 
-Continuous review is the intended model — every push, like CodeRabbit. 1.58.0 quietly
+Continuous review is the intended model — every push. 1.58.0 quietly
 optimised against the opposite assumption; this corrects that and makes the every-push
 cadence cheap instead of rare.
 
