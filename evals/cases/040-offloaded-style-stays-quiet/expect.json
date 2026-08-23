@@ -1,6 +1,9 @@
 {
-  "description": "Deliberately style-sloppy: redundant else, nested ternary, count()>0, triple nesting, untyped properties, no strict_types.",
-  "must_fire": [{"dim": "2b", "path": "app/Support/BadgeBuilder.php"}],
-  "must_not_fire": ["2a", "2c", "2d", "2e", "2f", "2g", "2h", "2l", "2m"],
-  "notes": "The offload verification. Every §2 rule moved to Rector/PHPStan must stay silent even when the code visibly trips it. §2b (missing param/return types) is the ONE type rule the lens still owns, so it should fire."
+  "description": "Deliberately style-sloppy legacy file: redundant else, nested ternary, count()>0, triple nesting, untyped properties and params, no strict_types.",
+  "must_fire": [
+    {"dim": "2b", "path": "app/Support/BadgeBuilder.php"},
+    {"dim": "2a", "path": "app/Support/BadgeBuilder.php"}
+  ],
+  "must_not_fire": ["2c", "2d", "2e", "2f", "2g", "2h", "2l", "2m"],
+  "notes": "The offload verification, and its boundary. The eight §2 rules that moved to Rector/PHPStan/Pint must stay silent even though the code visibly trips every one of them. Two must still fire: §2b (missing param/return types — the lens keeps this because only a reader can tell a deliberate `mixed` from a placeholder) and §2a (the diff adds methods to a legacy file with no strict_types — and a tool can insert that line but cannot judge whether the file survives it, which is why §2a was NOT offloaded). §2c is the contrast to §2a: property types ARE mechanical, so `private $palette` must draw silence."
 }

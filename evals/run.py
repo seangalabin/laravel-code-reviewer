@@ -120,6 +120,19 @@ def install_skill(workdir: Path) -> None:
         if script.suffix in ('.sh', '.py') or script.parent.name == 'bin':
             script.chmod(0o755)
 
+    # Neutralise the version check. It compares the fixture's VERSION against the
+    # published one and, when they differ, ends in an `Update now? [y/n]` prompt that
+    # strands a headless run before it analyses anything — so a graded run would score
+    # as "found nothing" for a reason that has nothing to do with the lens. The skill
+    # is separately told to skip this in CI; stubbing it here means the harness does not
+    # depend on that instruction being followed.
+    stub = dest / 'scripts' / 'check_version.sh'
+    stub.write_text('#!/usr/bin/env bash\n'
+                    '# stubbed by evals/run.py — see install_skill()\n'
+                    'echo "  \u21b7 version check stubbed (eval harness)" >&2\n'
+                    'exit 0\n')
+    stub.chmod(0o755)
+
 
 def invoke(workdir: Path, model: str, timeout: int) -> tuple[int, str]:
     env = {
