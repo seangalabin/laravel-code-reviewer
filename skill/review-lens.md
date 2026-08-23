@@ -204,6 +204,28 @@ When the budget is spent, **stop and record `§1h: scan budget reached` in the c
 
 ### 2. PSR-12 & Code Standards
 
+**What is NOT in this dimension, and why.** Casing, formatting, control-flow shape
+(redundant `else`, deep nesting, nested ternaries, negated-`if`-with-`else`, double
+negatives), property type declarations, and emptiness idioms (`count($x) > 0`) are
+enforced **deterministically** by Pint, PHPStan/Larastan, and Rector in CI — see
+`rector.example.php` and `phpstan.example.neon` in this package. Those tools are exact
+where a reviewer is probabilistic: they never miss an instance and never invent one, and
+they *fix* rather than comment. **Do not flag any of them here.** A finding the developer
+has already seen from a linter is noise, and noise is what makes a review get skimmed
+instead of read.
+
+What remains below is the part a tool cannot decide: whether a literal encodes meaning,
+whether a name tells the truth about what the code does, whether a comment earns its
+place — and, in §2a, whether adding `declare(strict_types=1)` to a given file is *safe*.
+A formatter can insert that line; only a reader can find the runtime-data boundaries it
+will start throwing on.
+
+**Sub-rule letters have gaps** (`2a`, `2b`, `2i`–`2k`, `2n`–`2p`). That is deliberate:
+the letter is the `dim` code carried in every posted comment's telemetry marker and
+matched by the dismissal filter, so re-lettering the survivors would silently invalidate
+every dismissal a developer has already recorded. Gaps are free; broken dismissal memory
+is not.
+
 #### 2a. `declare(strict_types=1)` — enforce when applicable
 
 All new PHP files under `app/` must open with `declare(strict_types=1)` as the first statement after `<?php`. Flag as 🔵 Suggestion. The `app/` scope is deliberate — migrations, config, and route files are out of scope.
@@ -239,115 +261,6 @@ namespace App\Http\Controllers;
 - Closures passed to Pest's `it()`, `test()`, `describe()`, `beforeEach()` do not need return types.
 - Magic methods (`__get`, `__set`, `__call`) follow PHP's required signature.
 
-#### 2c. Property type declarations
-
-Class properties under `app/` must be typed. 🔵 Suggestion.
-
-**Exempt** (Eloquent framework-magic arrays): `$fillable`, `$casts`, `$guarded`, `$with`, `$appends`, `$hidden`, `$dates`.
-
-```php
-// BAD
-class UserService {
-    private $users;
-}
-
-// GOOD
-class UserService {
-    private UserRepository $users;
-}
-```
-
-#### 2d. Naming conventions
-
-| Element | Convention | Example |
-|---|---|---|
-| Classes | `PascalCase` | `UserRepository` |
-| Methods & variables | `camelCase` | `getActiveUsers()` |
-| Constants / enum cases | `SCREAMING_SNAKE_CASE` | `MAX_RETRIES` |
-| Database columns | `snake_case` | `created_at`, `user_id` |
-| Blade views | `kebab-case.blade.php` | `user-profile.blade.php` |
-| Route URIs | `kebab-case` | `/user-profiles/{id}/payment-methods` |
-| Model names | Singular | `User`, `Order` |
-
-#### 2e. Positive conditionals (if/else only)
-
-When an `if` has an `else` branch, the `if` should test the **positive/truthy** case, not a negation — the reader shouldn't have to mentally invert the condition and then read the `else` as "the normal case". Flag `if (<negated>) { … } else { … }` as 🔵 Suggestion: swap the branches and drop the negation.
-
-```php
-// BAD — negated if with an else (neither branch exits)
-if (! $user->isActive()) {
-    $badge = 'inactive';
-} else {
-    $badge = 'active';
-}
-
-// GOOD — positive if, branches swapped
-if ($user->isActive()) {
-    $badge = 'active';
-} else {
-    $badge = 'inactive';
-}
-```
-
-**Precedence:** this rule is for an if/else where **neither branch exits**. When the `if` branch already exits (`return`/`throw`/`continue`/`break`), don't swap-and-keep the `else` — prefer §2f (drop the `else` altogether); raise §2f, not §2e, and emit one combined finding. (§2g's deep-nesting rule only applies at ≥3 levels, so it doesn't compete here.)
-
-**Strictly scoped — do NOT flag:**
-- **Guard clauses / early returns with no `else`** — `if (! $user) { return; }`, `if (! $ok) { abort(404); }`. These are the *preferred* idiom (they avoid nesting); a negation here is correct and good. The rule applies **only** when a real `else` (or `elseif`) branch exists.
-- **Compound conditions** — for `if (! $a && ! $b)`, do **not** mechanically apply De Morgan (→ `if ($a || $b)` with swapped branches). That's a correctness risk; flag-only at most, never auto-rewrite.
-- Conditions where the negative is genuinely the natural primary case and flipping reads worse — use judgement; this is a Suggestion, not a mandate.
-
-When auto-fixing, only swap branches + remove the leading `!` on a simple condition. Leave compound/De-Morgan cases for the developer.
-
-#### 2f. Redundant else after return
-
-When the `if` branch ends in `return` / `throw` / `continue` / `break`, the `else` is dead weight — drop it and de-indent the trailing block. 🔵 Suggestion.
-
-```php
-// BAD
-if ($user->isActive()) {
-    return $this->grant();
-} else {
-    return $this->reject();
-}
-
-// GOOD
-if ($user->isActive()) {
-    return $this->grant();
-}
-
-return $this->reject();
-```
-
-#### 2g. Guard clauses over deep nesting
-
-Code nested **≥3 levels** of `if` where an early `return` / `continue` / `throw` would flatten it ("arrow code") — 🔵 Suggestion. Invert the outer conditions into guard clauses so the happy path reads top-to-bottom at the base indent. Only flag genuine nesting; a single `if` body is fine.
-
-```php
-// BAD — arrow code
-public function handle($order): void {
-    if ($order) {
-        if ($order->isPaid()) {
-            if (! $order->isShipped()) {
-                $this->ship($order);
-            }
-        }
-    }
-}
-
-// GOOD — guard clauses
-public function handle($order): void {
-    if (! $order) return;
-    if (! $order->isPaid()) return;
-    if ($order->isShipped()) return;
-
-    $this->ship($order);
-}
-```
-
-#### 2h. Nested ternaries
-
-A ternary nested inside another (`$a ? $b : ($c ? $d : $e)`) — 🔵 Suggestion. Rewrite as a `match (true)`, an if/elseif chain, or extract a method. (PHP 8 already errors on *un-parenthesised* nesting — this targets the parenthesised-but-unreadable form.) A single, flat ternary is fine — don't flag those.
-
 #### 2i. Magic numbers and strings
 
 Unexplained literals that encode meaning — HTTP status codes (`200`, `422`), role/status strings (`'admin'`, `'pending'`), business limits (`if ($attempts > 5)`) — should be a named constant, enum case, or config value. 🔵 Suggestion.
@@ -373,19 +286,9 @@ A boolean literal passed at a call site (`$service->generate($data, true, false)
 
 A method/constructor with **more than 5** parameters — 🔵 Suggestion. Group related params into a DTO (see §1d) or a value object. A controller constructor whose parameters are injected dependencies is judged under §1a's DI cap, **not** here — don't also raise §2k for it.
 
-#### 2l. Double negatives
-
-A negatively-named variable then tested negatively — `$notReady` with `if (! $notReady)`, `$isInvalid` with `! $isInvalid` — forces a double mental inversion. 🔵 Suggestion. Rename to the positive (`$ready`, `$isValid`) and flip the uses.
-
-#### 2m. `count()` for emptiness checks
-
-`count($x) > 0` / `count($x) === 0` to test emptiness — 🔵 Suggestion. Use `! empty($x)` / `empty($x)` for arrays, or `$collection->isNotEmpty()` / `->isEmpty()` for Eloquent collections — clearer intent and (for collections) avoids materialising a count.
-
-This rule is about **readability on data already in memory**. If `$x` is a relation or query builder rather than a loaded array/collection, the finding is a database one, not a style one — see §9 **Existence checks** (canonical), which prefers `->exists()` over any count. Don't answer a builder-level count with `isEmpty()`; that would hydrate the rows.
-
 #### 2n. Descriptive, meaningful names — 🔵 Suggestion
 
-§2d governs *casing*; this rule governs whether the name actually says what the thing is. A name that is correctly `camelCase` but opaque (`$tmp`, `$d`) is worth a nudge. It's 🔵 — an opaque-but-honest name is a readability suggestion; a name that actively *misleads* about behaviour is the 🟡 case in §2p. Flag identifiers — variables, properties, parameters — whose name does not convey their role (**method** names are governed by §2p):
+Casing is Pint's job (see the preamble); this rule governs whether the name actually says what the thing is. A name that is correctly `camelCase` but opaque (`$tmp`, `$d`) is worth a nudge. It's 🔵 — an opaque-but-honest name is a readability suggestion; a name that actively *misleads* about behaviour is the 🟡 case in §2p. Flag identifiers — variables, properties, parameters — whose name does not convey their role (**method** names are governed by §2p):
 
 - **Cryptic / single-letter variables** outside the idioms below — `$d`, `$x`, `$a2`, `$str`, `$obj`.
 - **Vague placeholder names** that carry no meaning — `$data`, `$data2`, `$tmp`, `$temp`, `$val`, `$arr`, `$res`, `$info`, `$thing`, `$stuff`, `$foo`. (`$result` is fine when it genuinely *is* the result of the method.) **Judge by role, not spelling:** a short-lived local whose meaning is obvious from the adjacent line — e.g. `$data` passed straight into `Model::create($data)` — is acceptable; don't flag a name the surrounding context already explains.
@@ -865,6 +768,32 @@ Enums are value descriptors. Pure value-derivation on the enum is fine and encou
 - **Runtime-untyped data crossing into a typed signature inside a `strict_types` file** — a value from `json_decode()`, a raw request/JSON payload, `unserialize()`, CSV parsing, or an external API response passed to a scalar-typed parameter (`int`, `float`, `bool`) — 🟡 (🔴 when the call is on a request path and the throw is unguarded — same escalation as the null-deref rule). Under `strict_types=1` coercion no longer rescues a numeric string: `"450000"` into `float $amount` throws `TypeError` at runtime, and only on the payloads that happen to carry strings — an intermittent production crash. Normalize at the boundary before the call: `is_numeric($v) ? (float) $v : null`, an explicit cast on known-numeric data, or route it through a DTO/cast layer. Fires only when the **calling file** declares `strict_types` and the value's provenance is runtime data — values already typed by Eloquent casts, a DTO, or a validated FormRequest don't count.
 - Non-exhaustive `match` / `switch` over an enum with no `default` arm — 🟡 (a new case throws `UnhandledMatchError`; 🔴 on a hot path). Don't flag an already-exhaustive match.
 - Native float arithmetic on currency/money values — 🔵 (use integer cents or a decimal type).
+- **Soft-delete semantics** — on a Model using `SoftDeletes`, the default query scope silently
+  excludes trashed rows, and `delete()` silently keeps them. Both directions are bugs:
+  - A query that must see trashed rows but omits `withTrashed()` / `onlyTrashed()` — a restore
+    flow, an audit or export, a uniqueness check, a "why is this record missing" lookup — 🟡.
+  - `delete()` where the intent is clearly permanent removal (a GDPR/erasure path, a cleanup
+    command purging old rows, a dedupe) — 🟡; use `forceDelete()`. And the reverse: `forceDelete()`
+    on a path that should be reversible — 🟡.
+  - `Rule::unique()` on a soft-deleting table with no `->whereNull('deleted_at')` — 🟡. It counts
+    trashed rows, so a user who deletes a record can never re-create it with the same value.
+  - **Only fires when the Model demonstrably uses `SoftDeletes`** — visible in the diff, or in the
+    Model file you may read for context (§1g's allowance). Absence of evidence is not a finding;
+    do not infer soft deletes from a `deleted_at` column name alone.
+- **Timezone correctness** — Laravel stores timestamps in the app timezone (usually UTC) but
+  renders and parses in the user's. Mixing the two produces off-by-hours bugs that pass every
+  test written in the same timezone as the developer:
+  - `whereDate()` / `whereBetween()` on a UTC-stored column using a **local** date or
+    `now()->toDateString()` — 🟡. Near midnight this selects the wrong day. Convert the boundary
+    to the storage timezone first, or compare full timestamps.
+  - A date-only comparison (`->startOfDay()`, `->isToday()`, `->diffInDays()`) on a value whose
+    timezone was never set — 🟡 when the result drives a business outcome (billing period,
+    expiry, SLA, report bucket), 🔵 for display.
+  - `date()` / `strtotime()` / `new DateTime()` on a Carbon-managed value — 🔵; they use PHP's
+    default timezone, not the app's.
+  - **Don't flag** Carbon arithmetic that never crosses a timezone (`addDays(30)` on a stored
+    timestamp compared to another stored timestamp), `now()` used purely as "the current instant",
+    or test code constructing fixed expectations.
 
 ---
 
@@ -1001,6 +930,51 @@ For a framework **not enumerated below** (Angular, Svelte, Solid, Alpine, …), 
 
 ### 13. Testing Signals
 
+#### 13a. Missing tests for new business logic — 🟡 Warning
+
+"Where are the tests?" is the most common thing a senior reviewer says on a feature PR, and
+until now this lens declined to say it. It says it here.
+
+**Fires when** the diff adds — or substantially rewrites — a method containing **branching
+business logic** in a Service, Action, Job, Command, or domain class, and **no test in the same
+diff exercises it**. Branching business logic means the method makes a decision the business
+cares about: a conditional that changes an outcome, a calculation, a state transition, a rule
+about who may do what. One un-tested decision is a defect waiting for its first production
+input.
+
+Anchor the finding to **the new method**, not to the absent test file — the reviewer's job is to
+point at the risk, and phrasing it as "this method decides X and nothing proves it does" is
+actionable in a way "add a test" is not. Name the specific cases worth covering (the branch that
+returns early, the boundary, the failure path), because a test that only walks the happy path
+would satisfy the letter of this rule and none of its purpose.
+
+```php
+// FIRES — three branches decide what a customer is charged, nothing covers them
+public function calculateShipping(Order $order): Money
+{
+    if ($order->total()->greaterThan(Money::aud(100))) {
+        return Money::zero();
+    }
+    return $order->isRural() ? Money::aud(15) : Money::aud(8);
+}
+```
+
+**Do NOT flag:**
+- **Pure delegation** — a method that forwards to another class and adds no decision of its own.
+- **Controllers** — thin HTTP adapters by §1a; their coverage is a feature-test concern, and
+  demanding a test per controller action produces noise, not safety.
+- **Resources, DTOs, enums, and accessors** with no branching business rule (§4a already keeps
+  logic out of them).
+- **Config, migrations, seeders, routes, views, styling** — no `app/` logic changed.
+- A diff that **only** touches existing tests, or is a pure rename / move / formatting ripple.
+- A project whose `CLAUDE.md` states its own testing policy — that wins (Step 3).
+- When the covering test plausibly **already exists** outside the diff (the method is a small
+  change to a long-standing class with a matching test file). Say so as a question — "confirm
+  `OrderServiceTest` covers the new rural branch" — rather than asserting the test is missing.
+
+One finding per PR when several methods are affected: name the most important one and list the
+rest as `also: path:line`. A wall of "needs a test" comments is how this rule would get muted.
+
 #### Untestable patterns (flag on the code, not on missing tests)
 
 - `new ClassName()` inside business logic — 🔵 Suggestion, prevents mocking (see §4f).
@@ -1031,7 +1005,7 @@ For a framework **not enumerated below** (Angular, Svelte, Solid, Alpine, …), 
 - A `GET` route whose handler mutates state — persists, updates, deletes, or dispatches a job (a `store`/`update`/`destroy`-style action behind `GET`) — 🟡 Warning. GET must be safe/idempotent; it's CSRF-exempt and prefetch/cache-unsafe. Only flag when the mutation is observable at the route/handler.
 - Collection endpoint returning the full result set with no `paginate()` / `limit` — 🔵 Suggestion ("add pagination unless the set is bounded"); escalate to 🟡 on a concrete unbounded-growth signal (results filtered/ordered by user input, or an append-only/log/comment model). (Perf angle in §9.)
 - API Resource over-exposing internal design detail — `created_at`, pivot columns, internal auto-increment IDs — 🟡 Warning. (Credential/session fields like `password`/`remember_token` are the 🔴 case in §3f, not here.)
-- A new/changed Resource whose envelope shape (`data` / `meta` / `errors` wrapping) differs from a **sibling Resource also in the diff** — 🔵 Suggestion. Don't guess the canonical envelope from unchanged code.
+- A new/changed Resource whose envelope shape (`data` / `meta` / `errors` wrapping) differs from a **sibling Resource also in the diff** — 🔵 Suggestion. Don't guess the canonical envelope from unchanged code. **Precedence:** this is the *consistency* case — a new Resource that doesn't match its siblings. When the diff **changes an existing** Resource's envelope, that breaks live clients and is §17a (🟡/🔴), not this. Report it once, as §17a.
 
 ---
 
@@ -1287,3 +1261,96 @@ Judgement — do **not** flag:
 
 ---
 
+---
+
+### 17. Contract & Configuration Stability
+
+Two failure modes that share a shape: the code is correct in isolation, and it breaks something
+outside the diff. A reviewer who only reads the changed lines cannot see either one — which is
+exactly why a human reviewer asks about them and a rule has to.
+
+#### 17a. Breaking API contract changes — 🟡 Warning (🔴 when the consumer can't be updated)
+
+An API response is a contract with clients you do not deploy. A mobile app in the App Store, a
+partner integration, a third-party webhook consumer, a cached front-end bundle — none of them
+update in lockstep with the backend. **Removing or renaming is the breaking half; adding is
+safe.** Fires on:
+
+- A field **removed or renamed** in an API Resource's `toArray()` — the diff shows the `-` line.
+- A **route URI changed** (a path segment renamed, a parameter reordered, a prefix added).
+- A **response envelope changed** — wrapping newly added or removed, a bare array becoming
+  `{data: …}`, a list becoming paginated, an object becoming a collection.
+- **Validation narrowed** — a rule made stricter (`nullable` dropped, `max` lowered, a value
+  removed from an `in:` list, a previously-optional field made `required`). Requests that
+  succeeded yesterday start failing with a 422.
+- An **enum case removed** or its serialized `value` changed, where that value is what the API
+  emits.
+- A **status code changed** on an existing endpoint (200 → 204, 200 → 201).
+
+Severity: 🟡 by default. **🔴** when the endpoint is versioned (`/api/v1/…`), documented as
+public, consumed by a mobile client, or the changed Resource is used by more than one endpoint —
+those are the cases where a silent break reaches users rather than a colleague.
+
+The useful finding names **the migration path**, not just the risk: keep the old field alongside
+the new one and deprecate it, add a new versioned route rather than changing the old one, or
+confirm every consumer is deployed from this same repo.
+
+```php
+// FIRES — clients reading `name` get null after deploy
+ public function toArray($request): array {
+     return [
+-        'name'  => $this->name,
++        'full_name' => $this->name,
+         'email' => $this->email,
+     ];
+ }
+```
+
+**Do NOT flag:**
+- **Additive** changes — a new field, a new optional parameter, a new route, a widened
+  validation rule. These are the safe half and flagging them is pure noise.
+- Internal endpoints with a single in-repo consumer the diff also updates (a Blade view or Vue
+  component in the same PR).
+- A change the **card explicitly scopes** as a breaking change or an API version bump — that is
+  the decision already made (Step 4).
+- A Resource or route the diff **creates** — a brand-new contract cannot break an old one.
+- Anything behind an unreleased feature flag.
+
+#### 17b. Configuration and environment drift — 🟡 Warning
+
+`config('services.foo.key')` returns `null` when nothing defines it — and in production, with
+config cached, it returns `null` *silently*. This is the same failure §3g warns about for
+`env()`, approached from the other side: §3g is "don't read env at runtime", this is "make sure
+the value exists to read". It is one of the most common ways a PR that passed review breaks a
+deploy, and it is cheap to catch because both halves are usually visible in the diff.
+
+- A **new `config('x.y')` read with no matching key** added to `config/x.php` — 🟡.
+- A **new config key whose default reads from `env()`** with no corresponding line added to
+  `.env.example` — 🟡. `.env.example` is the only contract telling the next developer (and the
+  deploy runbook) that a new variable exists; a key missing from it is a production incident
+  scheduled for whenever someone provisions a fresh environment.
+- A **new required third-party credential** (API key, secret, webhook URL) with no `.env.example`
+  entry and no note in the PR — 🟡, phrased as a deploy checklist item: "this needs `FOO_API_KEY`
+  set in staging and production before deploy."
+- A config value read on a **hot path** that will be `null` rather than falling back — 🟡. Prefer
+  `config('x.y', $sensibleDefault)` or fail loudly at boot over a silent `null` flowing downstream.
+
+```php
+// FIRES — the read is new, nothing defines the key
+$client = new WeatherClient(config('services.weather.key'));
+
+// The fix is three lines, in three files:
+//   config/services.php   'weather' => ['key' => env('WEATHER_API_KEY')],
+//   .env.example          WEATHER_API_KEY=
+//   PR description        "needs WEATHER_API_KEY in staging + prod"
+```
+
+**Do NOT flag:**
+- A read of a key that **already exists** — check `config/` before flagging; the file is fair
+  game to read for context even when the diff doesn't touch it.
+- Framework config (`config('app.name')`, `config('database.default')`, mail, queue, cache).
+- A key defined **in the same diff**, in either order.
+- A config read added to a file where the key is provided by a **published package config** the
+  diff also requires.
+- `.env.example` omissions for values that are genuinely optional with a working default —
+  say so if the default is real.

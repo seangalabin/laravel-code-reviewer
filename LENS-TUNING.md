@@ -35,6 +35,9 @@ examples are boundary markers, never the originating incident retold.**
    | Release | Split | How to read the old data |
    |---|---|---|
    | code-reviewer 1.64.0 / code-fixer 1.58.0 | reuse rule moved §1g → §1h | pre-1.64 `1g` is "OOP structure **+** reuse", not OOP structure alone; `1h` has no history before it |
+   | code-reviewer 1.65.0 / code-fixer 1.59.0 | §2c/§2d/§2e/§2f/§2g/§2h/§2l/§2m **removed** — offloaded to Rector/PHPStan/Pint | those `dim` codes stop appearing entirely. Their historical dismissal rates are still worth reading once, as the evidence for why they went; after this release, absence is intended, not a regression |
+   | code-reviewer 1.65.0 / code-fixer 1.59.0 | §13a **added** (missing tests), §17a/§17b **added** (contract + config) | no history before this release. Expect their first weeks to show a high dismissal rate while the carve-outs settle — that is the signal to tighten the rule text, not to delete the rule |
+   | code-reviewer 1.65.0 | severity floor + suggestion cap now filter what POSTS | 🔵 volume drops sharply from this release for a posting reason, not a detection reason. A 🔵 rule's dismissal rate is no longer comparable across this boundary: fewer are posted, so fewer are dismissed. Read `AI_REVIEW_MIN_SEVERITY` before concluding a rule got quieter |
 
 4. Ship rule changes like any lens change: edit `src/review-lens.md`, `python3 build.py`,
    bump both VERSIONs, CHANGELOG entry citing the *pattern* (not one PR), push.
