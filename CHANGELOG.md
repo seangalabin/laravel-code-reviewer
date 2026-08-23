@@ -5,6 +5,141 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.65.0 / code-fixer 1.59.0 — 2026-08-23
+
+Audit release. The lens gained the coverage a human reviewer was still supplying, lost the
+rules a linter supplies better, and — for the first time — gained a way to *measure* whether
+either of those was an improvement.
+
+### Added
+
+- **Eval harness (`evals/`) — the lens is now measurable.** Nothing previously measured review
+  quality. The 160-odd tests here cover Bitbucket plumbing, build idempotency and cost guards;
+  none touched the lens. That meant 140+ commits of lens tuning shipped on intuition, and a rule
+  tightened to remove one false positive could remove true positives with no signal at all.
+  A case is two file trees plus a label (`must_fire`, `must_not_fire`); `evals/run.py` builds a
+  throwaway repo, runs the real skill against it in dry-run, and scores per-dimension recall and
+  false positives. **`must_not_fire` is the half that matters**: a lens that flags everything
+  scores perfect recall, and silence is the difficult part of review. Six seed cases, including
+  `030-clean-diff-stays-quiet` (nothing may be raised at all) and `040-offloaded-style-stays-quiet`
+  (the eight offloaded rules must stay silent while §2a and §2b still fire).
+  Seed further cases from `mine_feedback.py`: a dismissal is a `must_not_fire`, a resolution is a
+  `must_fire`. Tier 1 (free, every commit) stays in `TestScanDiffHybridRules`; the paid sweep is a
+  release gate, not a commit gate.
+- **`AI_REVIEW_DRY_RUN=1`** — honoured by `post_review`, `update_card_status.py`,
+  `save_reviewed_sha`, and `post_reply.py`. Findings are still compiled and the plan is printed;
+  every Bitbucket and Jira write becomes a no-op, and PR resolution is skipped so it works with no
+  network at all. The eval harness needs it, and it makes testing against a live PR safe for the
+  first time.
+- **§13a — missing tests for new business logic (🟡).** "Where are the tests?" is the most common
+  thing a senior reviewer says on a feature PR, and §13 previously declined to say it
+  ("flag on the code, not on missing tests"). Fires when the diff adds or substantially rewrites a
+  Service/Action/Job method containing **branching business logic** with no covering test in the
+  same diff. Carved out: pure delegation, controllers, Resources/DTOs, config-only diffs, and a
+  project `CLAUDE.md` that states its own testing policy. Anchored to the new method, not the
+  absent file — and it names the branches worth covering, because a happy-path-only test would
+  satisfy the letter of the rule and none of its purpose.
+- **§17a — breaking API contract changes (🟡, 🔴 when the consumer can't be updated).** A removed
+  or renamed Resource field, a changed route URI or response envelope, narrowed validation, a
+  removed enum case. All visible from the diff alone, so it stays inside the scope rule. Additive
+  changes are explicitly not findings — that is the safe half.
+- **§17b — configuration and environment drift (🟡).** A new `config('x.y')` read with nothing
+  defining the key, or a new key with no `.env.example` entry. Returns `null` *silently* once
+  config is cached in production — the mirror of §3g: not "don't read env at runtime" but "make
+  sure the value exists to read".
+- **§7 — soft-delete semantics and timezone correctness (🟡).** Queries missing `withTrashed()`,
+  `delete()` where `forceDelete()` was meant, `Rule::unique()` counting trashed rows so a user can
+  never re-create a deleted record; and `whereDate()` on a UTC column with a local date, which is
+  wrong only near midnight and passes every test written in the developer's own timezone.
+- **Blocking tasks for 🔴 findings.** `SKILL.md`, `README.md` and both severity tables had promised
+  these for several releases while no code created one — `post_review` only ever posted comments.
+  It now creates a Bitbucket PR task per critical finding, which is what actually gates a merge via
+  the "Check for unresolved tasks" merge check. Best-effort: a workspace that doesn't expose the
+  endpoint logs a skip rather than failing a review that posted fine.
+- **`fetch_card.py`** — card context over Jira REST. `ai-review-ci` runs under
+  `--permission-mode dontAsk` with a tool allowlist, which auto-denies every
+  `mcp__claude_ai_Atlassian__*` tool — so Step 4's card fetch, the 4a relatedness check, the 4b
+  discussion-decision check and the "MANDATORY" 4c implementation-context hunt were all silently
+  degrading to the PR-body fallback **in CI, the only place this runs**. Plain curl, ADF flattened
+  to text, comments included, soft-fails to nothing on every error path.
+- **CI for this repo.** `.github/workflows/tests.yml` runs the suite on 3.10 and 3.12, asserts
+  `build.py` output matches the committed files, and syntax-checks every `.py`, `.sh` and `.ps1`.
+  Nothing ran these tests before — including the cost-control guards written after a quota blowout.
+- **Weekly learning digest pipeline** in the example Bitbucket config. `mine_feedback.py` and its
+  ritual were fully documented in `LENS-TUNING.md` but wired into nothing, so the dismissal-rate
+  data the reviewer collects on every run was being discarded. Zero tokens — pure Python.
+
+### Changed
+
+- **Eight §2 rules offloaded to Rector/PHPStan/Pint** — §2c property types, §2d casing,
+  §2e negated-if-with-else, §2f redundant else, §2g deep nesting, §2h nested ternaries,
+  §2l double negatives, §2m `count()>0`. All were 🔵, all deterministic, all zero-judgement, and
+  together they dominated comment volume: a review whose output is mostly style nits gets skimmed
+  instead of read. They are exact in a linter and probabilistic in a reviewer, and a linter *fixes*
+  rather than comments. Ships `assets/rector.example.php` and `assets/phpstan.example.neon`; run
+  them before the review step. Honest gap: no tool implements the §2l double-negative check — that
+  one is genuinely dropped, and belongs in `CLAUDE.md` if a team wants it back.
+- **§2a deliberately NOT offloaded.** Rector and Pint can both insert `declare(strict_types=1)`;
+  neither can judge whether the file survives it. Under strict mode a numeric string from
+  `json_decode()` stops being coerced and throws `TypeError` at runtime, only on the payloads that
+  carry strings. 1.63.1 made §2a scan for exactly those boundaries first, and §7's
+  strict-types-boundary rule cross-references it. That is judgement work, so it stays.
+- **Sub-rule letters are NOT renumbered** to close the gaps left by the removals. The letter is the
+  `dim` code in every posted comment's telemetry marker and the key the dismissal filter matches
+  on; re-lettering would silently invalidate every dismissal a developer has recorded. Gaps are
+  free, broken dismissal memory is not.
+- **Severity gate — `AI_REVIEW_MIN_SEVERITY` (default `warning` in CI, `suggestion` locally) and
+  `AI_REVIEW_MAX_SUGGESTIONS` (default 3).** Enforced in `post_review`, not only in the prompt: a
+  prompt instruction is a strong suggestion, a filter is a guarantee. Withheld findings are counted
+  and reported, never silently dropped, and still appear in the coverage ledger — the gate controls
+  what gets *posted*, not what gets *checked*. The prompt also stops authoring 🔵 bodies past the
+  cap, since output tokens are the most expensive tokens in a run. A finding whose severity cannot
+  be parsed ranks as critical, so the gate can never hide one.
+- **Default model is now `opus`, and `AI_REVIEW_MAX_USD` tracks it** (15.00 on opus, 5.00 on
+  sonnet). The old docs argued "the lens work is mechanical" — true of exactly the rules this
+  release offloads. What remains is judgement. The cap had to move with the model: opus is roughly
+  5x sonnet per token, so the measured $2.05 sonnet review lands near $10 and would have died
+  mid-flight at the old 5.00 ceiling, billing every token and posting nothing — the 1.60.1 failure
+  re-created by a model change instead of a cap change. Expect **higher spend per reviewed diff**,
+  bounded by the pre-flight skip and checkpoint incrementality. Both figures are derived, not
+  measured on opus: re-derive from the `─── Usage ───` block.
+
+### Fixed
+
+- **Step 5 no longer skips Steps 6 and 7.** "If the array is empty, skip to the Workflow" jumped
+  past the dismissal refresh and the developer-reply handler whenever a PR had no *open* findings.
+  Effect: previously-dismissed findings were re-flagged, and developer replies went unanswered.
+- **CI's batched fetch no longer interleaves its output.** The three state scripts ran in one Bash
+  call; two print JSON arrays to stdout and the third printed prose there, so the model received
+  one mixed stream to disentangle by eye — in CI, the only environment this runs in.
+  `check_dismissals.py` now sends every diagnostic to stderr, and each JSON producer is redirected
+  to its own file (two arrays on one stream concatenate as `[…][…]` with no delimiter).
+- **A clean review now writes `.ai-review/findings.json` as `[]`.** Previously a clean run wrote
+  nothing, making "reviewed, found nothing" indistinguishable from "died before analysing" — which
+  scored a crashed eval run as a flawless silence result.
+- **Bitbucket remote URLs failed to parse on macOS.** All four scripts that parse the remote used
+  `([^/]+?)` — a non-greedy quantifier, which is not valid POSIX ERE. glibc tolerates it so CI was
+  fine, but BSD libc does not: under macOS bash 3.2 **every** remote URL form failed to match and
+  the scripts bailed with "not a recognised Bitbucket URL" on every local run. Now POSIX-clean,
+  with `.git` stripped via `${...%.git}`.
+- **The version check no longer strands headless runs.** Step 1 said "always first, before anything
+  else" while the CI section said "skip it entirely" — the contradiction let the `Update now? [y/n]`
+  prompt fire in a container and end the run before it analysed anything. The exemption is now
+  stated at Step 1 in both skills.
+- **The disclaimer instruction contradicted itself.** "Posting the review" told the agent to post
+  the header and pointed at a "Required header above" section that did not exist, 60 lines below
+  the rule saying `post_review` owns it and the agent must not.
+- **Six stale step references** left by past renumbering ("Steps -1 → 0.7", "Steps 0.5 / 0.6 / 2",
+  a fixer reference to the reviewer's Step 6, `ai-review-ci` citing Step 3 for the Jira sync). An
+  agent told to follow a nonexistent step degrades unpredictably. A new test resolves every step
+  and every §-reference, so this class of bug cannot come back silently.
+- **`get_checkpoint` reported the wrong base branch**, hardcoding "develop" in its messages even
+  when `AI_REVIEW_BASE_BRANCH` overrode it.
+- **Test suite was order-dependent.** Six tests chdir'd into a temp directory without restoring
+  cwd, leaving later tests with a cwd that no longer existed; it passed only because of the order
+  it happened to run in.
+- `bin/install.js` said "15-dimension analysis"; the lens has 17.
+
 ## code-reviewer 1.64.0 / code-fixer 1.58.0 — 2026-08-14
 
 ### Added

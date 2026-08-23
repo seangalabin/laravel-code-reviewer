@@ -112,6 +112,37 @@ pipelines:
     ai-review:
       - step: *ai-review
 
+    # ── Weekly learning digest ────────────────────────────────────────────────
+    # Closes the loop the reviewer already collects data for. Every finding it posts
+    # carries a `dim` marker, and every human dismissal records a reason — so the
+    # dismissal rate per dimension is direct evidence of which rules are noise. That
+    # data is being collected either way; without this step it is just discarded.
+    #
+    # Attach a WEEKLY SCHEDULE to this pipeline: Repo Settings → Pipelines →
+    # Schedules → New schedule → custom: ai-review-digest.
+    #
+    # Costs nothing in tokens — pure Python against the Bitbucket API, no Claude run.
+    # Exits 3 and writes nothing on a quiet week, so `|| true` keeps the step green.
+    # LENS-TUNING.md has the full ritual, including an email-notify variant.
+    ai-review-digest:
+      - step:
+          name: AI review learning digest
+          image: node:20
+          clone:
+            enabled: true
+            depth: 1
+          script:
+            - apt-get update && apt-get install -y --no-install-recommends python3 curl git
+            - npx -y github:seangalabin/laravel-code-reviewer .
+            - |
+              .claude/skills/code-reviewer/scripts/mine_feedback.py \
+                  --since-hours 168 --digest digest.txt \
+                || { rc=$?; [ "$rc" -eq 3 ] && echo "No activity this week." && exit 0; exit "$rc"; }
+            - cat digest.txt || true
+          artifacts:
+            - digest.txt
+            - .ai-review/feedback-report.json
+
   # ── If the push rate is too expensive ───────────────────────────────────────
   # Scope the automatic trigger to the branches that matter instead of removing
   # it — you keep continuous review where it earns its keep. Bitbucket cannot

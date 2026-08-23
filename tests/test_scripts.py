@@ -58,9 +58,25 @@ def _fake_completed(stdout: str, returncode: int = 0):
     )
 
 
+class CwdIsolatedTestCase(unittest.TestCase):
+    """Base for tests that os.chdir() into a temp dir.
+
+    Several tests chdir into a TemporaryDirectory to exercise the "no target.json,
+    not a git repo" paths. Without restoring cwd the directory is then deleted out
+    from under the process, so every later test inherits a cwd that no longer
+    exists — os.getcwd() raises ENOENT on some platforms and the suite only passes
+    because of the order it happens to run in. Restore cwd after each test so the
+    ordering stops being load-bearing.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(os.chdir, os.getcwd())
+
+
 # ── _bitbucket helpers ─────────────────────────────────────────────────────────
 
-class TestBitbucketHelpers(unittest.TestCase):
+class TestBitbucketHelpers(CwdIsolatedTestCase):
 
     def test_load_target_missing(self):
         with tempfile.TemporaryDirectory() as d:
@@ -225,7 +241,7 @@ class TestPostReplyMarker(unittest.TestCase):
 
 # ── update_card_status — ticket extraction ────────────────────────────────────
 
-class TestUpdateCardStatus(unittest.TestCase):
+class TestUpdateCardStatus(CwdIsolatedTestCase):
 
     def test_extract_from_feature_branch(self):
         self.assertEqual(
@@ -1133,11 +1149,57 @@ class TestCIWrapperCostControls(unittest.TestCase):
     def test_budget_cap_has_a_default(self):
         """Regression: 05ca819 set MAX_USD="" on OAuth so no cap was passed at all.
         The cap bills nobody on a subscription, but it is the only killswitch on a
-        runaway — and a runaway spends one person's quota that the whole team shares."""
+        runaway — and a runaway spends one person's quota that the whole team shares.
+
+        The default is now indirect (it tracks the model), so this asserts the
+        indirection resolves to a real number rather than looking for a literal
+        inline. What must hold is unchanged: there is ALWAYS a non-empty default."""
         self.assertRegex(
-            self.src, r'MAX_USD="\$\{AI_REVIEW_MAX_USD:-\d+\.\d\d\}"',
+            self.src, r'MAX_USD="\$\{AI_REVIEW_MAX_USD:-\$DEFAULT_MAX_USD\}"',
             '\nai-review-ci lost its default spend cap. Every auth mode needs one: '
             'uncapped is not free, just unmetered (see 1.58.0).',
+        )
+        # Every branch that sets the default must set it to an actual dollar figure.
+        assignments = re.findall(r'DEFAULT_MAX_USD=(\S+)', self.src)
+        self.assertTrue(assignments, 'DEFAULT_MAX_USD is never assigned.')
+        for value in assignments:
+            self.assertRegex(
+                value, r'^\d+\.\d\d$',
+                f'\nDEFAULT_MAX_USD={value!r} is not a dollar figure. An empty or '
+                'non-numeric default is how the cap silently disappears.',
+            )
+
+    def test_budget_default_tracks_the_model(self):
+        """Opus costs several times sonnet per token, so a single flat default cannot
+        serve both: the sonnet-sized cap kills a legitimate opus review mid-flight,
+        which bills every token spent and posts nothing. That is the 2.00 failure
+        (1.60.1) re-created by a model change instead of a cap change."""
+        self.assertRegex(
+            self.src, r'if\s*\[\[\s*"\$MODEL"\s*==\s*"sonnet"\s*\]\]',
+            '\nThe budget default no longer branches on $MODEL. If the model default '
+            'moves to a costlier model without the cap following, every review dies '
+            'mid-flight at the old ceiling.',
+        )
+        values = [float(v) for v in re.findall(r'DEFAULT_MAX_USD=(\d+\.\d\d)', self.src)]
+        self.assertGreaterEqual(
+            len(values), 2,
+            '\nExpected at least two model-dependent defaults (sonnet and opus).',
+        )
+        self.assertGreater(
+            max(values), min(values),
+            '\nThe per-model caps are identical, so the branch buys nothing — the '
+            'costlier model needs the higher ceiling.',
+        )
+
+    def test_model_is_validated_before_the_budget_is_derived(self):
+        """The cap is derived from $MODEL, so $MODEL must be resolved and validated
+        first. Reversed, an unsupported model would pick a cap before the guard
+        rejected it — harmless today, but the kind of ordering that rots."""
+        model_at  = self.src.index('MODEL="${AI_REVIEW_MODEL:-')
+        budget_at = self.src.index('MAX_USD="${AI_REVIEW_MAX_USD:-')
+        self.assertLess(
+            model_at, budget_at,
+            '\n$MODEL must be resolved before the budget default that depends on it.',
         )
 
     def test_budget_arg_is_passed_unconditionally(self):
@@ -1242,6 +1304,343 @@ class TestCINarrationIsTerse(unittest.TestCase):
             'Keep relaying every', self.src,
             '\nThe CI narration clause no longer preserves the script relay lines.',
         )
+
+
+# ── Prompt-document integrity ─────────────────────────────────────────────────
+# The SKILL.md files are the program. A dangling cross-reference in a prompt is a
+# bug with no stack trace: the agent follows an instruction to a step that does not
+# exist and degrades in a way no test would otherwise notice. Two renumberings had
+# already left five such pointers behind ("Steps -1 -> 0.7", "Steps 0.5 / 0.6 / 2").
+
+class TestSkillStepReferencesResolve(unittest.TestCase):
+
+    SKILLS = [REPO_ROOT / 'skill' / 'SKILL.md',
+              REPO_ROOT / 'skill-fixer' / 'SKILL.md']
+
+    def test_every_referenced_step_exists(self):
+        for path in self.SKILLS:
+            src = path.read_text()
+            defined = {m.group(1) for m in re.finditer(r'^#+ Step (\S+?)\s*(?:—|-)', src, re.M)}
+            self.assertTrue(defined, f'{path.name}: no step headings found at all.')
+            # A reference qualified by the OTHER skill's name points into that
+            # document, not this one (the fixer cites the reviewer's Step 11 to keep
+            # the two learning summaries in lockstep). Drop those before resolving.
+            local = re.sub(r'`/code-(?:reviewer|fixer)`\'s Step \d+', '', src)
+            referenced = set(re.findall(r'\bStep (\d+(?:\.\d+)?[a-z]?)\b', local))
+            # Sub-items are written inline (`4c. **Implementation context...**`,
+            # `Step 6.4`) rather than as their own headings, so they resolve via
+            # their parent step: strip a trailing letter or `.N` suffix.
+            referenced = {re.match(r'\d+', r).group(0) for r in referenced}
+            dangling = sorted(referenced - defined, key=lambda s: (len(s), s))
+            self.assertEqual(
+                dangling, [],
+                f'\n{path.name} references step(s) that do not exist: {dangling}\n'
+                f'Defined steps: {sorted(defined)}\n'
+                'A renumbering left a dangling pointer. An agent told to follow a '
+                'nonexistent step degrades unpredictably.',
+            )
+
+    def test_no_negative_or_fractional_step_references(self):
+        """These are the fingerprints of the pre-renumbering scheme."""
+        for path in self.SKILLS:
+            src = path.read_text()
+            for pattern in (r'Steps? -\d', r'Steps? 0\.\d'):
+                self.assertNotRegex(
+                    src, pattern,
+                    f'\n{path.name} still uses the old step numbering ({pattern}).',
+                )
+
+    def test_disclaimer_is_owned_by_post_review_only(self):
+        """post_review.sh posts and dedupes the disclaimer. SKILL.md used to ALSO
+        instruct the agent to post it, pointing at a 'Required header' section that
+        did not exist — a direct contradiction that risks a duplicate header."""
+        src = (REPO_ROOT / 'skill' / 'SKILL.md').read_text()
+        self.assertNotIn(
+            'Post the required AI disclaimer header as the first top-level PR comment', src,
+            '\nSKILL.md tells the agent to post the disclaimer, contradicting the '
+            '"Do not post the disclaimer yourself" rule. post_review owns it.',
+        )
+        self.assertNotIn(
+            'see Required header above', src,
+            '\nSKILL.md points at a "Required header" section that does not exist.',
+        )
+        self.assertIn('Do not post the disclaimer yourself', src)
+
+
+# ── Review-lens integrity ─────────────────────────────────────────────────────
+
+class TestReviewLensIntegrity(unittest.TestCase):
+
+    def setUp(self):
+        self.src = (REPO_ROOT / 'src' / 'review-lens.md').read_text()
+
+    def test_every_section_reference_resolves(self):
+        """The lens routes findings between rules by §-reference ("canonical: §4c").
+        A reference to a deleted rule sends the agent nowhere, and deleting a rule
+        is exactly when this breaks."""
+        defined = (set(re.findall(r'^#### (\d+[a-p])\.', self.src, re.M))
+                   | set(re.findall(r'^### (\d+)\.', self.src, re.M)))
+        referenced = set(re.findall(r'§(\d+[a-p]?)', self.src))
+        dangling = sorted(referenced - defined)
+        self.assertEqual(
+            dangling, [],
+            f'\nThe lens references rules that no longer exist: {dangling}. '
+            'A deleted rule left a dangling pointer behind.',
+        )
+
+    def test_dimension_count_matches_the_docs(self):
+        """The dimension count is quoted in README and the installer banner. It drifts
+        the moment a dimension is added and nobody greps for the number."""
+        count = len(re.findall(r'^### \d+\.', self.src, re.M))
+        readme = (REPO_ROOT / 'README.md').read_text()
+        installer = (REPO_ROOT / 'bin' / 'install.js').read_text()
+        for name, text in (('README.md', readme), ('bin/install.js', installer)):
+            stated = set(re.findall(r'(\d+)[- ]dimension', text))
+            self.assertTrue(stated, f'{name} states no dimension count.')
+            self.assertEqual(
+                stated, {str(count)},
+                f'\n{name} says {stated} dimension(s); the lens defines {count}.',
+            )
+
+    def test_mechanical_style_rules_stay_out_of_the_lens(self):
+        """Casing, formatting, control-flow shape, property types and emptiness idioms
+        moved to Rector/PHPStan/Pint. They are deterministic there and probabilistic
+        here, and as 🔵 Suggestions they used to dominate comment volume. Re-adding one
+        to the lens re-creates the noise the offload removed."""
+        for heading in ('#### 2c.', '#### 2d.', '#### 2e.', '#### 2f.',
+                        '#### 2g.', '#### 2h.', '#### 2l.', '#### 2m.'):
+            self.assertNotIn(
+                heading, self.src,
+                f'\n{heading} is back in the lens. It belongs in rector.example.php / '
+                'phpstan.example.neon — see the §2 preamble.',
+            )
+        self.assertIn('rector.example.php', self.src,
+                      '\nThe §2 preamble must point at where those rules went.')
+
+    def test_strict_types_rule_stays_in_the_lens(self):
+        """§2a is deliberately NOT offloaded, unlike its §2 neighbours.
+
+        Rector and Pint can both insert `declare(strict_types=1)`. Neither can decide
+        whether doing so is safe: under strict mode a numeric string arriving from
+        json_decode() or a raw payload stops being coerced and throws TypeError at
+        runtime, on the payloads that happen to carry strings. §2a therefore requires
+        scanning the file's runtime-data boundaries before suggesting the change, and
+        §7's strict-types-boundary rule cross-references it. That is judgement work,
+        which is exactly what belongs in a lens rather than a linter config."""
+        self.assertIn(
+            '#### 2a.', self.src,
+            '\n§2a was removed from the lens. It is not a mechanical rule: a tool can '
+            'add the declaration but cannot judge whether the file survives it. '
+            'Removing it also orphans §7\'s strict-types-boundary cross-reference.',
+        )
+
+    def test_surviving_sub_rule_letters_are_not_renumbered(self):
+        """The sub-rule letter IS the `dim` code in every posted comment's telemetry
+        marker, and the dismissal filter matches on it. Re-lettering the survivors to
+        close the gaps would silently invalidate every dismissal already recorded."""
+        for kept in ('#### 2b.', '#### 2i.', '#### 2j.',
+                     '#### 2k.', '#### 2n.', '#### 2o.', '#### 2p.'):
+            self.assertIn(
+                kept, self.src,
+                f'\n{kept} was renumbered or removed. Letters must stay stable: they '
+                'are the dim codes the dismissal filter matches on.',
+            )
+
+
+# ── stdout discipline for the batched fetch scripts ───────────────────────────
+
+class TestFetchScriptStdoutDiscipline(unittest.TestCase):
+    """CI batches check_resolved / check_dismissals / check_replies into ONE Bash
+    call. stdout must therefore carry only machine-readable payloads: any prose there
+    interleaves with the JSON and the model has to disentangle it by eye."""
+
+    PURE_JSON = ['check_resolved.py', 'check_replies.py', 'fetch_card.py']
+    SILENT    = ['check_dismissals.py']
+
+    def _bare_prints(self, name):
+        src = (SCRIPTS / name).read_text()
+        # print(...) calls with no file= kwarg go to stdout.
+        return [c for c in re.findall(r'print\((.*?)\)\n', src, re.S)
+                if 'file=' not in c and 'json.dumps' not in c and c.strip() != "'[]'"]
+
+    def test_diagnostics_never_go_to_stdout(self):
+        for name in self.PURE_JSON + self.SILENT:
+            with self.subTest(script=name):
+                self.assertEqual(
+                    self._bare_prints(name), [],
+                    f'\n{name} prints diagnostics to stdout. In the batched CI call '
+                    'that prose interleaves with the JSON payloads. Use file=sys.stderr.',
+                )
+
+    def test_ci_batch_redirects_each_json_producer_to_its_own_file(self):
+        """Two scripts each print a JSON array. Batched onto one stream they would
+        concatenate as `[...][...]` with no delimiter."""
+        src = (REPO_ROOT / 'skill' / 'SKILL.md').read_text()
+        for producer, target in (('check_resolved.py', '.ai-review/open.json'),
+                                 ('check_replies.py', '.ai-review/replies.json')):
+            self.assertRegex(
+                src, re.escape(producer) + r'"?\s*>\s*' + re.escape(target),
+                f'\nThe CI batch does not redirect {producer} to {target}. '
+                'Two JSON arrays on one stream cannot be parsed unambiguously.',
+            )
+
+
+# ── Severity gate ─────────────────────────────────────────────────────────────
+
+class TestSeverityGate(unittest.TestCase):
+    """The gate is enforced in the script, not only the prompt: a prompt instruction
+    is a strong suggestion, a filter is a guarantee."""
+
+    def setUp(self):
+        self.variants = {
+            'post_review.sh':  (SCRIPTS / 'post_review.sh').read_text(),
+            'post_review.ps1': (SCRIPTS / 'post_review.ps1').read_text(),
+        }
+
+    def test_both_platforms_apply_the_gate(self):
+        for name, src in self.variants.items():
+            with self.subTest(script=name):
+                self.assertIn('def apply_severity_gate', src,
+                              f'\n{name} lost the severity gate.')
+                self.assertIn('findings = apply_severity_gate(findings)', src,
+                              f'\n{name} defines the gate but never calls it.')
+
+    def test_gate_reads_both_knobs(self):
+        for name, src in self.variants.items():
+            with self.subTest(script=name):
+                self.assertIn('AI_REVIEW_MIN_SEVERITY', src)
+                self.assertIn('AI_REVIEW_MAX_SUGGESTIONS', src)
+
+    def test_unreadable_severity_is_never_silently_dropped(self):
+        """A gate meant to remove noise must not discard a finding whose severity it
+        cannot parse — that would hide a possible 🔴."""
+        for name, src in self.variants.items():
+            with self.subTest(script=name):
+                gate = src[src.index('def severity_rank'):src.index('def apply_severity_gate')]
+                self.assertRegex(
+                    gate, r'return 3\s*$',
+                    f'\n{name}: severity_rank must fall back to critical (3), not a '
+                    'rank that the floor would filter out.',
+                )
+
+    def test_withheld_findings_are_reported_not_hidden(self):
+        for name, src in self.variants.items():
+            with self.subTest(script=name):
+                self.assertIn('withheld', src,
+                              f'\n{name} filters silently. The operator must be able '
+                              'to see that the gate did something.')
+
+    def test_blocking_task_created_for_critical_findings(self):
+        """SKILL.md, README and both severity tables promised a blocking task for
+        every 🔴 for several versions while no code created one."""
+        for name, src in self.variants.items():
+            with self.subTest(script=name):
+                self.assertIn('def create_task', src, f'\n{name}: no task creation.')
+                self.assertIn('/tasks', src, f'\n{name}: no tasks endpoint.')
+                self.assertIn('is_critical', src,
+                              f'\n{name}: tasks are not gated on critical severity.')
+
+
+# ── Eval fixture integrity (Tier 1 — free, runs every commit) ──────────────────
+# The paid Tier 2 sweep is only as good as its labels. A malformed expect.json or a
+# case with no must_not_fire silently weakens the corpus, and you would not find out
+# until a sweep you paid for reported a meaningless number.
+
+class TestEvalFixtures(unittest.TestCase):
+
+    CASES = REPO_ROOT / 'evals' / 'cases'
+
+    def _cases(self):
+        if not self.CASES.is_dir():
+            return []
+        return sorted(d for d in self.CASES.iterdir() if d.is_dir())
+
+    def test_corpus_exists(self):
+        self.assertTrue(self._cases(), 'evals/cases is empty — nothing grades the lens.')
+
+    def test_every_case_is_well_formed(self):
+        for case in self._cases():
+            with self.subTest(case=case.name):
+                expect = case / 'expect.json'
+                self.assertTrue(expect.exists(), f'{case.name}: no expect.json')
+                try:
+                    spec = json.loads(expect.read_text())
+                except json.JSONDecodeError as e:
+                    self.fail(f'{case.name}: expect.json is not valid JSON — {e}')
+
+                self.assertTrue((case / 'head').is_dir(),
+                                f'{case.name}: no head/ tree, so there is no change to review')
+                self.assertTrue(spec.get('description'),
+                                f'{case.name}: expect.json needs a description')
+                self.assertTrue(spec.get('notes'),
+                                f'{case.name}: expect.json needs notes explaining why the '
+                                'case exists — otherwise someone will "fix" the case '
+                                'instead of the lens')
+                for entry in spec.get('must_fire', []):
+                    self.assertIn('dim', entry,
+                                  f'{case.name}: a must_fire entry has no dim')
+
+    def test_every_case_tests_silence(self):
+        """A lens that flags everything scores perfect recall. must_not_fire is the
+        half that measures judgement, so no case may omit it."""
+        for case in self._cases():
+            with self.subTest(case=case.name):
+                spec = json.loads((case / 'expect.json').read_text())
+                self.assertTrue(
+                    spec.get('must_not_fire'),
+                    f'{case.name}: no must_not_fire entries. Silence is the difficult '
+                    'half of review; a case without it does not test judgement.',
+                )
+
+    def test_referenced_dimensions_exist_in_the_lens(self):
+        """A case asserting §2e — a rule that moved to Rector — would pass forever
+        without testing anything, because nothing can ever raise it."""
+        lens = (REPO_ROOT / 'src' / 'review-lens.md').read_text()
+        defined = (set(re.findall(r'^#### (\d+[a-p])\.', lens, re.M))
+                   | set(re.findall(r'^### (\d+)\.', lens, re.M)))
+        for case in self._cases():
+            spec = json.loads((case / 'expect.json').read_text())
+            for entry in spec.get('must_fire', []):
+                dim = re.sub(r'[^0-9a-z]', '', str(entry['dim']).lower())
+                with self.subTest(case=case.name, dim=dim):
+                    self.assertIn(
+                        dim, defined,
+                        f'{case.name} expects §{dim} to fire, but the lens defines no '
+                        'such rule — the case can never pass.',
+                    )
+
+    def test_offload_case_guards_every_removed_rule(self):
+        """The case that proves the mechanically-detectable §2 rules stay silent must
+        cover all nine of them, or the offload is only partly verified."""
+        offload = [c for c in self._cases() if 'offloaded-style' in c.name]
+        self.assertTrue(offload, 'No case verifies that the offloaded §2 rules stay quiet.')
+        spec = json.loads((offload[0] / 'expect.json').read_text())
+        quiet = {re.sub(r'[^0-9a-z]', '', d.lower()) for d in spec['must_not_fire']}
+        for removed in ('2c', '2d', '2e', '2f', '2g', '2h', '2l', '2m'):
+            self.assertIn(
+                removed, quiet,
+                f'§{removed} moved to Rector/PHPStan but no eval asserts it stays '
+                'silent in the lens.',
+            )
+        # The same case must assert the boundary: §2a stayed in the lens, so on a
+        # legacy file the diff adds methods to, it should FIRE. Without this the
+        # fixture would pass just as happily if §2a had been offloaded by mistake.
+        fires = {re.sub(r'[^0-9a-z]', '', str(e['dim']).lower())
+                 for e in spec.get('must_fire', [])}
+        self.assertIn(
+            '2a', fires,
+            'The offload case must also assert §2a still fires — it is the rule that '
+            'deliberately stayed, and nothing else pins that distinction.',
+        )
+
+    def test_runner_never_posts(self):
+        """The harness runs against throwaway repos, but a missing dry-run flag would
+        make it post to whatever PR the fixture's remote resolved to."""
+        src = (REPO_ROOT / 'evals' / 'run.py').read_text()
+        self.assertIn("'AI_REVIEW_DRY_RUN': '1'", src,
+                      '\nevals/run.py must force AI_REVIEW_DRY_RUN=1.')
+        self.assertIn("'--disallowedTools', 'Task'", src,
+                      '\nevals/run.py must keep the single-agent policy.')
 
 
 if __name__ == '__main__':
