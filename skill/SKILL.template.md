@@ -17,7 +17,7 @@ If you are **neither** Sonnet nor Opus — Fable, Haiku, or anything else — st
 
 ```
 ERROR: code-reviewer only runs on Sonnet or Opus.
-Run /model sonnet and re-invoke this skill.
+Run /model opus (or /model sonnet) and re-invoke this skill.
 ```
 
 Then end the turn. Do not review, do not scope the diff, do not offer to continue on the current model, and do not work around the guard by delegating the review to a Sonnet subagent — the arbitration in Step 8 happens in the main context, so the main context itself must be Sonnet or Opus.
@@ -57,13 +57,21 @@ Every command in this document is written in **Unix mode**. In Windows mode, tra
 | `git diff ${BASE_REF}...HEAD` | `git diff "$BASE_REF...HEAD"` |
 | `cd "$WORKTREE" && cmd` (target mode) | `Set-Location $WORKTREE; cmd` |
 
-The `.py` scripts (`scan_diff.py`, `check_resolved.py`, `check_dismissals.py`, `check_replies.py`, `update_resolved.py`, `post_reply.py`, `aggregate_stats.py`) are byte-identical across platforms — only the launcher differs (`python`). Each `.ps1` accepts the same arguments and reads the same `.ai-review/target.json` as its `.sh` counterpart — including `post_review`, which takes an optional findings-file path as its first argument (`post_review.ps1 .ai-review/findings.json`), falling back to stdin. See **Posting the review**.
+The `.py` scripts (`scan_diff.py`, `fetch_card.py`, `check_resolved.py`, `check_dismissals.py`, `check_replies.py`, `update_resolved.py`, `post_reply.py`, `aggregate_stats.py`) are byte-identical across platforms — only the launcher differs (`python`). Each `.ps1` accepts the same arguments and reads the same `.ai-review/target.json` as its `.sh` counterpart — including `post_review`, which takes an optional findings-file path as its first argument (`post_review.ps1 .ai-review/findings.json`), falling back to stdin. See **Posting the review**.
 
 Windows PowerShell 5.1 has no `&&` — chain commands with `;`. For `--branch` / `--pr` target mode, prefer `pwsh` (PowerShell 7+).
 
 ---
 
 ## Step 1 — Version check (always first, before anything else)
+
+**Skip this entire step when `$AI_REVIEW_CI=1` or `$CI=true`.** Print
+`↷ CI mode — skipping version check.` and go straight to the next step. There is no
+manual update path in a container, so the check can only stall the run: it ends in an
+`Update now? [y/n]` prompt that has no one to answer it. This exemption is repeated in
+**CI / headless mode** below, and it is restated *here* on purpose — "always first,
+before anything else" read alone has previously caused the prompt to fire in CI and
+strand the run before it analysed anything.
 
 ```bash
 .claude/skills/code-reviewer/scripts/check_version.sh
@@ -123,11 +131,21 @@ When `$AI_REVIEW_CI=1` (or `$CI=true`, set automatically by Bitbucket Pipelines,
   ```
   ```bash
   # Comment state (Steps 5/6/7 fetch) — independent, so ';' not '&&': one failing
-  # fetch must not suppress the other two.
-  cd "$WORKTREE" && { "$SKILLS_ROOT/scripts/check_resolved.py"; \
-                      "$SKILLS_ROOT/scripts/check_dismissals.py"; \
-                      "$SKILLS_ROOT/scripts/check_replies.py"; }
+  # fetch must not suppress the other two. Each JSON producer is redirected to its
+  # OWN file: check_resolved.py and check_replies.py both print a JSON array to
+  # stdout, so batching them into one stream would concatenate two arrays (`[…][…]`)
+  # with no delimiter. Files keep each payload unambiguous; the `🔍/✓/↷` lines still
+  # come back on stderr, so the diagnostic relay is unaffected.
+  cd "$WORKTREE" && mkdir -p .ai-review && \
+    { "$SKILLS_ROOT/scripts/check_resolved.py"   > .ai-review/open.json; \
+      "$SKILLS_ROOT/scripts/check_dismissals.py"; \
+      "$SKILLS_ROOT/scripts/check_replies.py"    > .ai-review/replies.json; }
   ```
+
+  Then `Read .ai-review/open.json` (Step 5 input) and `.ai-review/replies.json`
+  (Step 7 input). `check_dismissals.py` writes `.ai-review/dismissals.json` itself and
+  prints nothing to stdout. An empty or missing file means that fetch soft-failed —
+  treat it as "no data" and continue, exactly as the non-batched path does.
 
   Batch **fetches only** — Step 7's reply decisions and the `post_reply.py` /
   `update_resolved.py` calls that follow stay separate. The lens walk, arbitration, and
@@ -204,8 +222,23 @@ Before analyzing the diff, fetch the linked issue-tracker card. The goal is to j
    - Source branch name (e.g. `feature/B20-11233-add-stats-...`)
    - PR description body
 
-2. **Fetch the card.** Use the first available source — never block the run on this:
-   - **Atlassian MCP** tools (`mcp__claude_ai_Atlassian__getJiraIssue`, `mcp__claude_ai_Atlassian__searchJiraIssuesUsingJql`) when configured. Preferred.
+2. **Fetch the card.** Use the first source that returns something — never block the run on this:
+   - **`fetch_card.py`** — the Jira REST fetcher. Works everywhere, including CI:
+
+     ```bash
+     .claude/skills/code-reviewer/scripts/fetch_card.py
+     ```
+
+     Prints one JSON object (`ticket`, `url`, `title`, `description`, `status`, `type`,
+     `priority`, `labels`, `comments[]`) on stdout, or nothing plus a `↷` reason on stderr.
+     It auto-detects the ticket key; pass `--ticket=KEY` to override. It soft-fails on
+     every error path, so a missing `JIRA_BASE_URL` or an unreachable Jira never fails the
+     review. **This is the only card source available in CI** — `ai-review-ci` runs with a
+     tool allowlist under `--permission-mode dontAsk`, which auto-denies every
+     `mcp__claude_ai_Atlassian__*` tool, so the MCP path below silently returns nothing there.
+   - **Atlassian MCP** tools (`mcp__claude_ai_Atlassian__getJiraIssue`,
+     `mcp__claude_ai_Atlassian__searchJiraIssuesUsingJql`) — interactive runs only, and only
+     when `fetch_card.py` came back empty (no `JIRA_BASE_URL` configured, say).
    - **PR description** body — read whatever the developer wrote inline.
    - **Branch name** — last resort; gives only the slugified card title.
 
@@ -214,7 +247,7 @@ Before analyzing the diff, fetch the linked issue-tracker card. The goal is to j
    - Description (the problem and constraints)
    - Acceptance criteria (what "done" means)
    - Type (bug / feature / refactor — informs review tone)
-   - **Comments / discussion thread** (Atlassian MCP only — `getJiraIssue` returns or links the comments). Design decisions, reviewer suggestions, and constraints are often raised *after* the description is written and live only in the thread. Read them.
+   - **Comments / discussion thread** (`fetch_card.py` returns these in `comments[]`; Atlassian MCP also returns or links them). Design decisions, reviewer suggestions, and constraints are often raised *after* the description is written and live only in the thread. Read them.
 
 4. **Use this as reference context for Step 8, not as a new scope.** The Scope rule below is unchanged — you still review only what the diff touched. The card informs **judgment**:
    - Does the diff address the stated problem, or something adjacent?
@@ -229,7 +262,7 @@ Before analyzing the diff, fetch the linked issue-tracker card. The goal is to j
 
    Skip this check entirely when no card context was obtained (step 5) — you can't judge relatedness without knowing the task.
 
-4b. **Discussion-decision check — honour decisions raised in the ticket thread.** When the comments were read (Atlassian MCP), scan them for **concrete technical decisions or suggestions** — a recommended package, library, or approach; an architectural choice; a constraint (e.g. "must stay backward-compatible with the v1 endpoint"); or a "don't do X" steer. If the diff **contradicts or ignores** such a decision, flag it as a 🟡 Warning, phrased to confirm — not accuse:
+4b. **Discussion-decision check — honour decisions raised in the ticket thread.** When the comments were read (`fetch_card.py` `comments[]`, or Atlassian MCP), scan them for **concrete technical decisions or suggestions** — a recommended package, library, or approach; an architectural choice; a constraint (e.g. "must stay backward-compatible with the v1 endpoint"); or a "don't do X" steer. If the diff **contradicts or ignores** such a decision, flag it as a 🟡 Warning, phrased to confirm — not accuse:
 
    > 🟡 The {TICKET} discussion suggested **{decision}** ({commenter}, {date}), but the implementation appears to {do otherwise}. Confirm this was considered and intentionally not followed — if it was rejected, capture the reason on the ticket so it isn't re-raised.
 
@@ -239,12 +272,12 @@ Before analyzing the diff, fetch the linked issue-tracker card. The goal is to j
    - A suggestion that was explicitly resolved in the thread ("agreed, we'll skip that because …") → respect that resolution; don't re-flag it.
    - You're surfacing for confirmation, not enforcing — the team may have a good reason. One Warning per ignored decision.
 
-   Skip this check when comments weren't available (PR-body / branch-name fallback, or no MCP).
+   Skip this check when comments weren't available (PR-body / branch-name fallback, or `fetch_card.py` soft-failed).
 
 4c. **Implementation context — the developer's "why". MANDATORY: you MUST check for it before analyzing; do not skip this.** The developer's own session held the reasoning the diff can't show — decisions, assumptions, trade-offs, rejected alternatives, constraints. Actively search **every source you can reach** for a rationale block and read it in full:
    - the **PR description body**,
-   - the **PR comment section** (the comments fetched in Step 5),
-   - and the **Jira card comments** (Atlassian MCP).
+   - the **PR comment section**,
+   - and the **Jira card comments** (`fetch_card.py` `comments[]`, or Atlassian MCP).
 
    A rationale block is **inline text** — a section/comment headed *Implementation notes* / *AI review context* / *Context for review*, or one carrying a `<!-- ai-review:context -->` marker. It must be pasted as text (markdown or plain — format is irrelevant); a **file attachment cannot be read** and is not a context source, so never expect to download one. **Print exactly one result line** so the check is auditable:
    - Found → `✓ Loaded implementation context from {PR body | PR comment | card comment}.` — then read it in full and fold it into your judgment.
@@ -388,7 +421,7 @@ Run this before the new diff analysis:
 .claude/skills/code-reviewer/scripts/check_resolved.py
 ```
 
-This outputs a JSON array of open AI review comments on the current PR — comments that were posted by a previous run of this skill and haven't been marked resolved yet. If the array is empty, skip to the Workflow.
+This outputs a JSON array of open AI review comments on the current PR — comments that were posted by a previous run of this skill and haven't been marked resolved yet. If the array is empty, there is nothing to reconcile here — continue to Step 6 (dismissal refresh) and Step 7 (developer replies), which run regardless of whether any finding is currently open.
 
 It also writes `.ai-review/posted.json` — the index of **every** AI finding already on the PR (open *and* resolved, dismissed ones excluded), used by the Step 8 dedup filter to avoid re-posting a finding that is already present. You don't act on that file here; Step 8 reads it.
 
@@ -492,7 +525,7 @@ Print a summary before continuing:
 
 ### Narration — show the run, don't run it silently
 
-Before invoking each script in Steps -1 → 0.7 and the scoping scripts in Step 8, print a one-line header naming the step in plain language (e.g. `Step 5 — Checking previously posted comments`). After each script returns, **always relay the script's own progress lines** (the `🔍 / ✓ / ↷ / ⚠️` messages it prints to stdout/stderr) — never swallow them. End each step with a one-line outcome summary so the developer can follow the run without reading raw script output. Quiet success is a regression — every step must produce at least one visible line.
+Before invoking each script in Steps 1 → 7 and the scoping scripts in Step 8, print a one-line header naming the step in plain language (e.g. `Step 5 — Checking previously posted comments`). After each script returns, **always relay the script's own progress lines** (the `🔍 / ✓ / ↷ / ⚠️` messages it prints to stdout/stderr) — never swallow them. End each step with a one-line outcome summary so the developer can follow the run without reading raw script output. Quiet success is a regression — every step must produce at least one visible line.
 
 **This rule is for a human watching the run.** In CI (`$AI_REVIEW_CI=1`) it is relaxed — headers and outcome summaries are dropped and the state-gathering scripts are batched, because there is no live reader and each extra turn re-reads the cached prefix. The `🔍 / ✓ / ↷ / ⚠️` relay survives in both modes. See **CI / headless mode** above.
 
@@ -507,7 +540,7 @@ Before invoking each script in Steps -1 → 0.7 and the scoping scripts in Step 
 
 7. **Lens walk.** **First, load the lens:** `Read .claude/skills/code-reviewer/review-lens.md` (in target mode the path is unchanged — the skill directory lives in the main repo, not the worktree). It is not part of this file; this is the point in the run where it gets read, and it is read **once** for the whole review, not per file or per chunk. If the Read fails, stop and report it — do not attempt the walk from the dimension index, which contains no rules.
 
-   Then apply the full review lens dimension by dimension — do not free-associate. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §16 Scalability) plus the company rules from Step 3, deliberately check the diff against that dimension before moving on. A dimension is only "done" once you've recorded a finding or confirmed the diff is clean for it. **Large diffs (roughly 300+ changed lines or 10+ files): chunk by file group** — walk related files together (a feature's controller + service + tests), complete the full lens per group, then merge the per-group results into one ledger; never trim the lens to save context. Then run a completeness-critic pass: re-scan the diff once more focused only on dimensions you marked clean — "genuinely fine, or did I skim?" Watch the easily-missed: §2i magic literals, §9 existence checks (`count()` where `exists()` belongs), §2p name-matches-behaviour, §3i hardcoded secrets, §4b N+1, §10 `report()` on caught exceptions. Ledger `Source` column: `inline`.
+   Then apply the full review lens dimension by dimension — do not free-associate. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §17 Contract & Config) plus the company rules from Step 3, deliberately check the diff against that dimension before moving on. A dimension is only "done" once you've recorded a finding or confirmed the diff is clean for it. **Large diffs (roughly 300+ changed lines or 10+ files): chunk by file group** — walk related files together (a feature's controller + service + tests), complete the full lens per group, then merge the per-group results into one ledger; never trim the lens to save context. Then run a completeness-critic pass: re-scan the diff once more focused only on dimensions you marked clean — "genuinely fine, or did I skim?" Watch the easily-missed: §2i magic literals, §9 existence checks (`count()` where `exists()` belongs), §2p name-matches-behaviour, §3i hardcoded secrets, §4b N+1, §10 `report()` on caught exceptions, §13a untested new business logic, §17a a removed/renamed API field, §17b a config key with nothing defining it. Ledger `Source` column: `inline`.
 
 8. **Arbitrate.**
    - **Adjudicate every `scan_diff.py` line.** Each pre-pass hit must end as either a confirmed finding or a rejection with a stated reason (e.g. "env() hit is in config/ — exempt", "print_r has `true` second arg into Log — exempt"). Silent drops are forbidden; if the pre-pass printed 12 hits, your arbitration must account for 12.
@@ -539,7 +572,26 @@ Before invoking each script in Steps -1 → 0.7 and the scoping scripts in Step 
     - This filter is **not** disabled by `--ignore-dismissals` — that flag is about human dismissals only, not the skill's own posted comments.
     - **Regression note:** if a candidate matches a `resolved` entry, the reviewer previously believed this was fixed. Don't re-post, but if you can see the code genuinely regressed, mention it once in the run summary (`⚠️ {path}:{line} — previously-resolved finding appears to have regressed; left the resolved comment as-is`) so the developer can reopen it deliberately.
     - If `.ai-review/posted.json` is absent or empty (no PR comments, or the Step 5 fetch was skipped), skip this filter.
-11. **Compile remaining findings** grouped by severity (🔴 Critical → 🟡 Warning → 🔵 Suggestion), and **print the coverage ledger v2 (with Source column)** so the developer can see every dimension was checked. Do not post or modify any files yet.
+11. **Apply the severity budget before writing any comment bodies.** `post_review` enforces a
+    floor and a suggestion cap on what actually posts (`AI_REVIEW_MIN_SEVERITY`, default
+    `warning` in CI / `suggestion` locally; `AI_REVIEW_MAX_SUGGESTIONS`, default 3). Authoring a
+    full four-section body for a finding the script will then withhold burns output tokens —
+    the most expensive tokens in the run — for nothing. So:
+
+    - Rank your surviving 🔵 Suggestions by value and keep only the **best 3** (or
+      `AI_REVIEW_MAX_SUGGESTIONS` if it is set). Value means: how likely a developer acts on it,
+      how much it prevents recurring, how concrete the fix is. Prefer one suggestion that
+      changes a habit over three that restate a preference.
+    - In CI, write **no** 🔵 bodies at all unless `AI_REVIEW_MIN_SEVERITY=suggestion` is set.
+    - Write every 🔴 and 🟡 body in full. The gate never withholds those, and an unreadable
+      severity is treated as 🔴 — so never omit the `severity` field.
+
+    Findings you drop here are **not** hidden: list them in the ledger as a one-line
+    `§dim path:line — one-phrase summary`. The ledger is the audit trail; the PR is the
+    conversation, and those are different budgets.
+
+12. **Compile remaining findings** grouped by severity (🔴 Critical → 🟡 Warning → 🔵 Suggestion), and **print the coverage ledger v2 (with Source column)** so the developer can see every dimension was checked. Do not post or modify any files yet.
+
 
 ### Step 9 — Post the review
 
@@ -551,13 +603,18 @@ Before invoking each script in Steps -1 → 0.7 and the scoping scripts in Step 
 2. **y** → post all findings as inline Bitbucket PR comments (see **Posting the review** below).
 3. **n** → end here. Print: `Skipped. Run /code-reviewer again to post, or use /code-fixer to fix locally.`
 
+**Zero findings is still a completed run.** When the analysis produced nothing, skip the
+confirmation prompt, write `[]` to `.ai-review/findings.json`, print the coverage ledger, and
+say `No findings — clean diff.` Do not skip the file write: it is the only durable evidence
+that the review ran and concluded cleanly.
+
 Do not run any Bitbucket posting scripts until the user confirms **y**.
 
 ---
 
 ### Step 10 — Sync Jira card status (idempotent, soft-fails)
 
-After all the comment-state work in Steps 0.5 / 0.6 / 2 is done, transition the linked Jira card based on the **current state of the PR** — not just what this run produced. Remaining open findings move the card to `Failed Code Review`; a clean diff or a fully-addressed PR moves it to `Ready To Test` (override with `JIRA_FAILED_STATUS` / `JIRA_PASSED_STATUS`). **Only cards currently in a review column move** — the script skips any card whose status isn't in `JIRA_SOURCE_STATUSES` (default `Code Review,Failed Code Review`), so it never yanks a card that is still In Progress, already in QA, or Done. `Failed Code Review` is an eligible source so a fixed card advances to `Ready To Test` on a clean re-run.
+After all the comment-state work in Steps 5 / 6 / 7 is done, transition the linked Jira card based on the **current state of the PR** — not just what this run produced. Remaining open findings move the card to `Failed Code Review`; a clean diff or a fully-addressed PR moves it to `Ready To Test` (override with `JIRA_FAILED_STATUS` / `JIRA_PASSED_STATUS`). **Only cards currently in a review column move** — the script skips any card whose status isn't in `JIRA_SOURCE_STATUSES` (default `Code Review,Failed Code Review`), so it never yanks a card that is still In Progress, already in QA, or Done. `Failed Code Review` is an eligible source so a fixed card advances to `Ready To Test` on a clean re-run.
 
 1. **Compute `has_open_findings`** — `true` if any of:
    - This run posted ≥1 new finding (and the user said `y`).
@@ -704,8 +761,13 @@ Prefix each comment's title with one of:
 
 ### Posting the review
 
-1. Post the required AI disclaimer header as the first top-level PR comment (see Required header above).
-2. Compile all findings into a JSON array and write it to `.ai-review/findings.json` as UTF-8. Each entry needs:
+1. Compile all findings into a JSON array and write it to `.ai-review/findings.json` as UTF-8.
+   **Write this file on every run that completes the analysis — including a clean one, where
+   the correct content is an empty array `[]`.** A missing file and an empty file mean very
+   different things: `[]` says "reviewed, nothing to report", absent says "the run never got
+   here". Anything reading the result afterwards (the eval harness, a CI artifact, you
+   debugging a quiet run) cannot tell those apart unless the clean case still writes.
+   Each entry needs:
    - `path`, `line` — where the issue lives
    - `body` — the full four-section comment (problem, AI fix prompt, suggested fix, why)
    - `dim` — the dimension code from the Review lens (e.g. `"3a"`, `"4b"`, `"12"`). Used for telemetry.
@@ -723,7 +785,7 @@ Prefix each comment's title with one of:
      }
    ]
    ```
-3. Post via `post_review`, passing the findings-file path (the script embeds the telemetry marker after posting). Writing findings to a UTF-8 file — rather than piping a here-string — sidesteps shell quoting and the Windows console code page, which can otherwise turn emoji / em-dashes into mojibake. Both scripts also still accept the JSON array on stdin as a fallback.
+2. Post via `post_review`, passing the findings-file path (the script embeds the telemetry marker after posting). Writing findings to a UTF-8 file — rather than piping a here-string — sidesteps shell quoting and the Windows console code page, which can otherwise turn emoji / em-dashes into mojibake. Both scripts also still accept the JSON array on stdin as a fallback.
 
 **Unix mode:**
 ```bash
@@ -735,17 +797,17 @@ Prefix each comment's title with one of:
 pwsh .claude/skills/code-reviewer/scripts/post_review.ps1 .ai-review/findings.json
 ```
 
-4. Create a blocking task for every 🔴 Critical finding.
-5. Save the review checkpoint:
+3. Create a blocking task for every 🔴 Critical finding.
+4. Save the review checkpoint:
    ```bash
    .claude/skills/code-reviewer/scripts/save_reviewed_sha.sh
    ```
-6. Print the telemetry digest (resolved/open/stale across PR history):
+5. Print the telemetry digest (resolved/open/stale across PR history):
    ```bash
    .claude/skills/code-reviewer/scripts/aggregate_stats.py
    ```
-7. End with: `Posted {N} comments to PR #{ID}. Review them at {URL}.`
-8. **Target mode only** — remove the worktree:
+6. End with: `Posted {N} comments to PR #{ID}. Review them at {URL}.`
+7. **Target mode only** — remove the worktree:
    ```bash
    bash "$SKILLS_ROOT/scripts/cleanup_target.sh" "$WORKTREE"
    ```
@@ -777,6 +839,7 @@ Each `.sh` script below has a matching `.ps1` Windows variant (same name, same a
 - **`branch_summary.sh [base]`** — one-glance overview of what changed vs the base branch (`origin/develop` by default, or the `[base]` arg / `AI_REVIEW_BASE_BRANCH`).
 - **`scan_diff.py [--base REF] [--no-snippets]`** — pre-pass pattern scanner. Only scans `+` lines. False positives filtered by the agent.
 - **`post_review.sh`** — posts the compiled review as inline Bitbucket PR comments. Reads findings from a JSON file path (first arg, preferred) or stdin. Requires `BITBUCKET_EMAIL` and `BITBUCKET_API_TOKEN` env vars.
+- **`fetch_card.py [--ticket=KEY] [--no-comments]`** — fetches the linked Jira card over REST (title, description, status, type, labels, comments) as JSON on stdout. The card source that works in CI, where MCP tools are denied. Soft-fails to nothing on any missing cred or API error.
 - **`check_replies.py`** — prints a JSON array of open findings whose thread ends with an unanswered developer reply (see Step 7). Empty `[]` when nothing awaits a response.
 - **`post_reply.py --parent-id=<ID>`** — posts a threaded reply (body on stdin) under a PR comment and tags it with a hidden `ai-review:reply` marker so the bot won't answer its own reply.
 - **`setup_target.sh --branch=<name>|--pr=<N>`** — fetches a branch and creates a detached git worktree for reviewing without checkout. Writes `.ai-review/target.json` inside the worktree. Prints the worktree path to stdout.

@@ -17,7 +17,7 @@ If you are **neither** Sonnet nor Opus — Fable, Haiku, or anything else — st
 
 ```
 ERROR: code-fixer only runs on Sonnet or Opus.
-Run /model sonnet and re-invoke this skill.
+Run /model opus (or /model sonnet) and re-invoke this skill.
 ```
 
 Then end the turn. Do not review, do not scope the diff, do not apply any fix, do not offer to continue on the current model, and do not work around the guard by delegating the review to a Sonnet subagent — the arbitration in Step 7 happens in the main context, so the main context itself must be Sonnet or Opus.
@@ -64,6 +64,13 @@ Then carry the results forward — every affected step re-checks this before run
 ---
 
 ## Step 1 — Version check (always first, before anything else)
+
+**Skip this entire step when `$AI_REVIEW_CI=1` or `$CI=true`.** Print
+`↷ CI mode — skipping version check.` and go straight to the next step. There is no
+manual update path in a container, so the check can only stall the run: it ends in an
+`Update now? [y/n]` prompt that has no one to answer it. Restated here on purpose —
+"always first, before anything else" read alone has previously caused the prompt to
+fire headlessly and strand the run before it analysed anything.
 
 **Unix/Mac:**
 ```bash
@@ -228,7 +235,7 @@ git diff "origin/${AI_REVIEW_BASE_BRANCH:-develop}...HEAD"    # source of truth 
 
 ### Narration — show the run, don't run it silently
 
-Before invoking each script in Steps -1 → 0.1 and the scoping scripts in Step 4, print a one-line header naming the step in plain language (e.g. `Step 1 — Checking skill version`). After each script returns, **always relay the script's own progress lines** (the `🔍 / ✓ / ↷ / ⚠️` messages it prints to stdout/stderr) — never swallow them. End each step with a one-line outcome summary so the developer can follow the run. Quiet success is a regression — every step must produce at least one visible line.
+Before invoking each script in Steps 1 → 3 and the scoping scripts in Step 4, print a one-line header naming the step in plain language (e.g. `Step 1 — Checking skill version`). After each script returns, **always relay the script's own progress lines** (the `🔍 / ✓ / ↷ / ⚠️` messages it prints to stdout/stderr) — never swallow them. End each step with a one-line outcome summary so the developer can follow the run. Quiet success is a regression — every step must produce at least one visible line.
 
 ### Step 4 — Analyze
 
@@ -240,7 +247,7 @@ Before invoking each script in Steps -1 → 0.1 and the scoping scripts in Step 
 
 6. **Lens walk.** **First, load the lens:** `Read .claude/skills/code-fixer/review-lens.md`. It is not part of this file; this is the point in the run where it gets read, and it is read **once** for the whole review, not per file or per chunk. If the Read fails, stop and report it — do not attempt the walk from the dimension index, which contains no rules.
 
-   Then apply the full review lens dimension by dimension — do not free-associate. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §16 Scalability) plus the company rules from Step 2, deliberately check the diff against that dimension before moving on. A dimension is only "done" once you've recorded a finding or confirmed the diff is clean for it. **Large diffs (roughly 300+ changed lines or 10+ files): chunk by file group** — walk related files together (a feature's controller + service + tests), complete the full lens per group, then merge the per-group results into one ledger; never trim the lens to save context. Then run a completeness-critic pass: re-scan the diff once more focused only on dimensions you marked clean — "genuinely fine, or did I skim?" Watch the easily-missed: §2i magic literals, §9 existence checks (`count()` where `exists()` belongs), §2p name-matches-behaviour, §3i hardcoded secrets, §4b N+1, §10 `report()` on caught exceptions. Ledger `Source` column: `inline`.
+   Then apply the full review lens dimension by dimension — do not free-associate. Walk the lens in order and, for **each** numbered dimension (§1 Architecture → §17 Contract & Config) plus the company rules from Step 2, deliberately check the diff against that dimension before moving on. A dimension is only "done" once you've recorded a finding or confirmed the diff is clean for it. **Large diffs (roughly 300+ changed lines or 10+ files): chunk by file group** — walk related files together (a feature's controller + service + tests), complete the full lens per group, then merge the per-group results into one ledger; never trim the lens to save context. Then run a completeness-critic pass: re-scan the diff once more focused only on dimensions you marked clean — "genuinely fine, or did I skim?" Watch the easily-missed: §2i magic literals, §9 existence checks (`count()` where `exists()` belongs), §2p name-matches-behaviour, §3i hardcoded secrets, §4b N+1, §10 `report()` on caught exceptions, §13a untested new business logic, §17a a removed/renamed API field, §17b a config key with nothing defining it. Ledger `Source` column: `inline`.
 
 7. **Arbitrate.**
    - **Adjudicate every `scan_diff.py` line.** Each pre-pass hit must end as either a confirmed finding or a rejection with a stated reason (e.g. "env() hit is in config/ — exempt", "print_r has `true` second arg into Log — exempt"). Silent drops are forbidden; if the pre-pass printed 12 hits, your arbitration must account for 12.
@@ -342,7 +349,7 @@ After the fix loop ends, generate a short learning summary for the developer who
 1. Print to the terminal so the author sees it at end of run.
 2. Append to `.ai-review/learning-log.md` (the directory is gitignored — verify before writing). Create the file if missing; never overwrite a previous entry.
 
-**Template (same shape as `/code-reviewer`'s Step 6 — keep these in lockstep):**
+**Template (same shape as `/code-reviewer`'s Step 11 — keep these in lockstep):**
 
 ```
 ─── 📚 Learning summary — {branch} (local fix loop) ───
@@ -387,7 +394,7 @@ Each run appends a new dated entry with the timestamp + the template above, sepa
 ## Review lens
 
 **The lens is not in this file.** It lives beside it, at
-`.claude/skills/code-fixer/review-lens.md` (~25k tokens), and you must
+`.claude/skills/code-fixer/review-lens.md` (~27k tokens), and you must
 **Read it in full at the lens-walk step — and not before.**
 
 This is deliberate, and it is about cost. Runs that stop early — version check,
@@ -420,6 +427,7 @@ Two rules when you do read it:
 | §14 | API Design |
 | §15 | Blade views (`resources/views/`) |
 | §16 | Scalability & Large Dataset Processing |
+| §17 | Contract & Configuration Stability |
 
 ---
 
