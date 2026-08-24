@@ -696,7 +696,7 @@ Each run appends a new dated entry with the timestamp + the template above, sepa
 ## Review lens
 
 **The lens is not in this file.** It lives beside it, at
-`.claude/skills/code-reviewer/review-lens.md` (~27k tokens), and you must
+`.claude/skills/code-reviewer/review-lens.md` (~28k tokens), and you must
 **Read it in full at the lens-walk step — and not before.**
 
 This is deliberate, and it is about cost. Runs that stop early — version check,

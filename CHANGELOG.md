@@ -5,6 +5,21 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.67.0 / code-fixer 1.61.0 — 2026-08-13
+
+### Added
+- **§11 column home-check.** Before a migration adds a column to an existing entity table,
+  the reviewer checks the schema for a related table that already owns the concept (the
+  entity's detail/child tables visible in migrations or model relationships) — if the column
+  describes that related concept, it belongs there, not on the entity — 🔵, phrased to
+  confirm. Signals: shared noun with the related table; same-family siblings already living
+  there. Doesn't fire when no related table exists (the schema-cohesion cluster rule decides
+  instead), when the column is hot-path-read together with entity columns, or when the only
+  related table is a mismatched-grain pivot, or when the column is a denormalized
+  aggregate of the related data (counter caches / rollups like `x_count`, `last_x_at`
+  live on the parent by design). Lookup is model-relationships-first for cost: one file
+  read, migrations only as fallback. Shared-lens change — both skills.
+
 ## code-reviewer 1.66.1 / code-fixer 1.60.1 — 2026-08-12
 
 ### Changed
