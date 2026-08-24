@@ -855,6 +855,18 @@ Enums are value descriptors. Pure value-derivation on the enum is fine and encou
 - **Narrowing a column type** — shortening a length, `text`→`string`, `bigInteger`→`integer`, cutting decimal precision — 🟡 Warning (silent truncation / mid-deploy failure on existing data).
 - **Data-only migration — rows inserted/updated/deleted with no schema change** — 🟡 Warning. Migrations are for **schema (DDL)**; data belongs in an **idempotent seeder** (`updateOrCreate()` / `upsert()` / `firstOrCreate()` keyed on a stable identifier) — seeders are re-runnable, environment-targetable, and keep the migration history schema-only. Reference/lookup rows (roles, statuses, settings, permissions) are the classic case. **The legitimate exception:** a data change that must run **in lock-step with a schema change in the same deploy** — backfilling a new column before it's made non-null, or transforming rows into a structure a later migration depends on — belongs in the migration sequence; don't flag those.
 - **New migration altering a table another migration in this same branch created or modified** — 🔵 Suggestion. While the earlier migration is unreleased, fold the change into it instead of stacking alter-migrations the branch itself introduced. (Never suggest editing a migration that has already merged/shipped — it has run on other environments.)
+- **Schema cohesion — a nameable column cluster added to an existing entity table** — 🔵 Suggestion. When a migration adds **3+ columns to an existing table** and the group passes all three tests, suggest a separate table (a typed 1:1 detail table, or a proper child table when rows repeat) instead of widening the entity:
+  1. **Nameable as its own concept** — the columns describe a distinct noun (`*_features`, `*_settings`, `*_marketing_details`, `*_social_links`), not more of the entity's identity;
+  2. **Optional** — nullable/defaulted for a meaningful share of rows;
+  3. **Growth-shaped** — a same-prefix or flag-family pattern that history says keeps accreting (this branch adds three, the next adds four).
+
+  Wide entity tables bloat `$fillable`, DTO mapping, and every `SELECT *`; a named detail table keeps the entity legible. **Counter-forces — do NOT flag when:**
+  - the new columns are **hot-path query attributes** (filtered/sorted/indexed on the entity's main reads — a search facet belongs on the searched table; splitting it buys a join on every query);
+  - it's 1–2 scalar columns that are genuinely the entity's own (a `status`, a `price`);
+  - the fix would be an EAV key/value table — never suggest EAV; it trades a wide table for untyped, unindexable soup;
+  - the table is brand-new in this branch (design freedom, judge the shape as proposed) or the diff didn't touch the wide table (scope rule).
+
+  Phrase as structure, not mandate: name the cluster, propose the detail-table shape, and note the join trade-off so the developer decides with the query patterns in view.
 
 ```php
 // BAD — will lock table during deploy on large datasets

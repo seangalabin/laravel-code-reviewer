@@ -5,6 +5,19 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.66.0 / code-fixer 1.60.0 — 2026-08-12
+
+### Added
+- **§11 schema cohesion — nameable column clusters get their own table.** When a migration
+  adds 3+ columns to an existing entity table and the group (1) names its own concept
+  (`*_features`, `*_settings`, `*_social_links`), (2) is optional for many rows, and
+  (3) is growth-shaped (same-prefix/flag families that keep accreting), suggest a typed
+  1:1 detail table or proper child table instead of widening the entity — 🔵. Counter-forces
+  built in: hot-path query attributes (search facets) stay on the searched table (a split
+  buys a join per query); 1–2 genuine entity scalars don't fire; EAV is never the suggested
+  fix; brand-new tables and untouched wide tables are out of scope. Findings must name the
+  cluster, propose the shape, and state the join trade-off. Shared-lens change — both skills.
+
 ## code-reviewer 1.65.1 / code-fixer 1.59.1 — 2026-08-12
 
 ### Fixed
