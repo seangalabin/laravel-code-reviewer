@@ -5,6 +5,20 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.68.0 / code-fixer 1.62.0 — 2026-08-13
+
+### Added
+- **CI pauses cleanly on usage/billing limits.** When the headless run is refused for
+  quota reasons (HTTP 429, "usage limit", "rate limit", "credit balance", subscription
+  window exhausted), `ai-review-ci` now classifies it as a **pause**, not a failure:
+  prints a clear ⏸ block (no tokens were consumed — the request is rejected before
+  inference; OAuth windows reset within ~5h; fund `ANTHROPIC_API_KEY` for immunity),
+  leaves the Jira card untouched (no review happened, so no verdict), and exits 0.
+  Previously the rejection surfaced as a generic ❌ exit-2 buried under `|| true`.
+  There is no pre-check API for remaining subscription quota, so the attempt itself is
+  the probe — a refused attempt costs only container minutes. Reviewer-only;
+  `code-fixer` bumps in lockstep, behaviour unchanged.
+
 ## code-reviewer 1.67.0 / code-fixer 1.61.0 — 2026-08-13
 
 ### Added

@@ -336,6 +336,38 @@ if cost is not None:
 PYUSAGE
 fi
 
+# ── Quota / billing pause ──────────────────────────────────────────────────────
+# A run rejected for usage limits or billing is not a review failure — the request
+# is refused before inference (no tokens consumed), and retrying every push just
+# spins containers until the window resets. Detect it, say so clearly, and exit
+# clean WITHOUT touching the Jira card (no review happened, so no verdict).
+if [[ $RC -ne 0 ]] && python3 - "$OUTPUT_FILE" <<'PYQUOTA'
+import json, re, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+text = str(d.get("result", "")) if isinstance(d, dict) else ""
+status = d.get("api_error_status") if isinstance(d, dict) else None
+quota = status == 429 or bool(re.search(
+    r"usage limit|rate limit|credit balance|quota|out of extended usage",
+    text, re.IGNORECASE))
+sys.exit(0 if quota else 1)
+PYQUOTA
+then
+    echo
+    echo "⏸  Review paused — usage/billing limit reached."
+    echo "   The request was refused before inference; no tokens or quota were consumed."
+    echo "   Subscription (OAuth) windows reset within ~5 hours — the next push after the"
+    echo "   reset reviews normally, or rerun this pipeline manually then."
+    echo "   To make CI immune to personal-quota exhaustion, fund ANTHROPIC_API_KEY and"
+    echo "   use it instead of CLAUDE_CODE_OAUTH_TOKEN."
+    echo "   Jira card left untouched (no review happened)."
+    echo
+    echo "✓ ai-review-ci completed (paused). Output: $OUTPUT_FILE"
+    exit 0
+fi
+
 if [[ $RC -ne 0 ]]; then
     echo "❌ Headless run failed (exit $RC). See $OUTPUT_FILE for details." >&2
     exit 2
