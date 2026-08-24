@@ -5,6 +5,16 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.65.1 / code-fixer 1.59.1 — 2026-08-12
+
+### Fixed
+- **Pre-flight card sync no longer fails open to "clean".** On a no-op run (checkpoint ==
+  HEAD, no replies) the wrapper syncs the Jira card from `check_resolved.py`'s open-findings
+  count — but an API failure or unparseable output was counted as *0 open*, which could
+  wrongly promote a card with open findings to the passed status. An error now skips the
+  sync and says so (`↷ Couldn't read open findings — leaving the Jira card untouched.`).
+  Reviewer-only; `code-fixer` bumps in lockstep, behaviour unchanged.
+
 ## code-reviewer 1.65.0 / code-fixer 1.59.0 — 2026-08-23
 
 Audit release. The lens gained the coverage a human reviewer was still supplying, lost the

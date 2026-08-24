@@ -232,13 +232,20 @@ if nothing_to_review; then
     # The card can still be stale if a finding was dismissed out-of-band since the
     # last run, so sync it. Pure Python, no tokens, idempotent, soft-fails.
     if [[ -x "$SKILL_SCRIPTS/check_resolved.py" && -x "$SKILL_SCRIPTS/update_card_status.py" ]]; then
+        # -1 = check_resolved failed/unparseable. That must SKIP the sync, not
+        # count as "0 open" — reporting clean on an API error could wrongly
+        # promote a card that still has open findings.
         OPEN_N=$("$SKILL_SCRIPTS/check_resolved.py" 2>/dev/null | python3 -c "
 import json, sys
 try:    print(len(json.load(sys.stdin)))
-except Exception: print(0)
-" 2>/dev/null) || OPEN_N=0
-        [[ "$OPEN_N" -gt 0 ]] && HAS_OPEN=true || HAS_OPEN=false
-        "$SKILL_SCRIPTS/update_card_status.py" --has-open-findings="$HAS_OPEN" || true
+except Exception: print(-1)
+" 2>/dev/null) || OPEN_N=-1
+        if [[ "$OPEN_N" -ge 0 ]]; then
+            [[ "$OPEN_N" -gt 0 ]] && HAS_OPEN=true || HAS_OPEN=false
+            "$SKILL_SCRIPTS/update_card_status.py" --has-open-findings="$HAS_OPEN" || true
+        else
+            echo "  ↷ Couldn't read open findings — leaving the Jira card untouched." >&2
+        fi
     fi
     echo
     echo "✓ ai-review-ci completed (no-op). Pass AI_REVIEW_NO_PREFLIGHT=1 to force a run."
