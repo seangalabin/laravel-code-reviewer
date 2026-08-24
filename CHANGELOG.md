@@ -5,6 +5,16 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.66.1 / code-fixer 1.60.1 — 2026-08-12
+
+### Changed
+- **§11 schema cohesion — column count is a signal, not the gate.** Dropped the hard 3+
+  threshold: the trigger is the three tests (nameable / optional / growth-shaped), judged on
+  the **whole cluster** (existing family columns on the table plus this migration's), with
+  the card's context deciding separability. Two new columns extending an existing family
+  fire; two novel unrelated columns usually don't (a two-column detail table over-normalizes
+  — join + model + mapping overhead to relocate two fields). Shared-lens change — both skills.
+
 ## code-reviewer 1.66.0 / code-fixer 1.60.0 — 2026-08-12
 
 ### Added
