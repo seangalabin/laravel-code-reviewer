@@ -152,6 +152,13 @@ Before analyzing, fetch the linked issue-tracker card so the lens evaluates your
 
 3c. **Implementation context.** Running in your own session, you usually already have the "why" behind the change. If a rationale block exists in the card (a comment, or a section marked `<!-- ai-review:context -->` — decisions, assumptions, trade-offs), weigh it the same disciplined way as `/code-reviewer` does: it explains intent so you don't flag a deliberate trade-off, but it does **not** waive a genuine defect (a 🔴 stands), a flawed rationale is still challenged, and findings anchor to the actual code. This is also the place to *capture* that rationale for the reviewer — paste it as **inline text** (markdown or plain) into the PR description or a card comment so the reviewer inherits your context. Don't attach it as a file — the reviewer reads comment/PR text, it can't download attachments.
 
+4c. **Client-scope check — when the card names a client, confirm who the change is for.** In a codebase deployed per client/tenant/site, every code change is **global by default** — it ships to all deployments unless gated. A card that names a client carries one of two meanings the diff alone can't disambiguate: the client is *where it was observed* (fix should be global), or *the only one who wants it* (change must be gated). Don't guess — surface it.
+
+   - **Trigger:** the card's title, description, or labels name a client, tenant, or site — recognised via the project's own identifiers (deployment/site names, values compared against the deployment-identity config such as `config('app.db')`, or a client list in the project `CLAUDE.md`). No card, or no client named → silent.
+   - **Classify your branch's scope:** *global* (no conditional on deployment identity) or *client-gated* (per-deployment setting / feature flag / identity check) — and gated to **which** client.
+   - **Raise one finding**, dimension `4c`, as a question for **you** to settle with the card's reporter before opening the PR: card names X + global change → 🟡 "intended for X only (needs gating) or for all clients?"; gated to X → 🔵 "matches the card — does any other client need it?"; gated to Y ≠ X → 🟡 mismatch. Record the answer in the PR description / rationale block so the reviewer inherits it.
+   - **If the answer is "X only":** gate via a per-deployment setting or feature flag, not a hardcoded identity string compare (`config('app.db') == 'x'`) — §2i magic string, and such compares drift into variants (`x_testing`, `testing_x`).
+
 5. **No ticket detected** → print `No ticket reference detected — auditing branch against the base branch only.` and continue.
 
 6. **Read-only.** Never edit the card, post comments on it, or transition its status.

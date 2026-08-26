@@ -292,6 +292,21 @@ Before analyzing the diff, fetch the linked issue-tracker card. The goal is to j
    - **Verify the rationale, don't rubber-stamp it.** If the stated reasoning is itself wrong ("skipped server validation because the frontend validates"), challenge *the reasoning*, at the appropriate severity — the note is a claim to check, not a waiver.
    - **Anchor to the actual diff.** If the context is stale or contradicts the code, trust the code and note the mismatch.
 
+4d. **Client-scope check — when the card names a client, confirm who the change is for.** In a codebase deployed per client/tenant/site, every code change is **global by default** — it ships to all deployments unless gated. A card that names a client ("{Client} — invoices not printing") carries one of two meanings the diff alone can't disambiguate: the client is *where it was observed* (fix should be global), or the client is *the only one who wants it* (change must be gated). Don't guess — ask.
+
+   - **Trigger:** the card's title, description, or labels name a client, tenant, or site. Recognise names via the project's own identifiers — deployment/site names, the values compared against the deployment-identity config (e.g. `config('app.db')`), or a client list in the project `CLAUDE.md`. No card, or no client named → this check is silent.
+   - **Classify the diff's scope:** *global* (no conditional on deployment/tenant identity), or *client-gated* (behind a per-deployment setting / feature flag / identity check) — and gated to **which** client.
+   - **Post exactly one confirmation finding per PR**, dimension `4d`, anchored to the first hunk of the primary changed file (so the already-posted filter in Step 8 stops it re-asking on reruns). Address it to the developer **and** the card's reporter (`reporter.displayName` from the fetched card); confirm-not-accuse:
+
+     | Card | Diff | Finding |
+     |---|---|---|
+     | names Client X | global | 🟡 "The card names **X**, but this change ships to **every** client deployment. {Reporter}, {Dev} — is this intended for X only (then it needs gating), or for all clients?" |
+     | names X | gated to X | 🔵 "Gated to X — matches the card. Confirm no other client needs it." |
+     | names X | gated to Y ≠ X | 🟡 "The card names X but the change is gated to Y — confirm which is intended." |
+
+   - **When the answer is "X only" — gating guidance:** prefer a per-deployment setting or feature flag (the project's config/settings mechanism) over a hardcoded identity string compare (`config('app.db') == 'x'`) — that's a §2i magic string, and such compares proliferate variants (`x_testing`, `testing_x`) that drift apart. Point at §2i; don't duplicate it.
+   - This check judges *scope*, not correctness — a global fix that's genuinely right for everyone is fine once confirmed; the finding exists so that confirmation happens before merge, not after 40 deployments.
+
 5. **No ticket detected** → print `No ticket reference detected — reviewing diff against the base branch only.` and continue. The skill still works without a card; it just loses the "right problem", file-relatedness, discussion-decision, and implementation-context signals.
 
 6. **Read-only.** Never edit the card, post comments on it, transition its status, or write back any state.

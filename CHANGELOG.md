@@ -5,6 +5,22 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.69.0 / code-fixer 1.63.0 — 2026-08-13
+
+### Added
+- **Client-scope check (reviewer 4d / fixer 4c).** For codebases deployed per client/tenant/
+  site, every code change is global by default. When the card names a client, the diff alone
+  can't tell "observed there — fix globally" from "wanted only there — must be gated", so the
+  reviewer now posts **one** confirmation finding per PR (dim `4d`, anchored to the primary
+  changed file so the already-posted filter dedups reruns), addressed to the developer and the
+  card's reporter: global change + named client → 🟡 "X only, or all clients?"; gated to the
+  named client → 🔵 confirm no one else needs it; gated to a different client → 🟡 mismatch.
+  Clients are recognised via the project's own identifiers (deployment names, deployment-
+  identity config values, a CLAUDE.md client list) — no names hardcoded in the skill. Gating
+  guidance points at per-deployment settings/feature flags over identity string compares
+  (§2i). The fixer raises the same question locally for the developer to settle with the
+  reporter before opening the PR. Cross-cutting judgment input — mirrored to both skills.
+
 ## code-reviewer 1.68.0 / code-fixer 1.62.0 — 2026-08-13
 
 ### Added
