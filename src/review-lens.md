@@ -170,10 +170,11 @@ Shape and name similarity only ever produce a **candidate**. Every candidate pas
 | formatting, parsing, or a pure utility | `app/Support/`, `app/Helpers/`, the project's helper file |
 | validation shared across requests | the FormRequests already covering that resource |
 | shared front-end behaviour | the composable / util / store module the project already uses |
+| behaviour shared across several classes (mixed-in methods, lifecycle hooks) | the project's Concerns / traits directories (`app/Concerns/`, `app/Models/Concerns/`, `app/Http/Controllers/Concerns/`), and its shared-abstractions doc if it keeps one (e.g. `docs/shared-abstractions.md`) |
 
 Follow the **project's actual layout**, not these paths verbatim — an app that keeps calculators in `app/Domain/` is checked there.
 
-**How to look — cheaply.** Read **names and signatures first** (directory listing, method names); open a body only when a name or signature suggests the same job. Bound each candidate to the three axes above — changed file, sibling directory, layer home — and stop there. A duplicate parked outside the layer it belongs to will be missed, and that is the accepted trade: an exhaustive codebase search is not this dimension's job, and a missed duplicate is a cheaper failure than a review that reads thirty files to find one.
+**How to look — cheaply.** Read **names and signatures first** (directory listing, method names); open a body only when a name or signature suggests the same job. A **single procedural helper file** (`app/Helpers/helpers.php`-style, `function_exists`-guarded globals) shows as one filename in a listing — index it by function name instead (`grep -n 'function ' <file>`) and treat that as one lookup; never read it top to bottom. Bound each candidate to the three axes above — changed file, sibling directory, layer home — and stop there. A duplicate parked outside the layer it belongs to will be missed, and that is the accepted trade: an exhaustive codebase search is not this dimension's job, and a missed duplicate is a cheaper failure than a review that reads thirty files to find one.
 
 **Budget the scan across the whole review, not just per method.** The axes bound one candidate; this bounds the run. Spend at most **8 directory listings per review** on this dimension, in priority order:
 

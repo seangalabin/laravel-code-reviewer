@@ -5,6 +5,18 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.70.0 / code-fixer 1.64.0 — 2026-08-13
+
+### Added
+- **§1h reuse scan — traits/Concerns row + helper-file indexing.** The layer-lookup table gains
+  a row for behaviour shared across classes: the project's Concerns/traits directories
+  (`app/Concerns/`, `app/Models/Concerns/`, `app/Http/Controllers/Concerns/`) and its
+  shared-abstractions doc if it keeps one — previously traits were only an extraction target,
+  never a place the scan looked, so a new method duplicating an existing Concern went unseen.
+  "How to look" now handles the single procedural helper file (`helpers.php`-style
+  `function_exists` globals): index it by function name with one grep and count that as one
+  lookup — never read it top to bottom. Shared-lens change — both skills.
+
 ## code-reviewer 1.69.0 / code-fixer 1.63.0 — 2026-08-13
 
 ### Added
