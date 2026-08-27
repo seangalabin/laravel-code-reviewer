@@ -5,6 +5,22 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.71.0 / code-fixer 1.65.0 — 2026-08-27
+
+### Added
+- **§11 centralized reference data — consume the central source, don't re-home it locally.**
+  🟡 when the diff creates or extends a reference/lookup dataset in the deployment's own DB
+  (lookup-table migration, Model, seeder/factory of geo/catalogue/registry/price data, or a
+  hardcoded list) for data the deployment doesn't own **and** the project's declared central
+  source already carries it. The reviewer finds the central source as CLAUDE.md declares it
+  (shared connection / internal API) and probes it through the established consumer pattern
+  (models on the shared connection under their namespace, the API client); the finding names
+  that pattern as the fix. Unclear whether a dataset is central → 🔵 confirm, with an explicit
+  "verify with the data owner named in CLAUDE.md before duplicating". Carve-outs: data the
+  deployment genuinely owns; a deliberate cache/sync with a visible refresh path; test-only
+  fixtures; a brand-new dataset no central source carries. §5 cross-references it for new
+  lookup Models. Shared-lens change — both skills.
+
 ## code-reviewer 1.70.0 / code-fixer 1.64.0 — 2026-08-13
 
 ### Added
