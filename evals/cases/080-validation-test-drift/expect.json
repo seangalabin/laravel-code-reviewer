@@ -1,0 +1,6 @@
+{
+  "description": "New PromoCodeFormat validator's regex requires a dash; its own new test's data provider asserts a no-dash code is valid — code and test disagree on the same rule.",
+  "must_fire": [{"dim": "13b", "path": "app/Rules/PromoCodeFormat.php"}],
+  "must_not_fire": ["13a"],
+  "notes": "A test exists and targets this exact rule, so §13a (missing test) must NOT also fire for the same defect — that boundary is the whole reason 13b is a separate rule."
+}

@@ -5,6 +5,25 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.73.0 / code-fixer 1.67.0 — 2026-09-02
+
+### Added
+- **§13b validation drift between code and its own test.** 🟡 when a validation rule —
+  a regex, a format check, a boundary/range comparison, an enum/allow-list — changes in
+  the diff and the test that purports to cover it (in the same diff) asserts a
+  different version of that rule, in either direction: the code tightened or loosened
+  but the test's data or docblock still describes the old constraint, the test changed
+  without the code following, or both changed but disagree with each other. A green
+  test that no longer describes what the code enforces is its own defect class,
+  distinct from §13a (no test at all). Since a diff-scoped static read can't tell which
+  side is the intended spec, findings are confirm-not-accuse — name the disagreeing
+  value/boundary and ask which side is right rather than asserting one is wrong.
+  Carve-outs: a data provider that deliberately checks only a subset (§13a's territory,
+  not this one); a deliberate stricter/looser fix with the test updated to match in the
+  same diff; a mismatch confined to a comment/docblock/message where the real condition
+  and assertion agree. code-fixer surfaces both correction directions rather than
+  auto-picking one. Shared-lens change — both skills.
+
 ## code-reviewer 1.72.0 / code-fixer 1.66.0 — 2026-09-02
 
 ### Added
