@@ -991,6 +991,79 @@ public function calculateShipping(Order $order): Money
 One finding per PR when several methods are affected: name the most important one and list the
 rest as `also: path:line`. A wall of "needs a test" comments is how this rule would get muted.
 
+#### 13b. Validation drifted from what its own test asserts — 🟡 Warning
+
+A green test is not proof the code is right — it's proof the code matches whatever the
+test happened to assert. When those two quietly diverge, the test keeps passing and
+reviewers keep trusting it, right up until production sees an input the test never
+really checked.
+
+**Fires when** the diff touches a **validation rule** — a regex, a format check, a
+boundary/range comparison, or an enum/allow-list of accepted values — in application
+code, and a test in the same diff purports to cover that exact rule but encodes a
+**different constraint**. Read the validation expression literally — the pattern, the
+comparison operators, the enumerated values — and read the test's assertions the same
+way: the values a data provider feeds in as valid or invalid, the exact string an
+`assertMatchesRegularExpression()` / `expectException()` checks against, the boundary a
+pair of `assertTrue()` / `assertFalse()` calls straddles. The drift runs either way:
+- the code changed and the test didn't — the rule was tightened or loosened, but the
+  existing assertions still describe the old constraint, and may still pass because
+  none of them happens to exercise the new edge;
+- the test changed and the code didn't — a data provider or docblock now describes a
+  different rule than the one the unchanged code enforces;
+- both changed, but disagree — the diff edits both sides yet they no longer describe
+  the same rule.
+
+A diff-scoped static read cannot tell you which side is the intended spec, so this is
+confirm-not-accuse by construction — never assert one side is the bug. Anchor the
+finding to **both** lines — the validation expression and the assertion it no longer
+matches — and name the actual value or boundary where they disagree: "the code accepts
+`X`; the test asserts `X` should be rejected — confirm which side is correct." That
+phrasing is what makes the finding actionable; "these seem inconsistent" is not.
+
+```php
+// FIRES — the regex requires a 3-letter prefix and a dash before the digits; the
+// test's own data provider asserts a code with no dash is valid, which this regex
+// would reject
+final class PromoCodeFormat
+{
+    public static function isValid(string $code): bool
+    {
+        return (bool) preg_match('/^[A-Z]{3}-\d{4}$/', $code);
+    }
+}
+
+// covering test, same diff
+it('accepts promo codes in the documented format', function (string $code) {
+    expect(PromoCodeFormat::isValid($code))->toBeTrue();
+})->with([
+    'ABC-1234',
+    'XYZ1234', // asserted valid here — the regex above requires the dash and rejects it
+]);
+```
+
+**Do NOT flag:**
+- **No test covers the rule at all** — that's §13a (missing test). This rule needs a
+  test that already speaks to the same rule, just a different version of it.
+- **A test that deliberately covers only a subset of the rule as a stated business
+  decision** — e.g. a data provider that exercises three of five valid formats because
+  the rest are out of scope for this change. As long as the cases it does check agree
+  with the code, an incomplete data provider is a coverage gap, not a drifted assertion.
+- **Code became stricter or looser as a deliberate fix, with the test updated in the
+  same diff to match the new rule** — that's the fix working as intended.
+- **A mismatch confined to a comment, docblock, or exception message**, where the
+  actual condition and the actual assertion agree with each other — a documentation
+  nit, not a functional drift.
+- **Validation logic that lives partly outside the diff** (a shared trait, a
+  form-request rule class, a config-driven allow-list) that you cannot read in full
+  from the diff alone — say so as a question rather than asserting drift from a
+  partial view.
+
+One finding per PR when a diff touches several validation rules: name the clearest
+mismatch and list the rest as `also: path:line`. This rule earns distrust fast if it
+fires on cosmetic rewording between a regex and an example string — reserve it for a
+disagreement the test would actually pass or fail differently on.
+
 #### Untestable patterns (flag on the code, not on missing tests)
 
 - `new ClassName()` inside business logic — 🔵 Suggestion, prevents mocking (see §4f).
@@ -1022,6 +1095,7 @@ rest as `also: path:line`. A wall of "needs a test" comments is how this rule wo
 - Collection endpoint returning the full result set with no `paginate()` / `limit` — 🔵 Suggestion ("add pagination unless the set is bounded"); escalate to 🟡 on a concrete unbounded-growth signal (results filtered/ordered by user input, or an append-only/log/comment model). (Perf angle in §9.)
 - API Resource over-exposing internal design detail — `created_at`, pivot columns, internal auto-increment IDs — 🟡 Warning. (Credential/session fields like `password`/`remember_token` are the 🔴 case in §3f, not here.)
 - A new/changed Resource whose envelope shape (`data` / `meta` / `errors` wrapping) differs from a **sibling Resource also in the diff** — 🔵 Suggestion. Don't guess the canonical envelope from unchanged code. **Precedence:** this is the *consistency* case — a new Resource that doesn't match its siblings. When the diff **changes an existing** Resource's envelope, that breaks live clients and is §17a (🟡/🔴), not this. Report it once, as §17a.
+- A nested object whose key repeats its parent key's name — `{ user: { user_id, user_name } }`, `{ entity: { entity_attributes: {...} } }` — 🔵 Suggestion. The wrapping key already supplies the context; the repeated prefix is redundant. Rename the child key to drop the stutter (`user: { id, name }`). Don't flag a **JSON:API-style envelope** (`{ type, id, attributes: {...}, relationships: {...} }`) — `attributes`/`relationships` are structural members of that spec, not a name stutter — or a case where the repeated word is coincidental, not the same conceptual key (`order.order_items` is a collection of a different noun, not a stutter).
 
 ---
 

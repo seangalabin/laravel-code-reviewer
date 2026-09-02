@@ -5,6 +5,19 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.72.0 / code-fixer 1.66.0 — 2026-09-02
+
+### Added
+- **§14 nested-key name stutter.** 🔵 when a nested object's key repeats its
+  parent key's name — `{ user: { user_id, user_name } }`, `{ entity: {
+  entity_attributes: {...} } }` — since the wrapping key already supplies the
+  context the child key redundantly repeats. Suggests dropping the prefix
+  (`user: { id, name }`). Carve-outs: a JSON:API-style envelope (`{ type, id,
+  attributes: {...}, relationships: {...} }`), where `attributes`/
+  `relationships` are structural spec members, not a stutter; and a repeated
+  word that names a different noun (`order.order_items`). Shared-lens change
+  — both skills.
+
 ## code-reviewer 1.71.0 / code-fixer 1.65.0 — 2026-08-27
 
 ### Added
