@@ -5,6 +5,53 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.74.0 / code-fixer 1.68.0 — 2026-09-14
+
+Production-readiness pass. The lens already reviewed *whether the code works*; these rules
+review *what happens when it doesn't*. One standard, folded into the dimensions that already
+own each failure mode rather than added as an eighteenth dimension — a second set of `dim`
+codes over the same ground would have split the telemetry and doubled the token cost for no
+new coverage.
+
+### Added
+
+- **§8 — slow or external work inside a `DB::transaction()` closure (🟡).** An HTTP call, S3
+  upload, or long-running processing inside the closure holds the connection and every row lock
+  already taken for as long as the third party takes to answer, so another service's latency
+  spike arrives as lock contention here. Exempts a closure whose only slow work is more SQL, and
+  queue/`Cache::` calls already deferred with `afterCommit` (the adjacent bullet owns those).
+- **§8 — an external resource created before the row that references it (🟡).** The gap §4g
+  structurally cannot cover: `DB::transaction()` rolls back the database, never the other system.
+  An S3 upload or payment-provider record created before the `create()` that stores its id leaves
+  an orphan when that write fails — invisible, uncollected, often still billed. Exempts temp
+  resources with failure-safe cleanup (§16g) and calls whose result is deliberately discarded.
+- **§9 — sorting, filtering, or aggregating in PHP what SQL can do (🟡).** `->get()->sortBy()`,
+  `->get()->filter()`, `->get()->sum()` on the same unbounded tables the full-table-loads rule
+  already governs. Exempts bounded reference sets, collections already loaded for another reason,
+  and sorts on computed/appended values SQL has no column for.
+- **§9 — unbounded page size (🟡).** `->paginate($request->per_page)` with no ceiling is a
+  full-table load one query-string parameter away. §14 already owned "no pagination at all" and
+  pointed its perf angle at §9; this is the other half, on the §9 side of that line. Exempts a
+  constant, a config value, or a size already bounded by a `max:` rule.
+- **§10 — retry policy and rate limiting (🔵).** Timeouts are already mandatory (§9); retry is
+  the separate question of what to do when one fires. States all three judgements, including the
+  one a naive rule would get backwards: `retry()` is **not** safe on a non-idempotent write
+  without an idempotency key — recommend the key first, the retry second, never the retry alone.
+  `429` is its own case (honour `Retry-After`; a retry storm turns a throttle into a block).
+  Deliberately not a blanket requirement.
+- **§12a — async submit with no in-flight guard (🟡).** A double-click on a handler that checks
+  no `submitting` flag sends the request twice; against a non-idempotent endpoint that is two
+  orders. Requires both the handler guard and the bound `:disabled` — the visual disable alone
+  still loses the race.
+- **§12a — a request per keystroke (🟡).** A search/filter input calling the API from `@input`
+  with no debounce issues one request per character, nine of ten already obsolete. Exempts
+  client-side filtering of a loaded list and inputs already wrapped in a debounce helper.
+
+### Changed
+
+- **Lens preamble states the standard.** Review every change for what happens when it fails, not
+  only whether the happy path works — with pointers to the dimensions that carry it (§8, §9,
+  §10, §16, §16e). The rules above are one posture, not six unrelated additions.
 ## code-reviewer 1.73.0 / code-fixer 1.67.0 — 2026-09-02
 
 ### Added

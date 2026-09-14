@@ -1,0 +1,9 @@
+{
+  "description": "A repository read scoped through the authenticated user's own relation. Nothing should be raised about ownership or volume.",
+  "must_fire": [],
+  "must_not_fire": [
+    "3d",
+    "9"
+  ],
+  "notes": "A silence case. \u00a73d must stay quiet: the query scopes through $user->invoices(), the sanctioned ownership pattern, not a request-supplied id \u2014 this is the shape \u00a73d's carve-out exists for, and flagging it would make every correctly-scoped read a finding. \u00a79 must stay quiet: the read is user-scoped and filtered, not an unbounded full-table load. This case began life as the gate test for a \u00a73j tenant-isolation rule that was cut before release \u2014 this codebase is deployed per client rather than sharing one database with client_id rows, so row-scoped tenancy was the wrong premise and SKILL.md step 4d already owns the client-scope question. The fixture stayed because the silence it asserts is worth keeping on its own."
+}

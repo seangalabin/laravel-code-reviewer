@@ -14,6 +14,7 @@ final class NotifierService
     {
         $this->http
             ->timeout(10)
-            ->post(config('services.slack.ops_webhook'), ['text' => $message]);
+            ->post(config('services.slack.ops_webhook'), ['text' => $message])
+            ->throw();
     }
 }
