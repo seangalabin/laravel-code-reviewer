@@ -1,0 +1,14 @@
+{
+  "description": "An external HTTP call sequenced between two writes inside a DB::transaction() closure \u2014 the transaction holds its connection and row locks for the carrier's whole round trip.",
+  "must_fire": [
+    {
+      "dim": "8",
+      "path": "app/Services/ShipmentService.php"
+    }
+  ],
+  "must_not_fire": [
+    "4g",
+    "10"
+  ],
+  "notes": "The true positive for the 1.66.0 transaction-boundary rule: \u00a78 must fire on the HTTP call sequenced between two writes inside the closure. \u00a74g must stay quiet \u2014 this is the inverse of the missing-transaction case: the transaction is present and correct, the defect is what was put inside it, and a lens that praises DB::transaction() unconditionally will miss this entirely. \u00a710 must stay quiet, and the fixture has to earn that on BOTH of \u00a710's bullets: ->throw() covers the HTTP status, and the tracking number is validated before use so a 200 with a malformed body cannot persist a null. An earlier draft omitted the second half and \u00a710 fired correctly \u2014 the fixture was wrong, not the rule. \u00a717b is deliberately NOT asserted either way. config/services.php defines the key and .env.example carries it, so it should be silent \u2014 but it was observed firing on one run and not the next against an identical tree. That is reviewer nondeterminism, and an assertion that flips run to run makes the case useless as a gate for \u00a78. If \u00a717b is ever tightened, this is a ready-made fixture to test it on."
+}
