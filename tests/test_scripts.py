@@ -1312,6 +1312,131 @@ class TestCINarrationIsTerse(unittest.TestCase):
 # exist and degrades in a way no test would otherwise notice. Two renumberings had
 # already left five such pointers behind ("Steps -1 -> 0.7", "Steps 0.5 / 0.6 / 2").
 
+class TestCIConfirmationPromptsAreLocallyExempted(unittest.TestCase):
+    """Regression guard for 1.75.0 — the stalled-prompt bug on PR #3126.
+
+    Step 9 ended with an unconditional "Do not run any Bitbucket posting scripts
+    until the user confirms **y**". The CI auto-confirm that overrides it lived
+    ~500 lines earlier in "CI / headless mode". The local absolute won: a headless
+    run analysed the diff, compiled a critical and a warning, printed
+    "Post to PR #3126? [y/n]", ended its turn and exited 0. subtype "success",
+    is_error false, permission_denials empty, $1.77 billed, zero comments posted —
+    and the wrapper reported the step green.
+
+    Step 1 already carried its exemption locally, with a comment saying exactly why
+    ("restated *here* on purpose"). Steps 7 and 9 did not. These tests keep all
+    three local copies in place: a remote-only exemption is not enough.
+    """
+
+    def setUp(self):
+        self.src = (REPO_ROOT / 'skill' / 'SKILL.template.md').read_text()
+
+    def _step(self, heading, until):
+        m = re.search(re.escape(heading) + r'(.*?)' + re.escape(until), self.src, re.S)
+        self.assertIsNotNone(m, f'step section not found: {heading}')
+        return m.group(1)
+
+    def test_step_9_exempts_ci_before_its_unconditional_gate(self):
+        body = self._step('### Step 9 — Post the review', '### Step 10')
+        self.assertRegex(
+            body, r'\$AI_REVIEW_CI=1.*?\$CI=true',
+            '\nStep 9 lost its local CI exemption. Without it the unconditional '
+            '"do not post until the user confirms y" strands headless runs at a '
+            '[y/n] prompt after they have already paid for the analysis (1.75.0).',
+        )
+        exemption = body.index('AI_REVIEW_CI')
+        gate = body.index('Do not run any Bitbucket posting scripts')
+        self.assertLess(
+            exemption, gate,
+            '\nStep 9 states the unconditional posting gate before the CI '
+            'exemption. Order matters: the last absolute read wins.',
+        )
+
+    def test_step_9_unconditional_gate_is_scoped_to_interactive_runs(self):
+        body = self._step('### Step 9 — Post the review', '### Step 10')
+        tail = body[body.index('Do not run any Bitbucket posting scripts'):]
+        self.assertIn(
+            'Interactive runs only', tail,
+            '\nThe Step 9 posting gate reads as unconditional again. It must say it '
+            'does not apply in CI, at the point it is stated.',
+        )
+
+    def test_step_7_exempts_ci_before_its_reply_prompt(self):
+        body = self._step('## Step 7 — Respond to developer replies', '## Workflow')
+        self.assertIn(
+            'Post these replies? [y/n]', body,
+            '\nStep 7 reply prompt not found — update this test with the section.',
+        )
+        self.assertRegex(
+            body, r'\$AI_REVIEW_CI=1.*?\$CI=true',
+            '\nStep 7 lost its local CI exemption. Same failure as Step 9: a local '
+            '[y/n] gate outranks the remote exemption and leaves a developer '
+            'talking to nobody while the pipeline reports success (1.75.0).',
+        )
+        self.assertLess(
+            body.index('AI_REVIEW_CI'), body.index('Post these replies? [y/n]'),
+            '\nStep 7 prints its [y/n] prompt before the CI exemption.',
+        )
+
+    def test_step_1_keeps_the_precedent_this_pattern_came_from(self):
+        body = self._step('## Step 1 — Version check', '## Global constraints')
+        self.assertRegex(
+            body, r'\$AI_REVIEW_CI=1',
+            '\nStep 1 lost its local CI exemption — the original instance of this '
+            'bug class.',
+        )
+
+
+class TestCIWrapperDetectsStalledPrompt(unittest.TestCase):
+    """The wrapper must not report success for a run that posted nothing.
+
+    `claude --print` exits 0 whenever the agent's turn ends cleanly — including
+    when it ends by asking an unanswerable question. Exit code alone cannot tell
+    "posted the review" from "stalled holding it".
+    """
+
+    def setUp(self):
+        self.src = (BIN / 'ai-review-ci').read_text()
+
+    def test_guard_exists_and_exits_3(self):
+        m = re.search(r'# \u2500\u2500 Stalled-prompt guard(.*?)\n\s*exit 3\n', self.src, re.S)
+        self.assertIsNotNone(
+            m,
+            '\nai-review-ci lost the stalled-prompt guard. Without it a run that '
+            'ends on "Post to PR #N? [y/n]" reports a green step and posts nothing '
+            '(1.75.0).',
+        )
+        self.assertIn('[y/n]', m.group(1))
+
+    def test_guard_matches_only_the_tail_of_the_result(self):
+        """A finding body may legitimately quote "[y/n]" from reviewed code. Only a
+        prompt in the closing lines means the run stalled."""
+        m = re.search(r'# \u2500\u2500 Stalled-prompt guard.*?PYSTALL.*?PYSTALL', self.src, re.S)
+        self.assertIsNotNone(m, 'stalled-prompt guard body not found')
+        self.assertRegex(
+            m.group(0), r'\.rstrip\(\)\[-\d+:\]',
+            '\nThe stalled-prompt guard no longer slices the tail of .result. '
+            'Matching the whole result makes any finding that quotes "[y/n]" fail '
+            'the step.',
+        )
+
+    def test_exit_3_is_documented_in_the_header(self):
+        header = self.src[:self.src.index('set -uo pipefail')]
+        self.assertRegex(
+            header, r'#\s+3\s',
+            '\nExit code 3 is not documented in the ai-review-ci header block.',
+        )
+
+    def test_success_message_does_not_claim_findings_were_posted(self):
+        """The old closing line said "Findings posted to PR (if any)" on every clean
+        exit — including the stalled run, which posted nothing."""
+        self.assertNotIn(
+            'Findings posted to PR (if any)', self.src,
+            '\nai-review-ci claims findings were posted without checking. That line '
+            'is what made the PR #3126 stall look like a successful review.',
+        )
+
+
 class TestSkillStepReferencesResolve(unittest.TestCase):
 
     SKILLS = [REPO_ROOT / 'skill' / 'SKILL.md',

@@ -5,6 +5,47 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.75.0 — 2026-09-15
+
+### Fixed
+- **CI reviews stalled on the `[y/n]` confirmation and posted nothing.** A pipeline run on
+  PR #3126 loaded the skill, set up the worktree, walked the lens over 18 turns, compiled a
+  🔴 Critical and a 🟡 Warning, printed the coverage ledger — and then ended its turn with
+  `Post to PR #3126? **[y/n]**`. The CLI reported `subtype: "success"`, `is_error: false`,
+  `permission_denials: []`, exit 0. `$1.77` of quota spent; zero comments on the PR; the
+  pipeline step green.
+
+  Root cause is instruction precedence, not a code path. Step 9 ended with an unconditional
+  *"Do not run any Bitbucket posting scripts until the user confirms **y**"*. The CI
+  auto-confirm that overrides it lived in **CI / headless mode**, ~500 lines earlier. Across
+  an 18-turn run with 916k tokens of cache read, the local absolute won.
+
+  This is the same failure Step 1 already had, and it was fixed there the same way — that
+  step carries its own CI exemption with a comment explaining that *"always first, before
+  anything else" read alone has previously caused the prompt to fire in CI*. The lesson was
+  recorded but never generalised. Steps 7 and 9 now carry local exemptions too, stated
+  **before** the gates they override, and the closing sentence of Step 9 is scoped to
+  interactive runs instead of reading as absolute.
+
+  A remote exemption is not enough for an instruction that has a local absolute pointed the
+  other way. Any future `[y/n]` in `SKILL.md` needs its CI exemption at the gate.
+
+### Added
+- **Stalled-prompt guard in `ai-review-ci` (new exit code 3).** The wrapper judged success on
+  the process exit code alone, which cannot distinguish "posted the review" from "ended the
+  turn holding it" — both are exit 0. It now inspects the tail of `.result` for an
+  unanswerable `[y/n]` prompt and fails loudly, naming the findings as unposted and the
+  checkpoint as un-advanced. Matched against the last 600 characters only: a stalled prompt
+  is always the closing line, whereas a finding body may legitimately quote `[y/n]` from
+  reviewed code, and that must not fail the step.
+
+### Changed
+- **The wrapper no longer claims findings were posted.** Its closing line was
+  `✓ ai-review-ci completed. Findings posted to PR (if any).` — printed on every clean exit,
+  including the stalled run that posted nothing. That "(if any)" is what made the failure
+  read as a successful review. It now reports the process result as exactly that, and points
+  at the `Posted N comment(s)` line as the actual evidence.
+
 ## code-reviewer 1.74.0 / code-fixer 1.68.0 — 2026-09-14
 
 Production-readiness pass. The lens already reviewed *whether the code works*; these rules

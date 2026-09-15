@@ -77,6 +77,8 @@
 #   0  Run completed (review posted; findings may or may not exist).
 #   1  Infrastructure failure (missing env, claude CLI not installed, etc.).
 #   2  Claude returned a non-zero exit (run errored mid-flight).
+#   3  Run finished clean but posted nothing — it stalled on an interactive
+#      confirmation prompt. See "Stalled-prompt guard" below.
 
 set -uo pipefail
 
@@ -373,6 +375,46 @@ if [[ $RC -ne 0 ]]; then
     exit 2
 fi
 
+# ── Stalled-prompt guard ──────────────────────────────────────────────
+# A clean `exit 0` only means the agent's turn ended — not that a review reached the
+# PR. The observed failure: the skill analysed the diff, compiled two findings, printed
+# "Post to PR #3126? [y/n]" and ended the turn. subtype "success", is_error false,
+# permission_denials empty, $1.77 spent, zero comments posted. The step went green and
+# nobody noticed until someone opened the PR.
+#
+# SKILL.md now carries the CI auto-confirm at each gate rather than only in a distant
+# section, so the prompt should no longer fire. This is the backstop for when it does:
+# in CI a `[y/n]` prompt is by definition unanswerable, so its presence in the agent's
+# final message means the run stalled with work in hand.
+#
+# Matched against the TAIL of `.result` only. A stalled prompt is always the closing
+# line; a finding body that happens to quote "[y/n]" from reviewed code is not, and
+# must not trip this.
+if command -v python3 >/dev/null 2>&1 && python3 - "$OUTPUT_FILE" <<'PYSTALL'
+import json, re, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+if not isinstance(d, dict):
+    sys.exit(1)
+tail = str(d.get("result", "")).rstrip()[-600:]
+sys.exit(0 if re.search(r"\[y/n\]", tail) else 1)
+PYSTALL
+then
+    echo
+    echo "❌ Review STALLED on a confirmation prompt — NOTHING WAS POSTED." >&2
+    echo "   The run finished cleanly and billed its tokens, but ended by asking for a" >&2
+    echo "   [y/n] confirmation that no one can answer in CI. Any findings it produced are" >&2
+    echo "   in the run output above and in $OUTPUT_FILE — they never reached the PR." >&2
+    echo "   The PR checkpoint was not advanced, so the next push re-reviews these commits." >&2
+    echo "   Fix: the installed skill is out of date. Re-run the installer so Step 7 / Step 9" >&2
+    echo "   carry the CI auto-confirm:  npx -y github:seangalabin/laravel-code-reviewer ." >&2
+    exit 3
+fi
+
 echo
-echo "✓ ai-review-ci completed. Findings posted to PR (if any). Output: $OUTPUT_FILE"
+echo "✓ ai-review-ci completed. Output: $OUTPUT_FILE"
+echo "  Check the run output above for the 'Posted N comment(s)' line — this wrapper"
+echo "  reports the process result, not what landed on the PR."
 exit 0

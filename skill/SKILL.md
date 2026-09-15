@@ -109,6 +109,14 @@ When `$AI_REVIEW_CI=1` (or `$CI=true`, set automatically by Bitbucket Pipelines,
 - **Skip Step 1 (version check) entirely.** The container's installed version is fixed — there's no manual update path in CI. Print `↷ CI mode — skipping version check.` and continue.
 - **Skip the Step 9 post-confirmation prompt.** Treat the answer as `y` and post the findings without asking.
 - **Skip the Step 7 reply-confirmation prompt(s).** Take the analysed action without asking.
+
+  Both are *also* restated at their own step, alongside the unconditional sentences that
+  otherwise outrank them. That duplication is deliberate and must be kept in sync: this
+  section is ~500 lines from either gate, and a local absolute ("do not post until the
+  user confirms **y**") has repeatedly won — the run analyses the diff, compiles findings,
+  prints a `[y/n]` prompt no one can answer, and exits 0 having posted nothing.
+  **A `[y/n]` prompt must never appear in a CI run's output.** `ai-review-ci` treats one
+  as a hard failure (exit 3).
 - **Skip the disk write in Step 11 (Learning summary).** Print the summary to stdout but do **not** append to `.ai-review/learning-log.md` — CI runners are ephemeral and may be shared across users; the personal log doesn't belong there.
 - **Narrate tersely and batch the fetches.** Keep relaying every `🔍 / ✓ / ↷ / ⚠️` line — that
   is the diagnostic record. Drop the per-step **headers** and **outcome summaries**: no one
@@ -503,7 +511,14 @@ For each entry, gather context, then judge the reply on its merits:
 
 5. Draft each reply as plain markdown — no severity prefix, no five-section finding structure. This is a conversation, not a new finding.
 
-Then print a summary and ask for confirmation:
+**Skip the confirmation prompt entirely when `$AI_REVIEW_CI=1` or `$CI=true`.** Print
+`↷ CI mode — posting replies without confirmation.`, post every drafted reply with its
+side effect, and continue to the Workflow. Do not print the `[y/n]` line and do not end
+your turn waiting for an answer. Restated here on purpose — same failure mode as Step 9:
+a local `[y/n]` gate outranks the remote exemption in **CI / headless mode** and leaves a
+developer talking to nobody while the pipeline reports success.
+
+**Interactive runs only** — print a summary and ask for confirmation:
 
 > {N} developer repl(y/ies) awaiting a response on PR #{ID}:
 > - `{path}:{line}` — {concede | hold | answer | confirm fix}
@@ -610,6 +625,18 @@ Before invoking each script in Steps 1 → 7 and the scoping scripts in Step 8, 
 
 ### Step 9 — Post the review
 
+**Skip the confirmation prompt entirely when `$AI_REVIEW_CI=1` or `$CI=true`.** Print
+`↷ CI mode — posting without confirmation.` and go straight to **Posting the review**
+below. Do not print the `[y/n]` line, and do not end your turn waiting for an answer —
+there is no one to answer it. This exemption is repeated in **CI / headless mode** above,
+and it is restated *here* on purpose: the unconditional "do not post until the user
+confirms **y**" at the end of this step, read alone, has stranded a finished CI review at
+the prompt — 18 turns of analysis, two findings compiled, `exit 0`, and nothing posted to
+the PR. The wrapper reported success because the process exited clean. In CI the answer is
+already **y**; posting is the only correct action.
+
+**The numbered flow below is for interactive runs only.**
+
 1. Print a summary and ask for confirmation (this and the Step 7 reply confirmation are the only interactive prompts in the run):
 
    > Found **{N} issues** ({X} critical, {Y} warnings, {Z} suggestions) on branch `{branch}`.
@@ -623,7 +650,7 @@ confirmation prompt, write `[]` to `.ai-review/findings.json`, print the coverag
 say `No findings — clean diff.` Do not skip the file write: it is the only durable evidence
 that the review ran and concluded cleanly.
 
-Do not run any Bitbucket posting scripts until the user confirms **y**.
+Do not run any Bitbucket posting scripts until the user confirms **y**. **Interactive runs only** — in CI the confirmation is pre-answered `y`, so this sentence does not gate anything there. See the CI exemption at the top of this step.
 
 ---
 
