@@ -644,11 +644,24 @@ already **y**; posting is the only correct action.
 
 2. **y** → post all findings as inline Bitbucket PR comments (see **Posting the review** below).
 3. **n** → end here. Print: `Skipped. Run /code-reviewer again to post, or use /code-fixer to fix locally.`
+   **Do not run the completion sequence on this path** — nothing reached the PR, so the next
+   run must review these commits again. Declining to post is not a completed review; a clean
+   diff is.
 
 **Zero findings is still a completed run.** When the analysis produced nothing, skip the
-confirmation prompt, write `[]` to `.ai-review/findings.json`, print the coverage ledger, and
-say `No findings — clean diff.` Do not skip the file write: it is the only durable evidence
-that the review ran and concluded cleanly.
+confirmation prompt, write `[]` to `.ai-review/findings.json`, print the coverage ledger, say
+`No findings — clean diff.`, and then **run the completion sequence** — steps 4 and 5 of
+**Posting the review** below (save the checkpoint, print the telemetry digest). Do not skip the
+file write: it is the only durable evidence that the review ran and concluded cleanly.
+
+The checkpoint is the part that is easy to lose here, and the most expensive. A clean run
+*reviewed* HEAD and must record that it did. Skip it and `get_checkpoint.sh` keeps returning
+nothing, so three things follow: every later run scopes `BASE_REF` to `origin/$BASE` and
+re-reviews the whole branch instead of the new commits; `ai-review-ci`'s zero-token pre-flight
+has no checkpoint to compare against and can never skip a build; and a PR whose first review
+came back clean therefore pays full price on every push for the rest of its life. "Nothing to
+say about this diff" and "never looked at this diff" are different states — only the checkpoint
+tells them apart.
 
 Do not run any Bitbucket posting scripts until the user confirms **y**. **Interactive runs only** — in CI the confirmation is pre-answered `y`, so this sentence does not gate anything there. See the CI exemption at the top of this step.
 
@@ -879,6 +892,13 @@ pwsh .claude/skills/code-reviewer/scripts/post_review.ps1 .ai-review/findings.js
 ```
 
 3. Create a blocking task for every 🔴 Critical finding.
+
+**Steps 4 and 5 are the completion sequence — every run that finished its analysis owes them,
+including a clean one.** They are listed here because this is the common path, not because
+they belong to posting: the zero-findings branch of Step 9 routes here for exactly these two.
+The only path that skips them is an interactive **n**, where nothing was reviewed *into* the
+PR at all.
+
 4. Save the review checkpoint:
    ```bash
    .claude/skills/code-reviewer/scripts/save_reviewed_sha.sh

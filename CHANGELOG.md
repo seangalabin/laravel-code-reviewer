@@ -5,6 +5,41 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.76.0 — 2026-09-15
+
+### Fixed
+- **A clean review never saved its checkpoint, so the PR paid full price forever.**
+  `save_reviewed_sha.sh` was reachable only from step 4 of **Posting the review**, and the
+  zero-findings branch of Step 9 never entered that list — it wrote `[]` to
+  `.ai-review/findings.json`, printed the coverage ledger, said `No findings — clean diff.`
+  and stopped.
+
+  So a PR whose review came back clean got no checkpoint comment. `get_checkpoint.sh` kept
+  returning nothing, and three things followed from that: every later run fell back to
+  `BASE_REF=origin/$BASE` and re-reviewed the whole branch rather than the new commits;
+  `nothing_to_review()` in `ai-review-ci` — which bails at `[[ -n "$checkpoint" ]]` — could
+  never fire its zero-token pre-flight skip; and both effects compounded on every push for
+  the life of the PR. The incremental-review design is what makes continuous per-push review
+  affordable, and a clean first review opted the PR out of it silently.
+
+  "Nothing to say about this diff" and "never looked at this diff" are different states. Only
+  the checkpoint tells them apart, and the clean path is precisely where they were being
+  conflated.
+
+  The zero-findings path now runs the completion sequence, and steps 4–5 of **Posting the
+  review** are marked as owed by every run that finished its analysis — they are listed there
+  because it is the common path, not because they belong to posting.
+
+  Same bug class as the 1.75.0 stall: a whole-run obligation stated only inside a conditional
+  branch. Existing PRs self-heal — the first run under this version reviews fully, then
+  checkpoints.
+
+- **The interactive `n` path is now explicitly excluded from the completion sequence.** The
+  fix above must not over-apply: declining to post means nothing reached the PR, so those
+  commits still need reviewing. Checkpointing there would lose the findings permanently — the
+  next run would scope straight past the commits they were found in. A clean diff is a
+  completed review; a declined one is not.
+
 ## code-reviewer 1.75.0 — 2026-09-15
 
 ### Fixed

@@ -1387,6 +1387,92 @@ class TestCIConfirmationPromptsAreLocallyExempted(unittest.TestCase):
         )
 
 
+class TestCleanRunSavesCheckpoint(unittest.TestCase):
+    """Regression guard for 1.76.0 — the clean-run checkpoint gap.
+
+    `save_reviewed_sha.sh` appeared only inside the **Posting the review** list, which
+    the zero-findings branch of Step 9 never entered: it wrote `[]`, printed the ledger,
+    said "No findings — clean diff." and stopped. So a PR whose review came back clean
+    never got a checkpoint comment, and `get_checkpoint.sh` kept returning nothing.
+
+    Cost of that: every later run scoped `BASE_REF` to `origin/$BASE` and re-reviewed the
+    whole branch, and `nothing_to_review()` in `ai-review-ci` — which bails at
+    `[[ -n "$checkpoint" ]]` — could never fire its zero-token skip. A clean first review
+    made the PR pay full price on every subsequent push.
+
+    Same bug class as the 1.75.0 stall: a whole-run obligation stated only inside a
+    conditional branch.
+    """
+
+    def setUp(self):
+        self.src = (REPO_ROOT / 'skill' / 'SKILL.template.md').read_text()
+
+    def _step_9(self):
+        m = re.search(r'### Step 9 — Post the review(.*?)### Step 10', self.src, re.S)
+        self.assertIsNotNone(m, 'Step 9 section not found')
+        return m.group(1)
+
+    def _clean_clause(self):
+        body = self._step_9()
+        m = re.search(r'\*\*Zero findings is still a completed run\.\*\*(.*?)\n\n\n',
+                      body + '\n\n\n', re.S)
+        self.assertIsNotNone(m, 'zero-findings clause not found in Step 9')
+        return m.group(1)
+
+    def test_clean_run_routes_to_the_completion_sequence(self):
+        self.assertIn(
+            'completion sequence', self._clean_clause(),
+            '\nThe zero-findings path no longer routes to the completion sequence. '
+            'A clean review that skips the checkpoint makes every later push '
+            're-review the whole branch (1.76.0).',
+        )
+
+    def test_clean_run_clause_names_the_checkpoint(self):
+        clause = self._clean_clause()
+        self.assertIn(
+            'checkpoint', clause,
+            '\nThe zero-findings path stopped naming the checkpoint. "Nothing to say '
+            'about this diff" and "never looked at this diff" are different states and '
+            'only the checkpoint tells them apart.',
+        )
+
+    def test_declining_to_post_does_not_checkpoint(self):
+        """The fix must not over-apply. An interactive **n** posted nothing, so those
+        commits still need reviewing on the next run."""
+        body = self._step_9()
+        m = re.search(r'\*\*n\*\* → end here\.(.*?)\n\n', body, re.S)
+        self.assertIsNotNone(m, 'Step 9 "n" path not found')
+        self.assertIn(
+            'Do not run the completion sequence', m.group(1),
+            '\nThe Step 9 "n" path no longer forbids the completion sequence. '
+            'Checkpointing an unposted review loses those findings permanently: the '
+            'next run scopes past the commits they were found in.',
+        )
+
+    def test_completion_steps_are_marked_as_owed_by_every_finished_run(self):
+        m = re.search(r'### Posting the review(.*?)If developers want to fix issues',
+                      self.src, re.S)
+        self.assertIsNotNone(m, 'Posting the review section not found')
+        section = m.group(1)
+        self.assertIn(
+            'completion sequence', section,
+            '\nSteps 4-5 of "Posting the review" are no longer marked as owed by every '
+            'finished run. Unmarked, they read as posting-only and the clean path '
+            'silently skips them again.',
+        )
+        self.assertLess(
+            section.index('completion sequence'),
+            section.index('save_reviewed_sha.sh'),
+            '\nThe completion-sequence note must precede the checkpoint step it scopes.',
+        )
+
+    def test_checkpoint_script_still_exists(self):
+        self.assertTrue(
+            (REPO_ROOT / 'skill' / 'scripts' / 'save_reviewed_sha.sh').exists(),
+            '\nsave_reviewed_sha.sh is gone but SKILL.md still routes to it.',
+        )
+
+
 class TestCIWrapperDetectsStalledPrompt(unittest.TestCase):
     """The wrapper must not report success for a run that posted nothing.
 
