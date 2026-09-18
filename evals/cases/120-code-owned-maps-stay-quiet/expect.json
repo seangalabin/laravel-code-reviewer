@@ -1,0 +1,11 @@
+{
+  "description": "A policy map gains an entry, and a separate new class introduces a status-code constant for the first time. Neither is volatile data that belongs outside code.",
+  "must_fire": [],
+  "must_not_fire": [
+    "17c",
+    "2i",
+    "13a",
+    "3a"
+  ],
+  "notes": "The silence half of §17c, and the half that decides whether the rule is usable. A miss costs one 🔵 suggestion; a false positive fires on nearly every PR that touches a literal array, and 🔵 noise is what trains developers to stop reading the reviewer. Two independent reasons for silence are asserted at once, because the rule has two ways to go wrong. (1) AuthServiceProvider::$policies is amended — a new entry against pre-existing siblings, structurally identical to the shape §17c fires on in case 110 — but a policy map is one of the structures whose correct home IS code: it changes when the application gains a model, not when business data changes. If §17c cannot tell these two diffs apart, the carve-out list is not doing its job. (2) RetryPolicy introduces RETRYABLE_STATUS_CODES for the first time, with no base version of the file: no prior lines means no churn evidence, and §17c must never fire on a prediction that a list will grow later. §2i must stay quiet on the status codes — they are named by the constant and §2i exempts well-named collections. §13a must stay quiet: RetryPolicyTest covers both branches in the same diff. §3a must stay quiet: registering a policy is the authorization pattern working, not a gap."
+}

@@ -1,0 +1,17 @@
+{
+  "description": "Two more addresses appended to an existing hardcoded ESCALATION_RECIPIENTS constant — the set already existed, so the diff itself is the churn evidence.",
+  "must_fire": [
+    {
+      "dim": "17c",
+      "path": "app/Services/EscalationPolicy.php"
+    }
+  ],
+  "must_not_fire": [
+    "2i",
+    "3f",
+    "3i",
+    "11",
+    "13a"
+  ],
+  "notes": "The firing half of §17c. The trigger is the '+' lines sitting against pre-existing sibling entries: the set is amended, not introduced, so no prediction about future churn is required. Recipients are the cleanest business-owned shape — ops decides who gets paged, and today that decision costs a PR, a review and a deploy. Severity is deliberately NOT asserted: run.py materialises every fixture as a two-commit repo (base, then 'change under review'), so `git log -10 -- <path>` can never show the three prior amendments §17c's 🟡 escalation requires. This case grades the trigger, not the escalation, and the 🟡 half stays unverified until real PR feedback arrives. §2i must stay quiet — the email literals are self-explanatory, and where both rules see the same lines §17c outranks §2i by the dedup rule; a §2i hit here means the dedup is not holding. §3i must stay quiet: addresses are not credentials. §3f must stay quiet: nothing is leaked to a response or a log. §11 must stay quiet: this is the deployment's own operational data, and no central source is declared in the fixture. §13a must stay quiet: recipients() is an accessor with no branching business rule."
+}

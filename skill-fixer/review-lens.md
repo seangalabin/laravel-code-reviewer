@@ -1365,9 +1365,11 @@ Judgement — do **not** flag:
 
 ### 17. Contract & Configuration Stability
 
-Two failure modes that share a shape: the code is correct in isolation, and it breaks something
-outside the diff. A reviewer who only reads the changed lines cannot see either one — which is
-exactly why a human reviewer asks about them and a rule has to.
+Three failure modes that share a shape: the code is correct in isolation, and the cost lands
+outside the diff — on a consumer you do not deploy, on the next environment provisioned, or on
+every future PR that has to come back and edit the same lines again. A reviewer who only reads
+the changed lines cannot see any of them — which is exactly why a human reviewer asks about them
+and a rule has to.
 
 #### 17a. Breaking API contract changes — 🟡 Warning (🔴 when the consumer can't be updated)
 
@@ -1454,3 +1456,94 @@ $client = new WeatherClient(config('services.weather.key'));
   diff also requires.
 - `.env.example` omissions for values that are genuinely optional with a working default —
   say so if the default is real.
+
+#### 17c. Volatile data hardcoded in code — 🔵 Suggestion (🟡 when business-owned and repeatedly amended)
+
+Some literals are not wrong, they are just in the wrong place: the code compiles, the tests pass,
+and the same lines get edited again next month because the *data* changed, not the logic. Every
+such edit costs a PR, a review, and a deploy to add a row to what is effectively a table.
+
+The trap for a reviewer is that "this will change often" is a **prediction**, and predictions
+make noisy rules. So this rule never predicts. It fires only on a diff that is **itself the
+evidence** — an amendment to a set that already existed.
+
+**Fires when the diff amends an existing hardcoded set** (not when it creates one):
+
+- A new entry added to a **literal array constant or property** (`const ALLOWED_X = [...]`,
+  `private array $map = [...]`).
+- A new **`match` / `switch` arm**, or a new `elseif` branch, keyed on a **business identifier** —
+  a client / tenant / brand / region name, an email address, an account ID, a domain.
+- A **value changed** inside an inline lookup map (a rate, a threshold, a fee, a cutoff date).
+
+The `+` line sitting against pre-existing sibling lines is the whole argument. Strengthen it with
+the file's own history — `git log --oneline -10 -- <path>` — and put the count in the finding:
+*"this list has been amended in 3 of the last 10 commits to this file."* That sentence, not an
+opinion about maintainability, is what makes the finding land.
+
+**Severity:** 🔵 by default. **🟡** when both hold — the data is **business-owned** (a rate, fee
+table, notification recipient, per-client toggle, cutoff date: something a non-developer would
+ask to change) **and** the file's history shows **three or more prior amendments** to the same
+set. Demanding a database-backed refactor from a PR that adds one client is disproportionate; the
+escalation has to be earned by evidence.
+
+**The fix depends on who owns the decision — name the rung, don't offer a menu:**
+
+1. **Developer-owned, changes at deploy cadence, small closed set** → a `config/` file (plus
+   `.env.example` when it is env-driven — see §17b). The set stays in version control, which is
+   correct; it just stops living in a branch.
+2. **Developer-owned, but each entry carries different behaviour** → an interface plus one class
+   per case, resolved from a container-bound map. Adding a case then adds a *file*; it never
+   reopens a `switch`. Use this rung whenever the arms call different code — a config array
+   cannot hold behaviour, and recommending one there is a bad fix.
+3. **Business-owned, must change between deploys** → a database table and model, surfaced in the
+   admin UI if the project has one. This is the only rung that removes the deploy entirely.
+
+```php
+// FIRES — the diff adds the fourth arm; the previous three are already there
+ public function exporterFor(string $client): Exporter
+ {
+     return match ($client) {
+         'acme'   => new AcmeExporter(),
+         'globex' => new GlobexExporter(),
+         'initech'=> new InitechExporter(),
++        'umbrella' => new UmbrellaExporter(),
+     };
+ }
+// Rung 2 — the arms carry behaviour, so bind a map, don't build a config array:
+//   ExporterRegistry resolves Exporter by key from a container binding;
+//   a new client adds UmbrellaExporter + one binding line, and this method never changes.
+
+// FIRES (🟡) — business-owned and amended before
+ private const LATE_FEE_BY_TIER = [
+     'standard' => 15.00,
+-    'premium'  => 10.00,
++    'premium'  => 12.50,
+ ];
+// Rung 3 — finance changes these, and they should not wait for a deploy.
+
+// DOES NOT FIRE — the diff introduces the list for the first time; no churn evidence yet
++private const RETRYABLE_CODES = [429, 502, 503];
+```
+
+**Do NOT flag:**
+- **Closed domain concepts.** Enum cases, an HTTP status map, a `match` over an enum — these are
+  code by definition and adding a case is a domain change, not a data change. Exhaustiveness on
+  those belongs to §7, not here.
+- **The set's first introduction.** No prior lines means no evidence; that literal is §2i's
+  business (clarity) or nobody's.
+- **Structures whose correct home is code** — route definitions, policy/gate maps, service
+  provider bindings, middleware stacks, validation rule sets, Eloquent casts. These change when
+  the application changes, which is the normal reason to edit code.
+- **Test fixtures, factories, seeders, and expected-value arrays in tests.**
+- An edit to a **fallback default** on a set already backed by config or the database — the
+  indirection the rule asks for is already there.
+- A set the **card explicitly scopes** as a one-off addition with the move-out-of-code work
+  already ticketed — say so and move on.
+
+**Overlaps — post one finding, not three:**
+- **§11 outranks §17c.** If the project's central data source already owns the dataset, the fix is
+  "consume the central source", not "move it to config" — raise §11 alone.
+- **§17c outranks §2i** on the same lines: both see the literal, this one is more specific and
+  names a concrete fix.
+- **§6's strategy-flag rule still owns** operational choices that live on an enum
+  (`storageDisk()`, `isMigratedToX()`); don't double-post when the amended set is an enum method.

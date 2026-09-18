@@ -5,6 +5,60 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.75.0 / code-fixer 1.69.0 — 2026-09-18
+
+The lens had five rules touching hardcoded values (§2i magic literals, §3i secrets, §6a enum
+strategy flags, §11 centralized reference data, §12b front-end enum duplication) and every one
+of them judges a literal on **what it is**. None judged it on **how often it has to change**.
+The gap: a `match` over client names, a growing `ALLOWED_*` constant, a fee table inline in a
+service — self-explanatory, not secret, owned by nobody central, and re-edited every month. Each
+amendment costs a PR, a review, and a deploy to add what is effectively a table row.
+
+### Added
+
+- **§17c — volatile data hardcoded in code (🔵, 🟡 when business-owned and repeatedly amended).**
+  Fires only when the diff **amends a set that already existed** — a new entry in a literal array
+  constant, a new `match`/`switch`/`elseif` arm keyed on a business identifier (client, tenant,
+  brand, region, email, account id), or a changed value in an inline lookup map. The rule never
+  predicts future churn, because a prediction makes a noisy rule; the `+` line against existing
+  sibling lines **is** the evidence, and `git log --oneline -10 -- <path>` turns it into a
+  sentence the finding can state as fact ("amended in 3 of the last 10 commits").
+
+  The fix is tiered by **who owns the decision**, and the finding names one rung rather than
+  offering a menu: developer-owned at deploy cadence → a `config/` file (cross-referencing §17b
+  for the `.env.example` half); arms that carry different **behaviour** → an interface plus one
+  class per case resolved from a container binding, so a new case adds a file instead of
+  reopening a `switch`; **business-owned and needed between deploys** → a table, a model, and the
+  admin UI. Recommending a config array for branches that carry logic is a bad fix, so rung 2
+  exists specifically to stop the rule reaching for the wrong one.
+
+  Carve-outs: closed domain concepts (enum cases, status maps, `match` over an enum — §7 owns
+  exhaustiveness there); the set's **first** introduction, which has no evidence and belongs to
+  §2i if anywhere; structures whose correct home is code (routes, policy maps, provider bindings,
+  middleware stacks, validation rule sets, casts); tests, factories and seeders; an edit to a
+  fallback default on a set already backed by config or the database.
+
+### Changed
+
+- **§17 preamble — "two failure modes" → three**, and reframed from "breaks something outside the
+  diff" to "the cost lands outside the diff", which is what now covers all three: a consumer you
+  do not deploy (§17a), the next environment provisioned (§17b), and every future PR that comes
+  back to edit the same lines (§17c).
+- **`LENS-TUNING.md` dimension-split table** — new row for this release. §17c has no history
+  before it, and a §17-family rate read across this boundary now spans three rules, not two.
+
+### Evals
+
+- **`110-volatile-data-amended`** (must fire §17c) and **`120-code-owned-maps-stay-quiet`** (must
+  not). Two cases rather than one because `must_not_fire` is path-blind, so a single case cannot
+  assert that §17c fires on one file and stays silent on another. Case 120 carries both silence
+  reasons: a policy map gaining an entry — structurally identical to 110's trigger, but a
+  structure whose correct home is code — and a constant introduced for the first time, which has
+  no churn evidence. Neither case asserts **severity**: `run.py` materialises fixtures as
+  two-commit repos, so the three prior amendments §17c's 🟡 escalation requires can never appear
+  in `git log`. The trigger is graded; the escalation ships unverified until real feedback
+  arrives.
+
 ## code-reviewer 1.74.0 / code-fixer 1.68.0 — 2026-09-14
 
 Production-readiness pass. The lens already reviewed *whether the code works*; these rules
