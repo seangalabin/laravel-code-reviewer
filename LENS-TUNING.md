@@ -39,6 +39,7 @@ examples are boundary markers, never the originating incident retold.**
    | code-reviewer 1.65.0 / code-fixer 1.59.0 | §13a **added** (missing tests), §17a/§17b **added** (contract + config) | no history before this release. Expect their first weeks to show a high dismissal rate while the carve-outs settle — that is the signal to tighten the rule text, not to delete the rule |
    | code-reviewer 1.65.0 | severity floor + suggestion cap now filter what POSTS | 🔵 volume drops sharply from this release for a posting reason, not a detection reason. A 🔵 rule's dismissal rate is no longer comparable across this boundary: fewer are posted, so fewer are dismissed. Read `AI_REVIEW_MIN_SEVERITY` before concluding a rule got quieter |
    | code-reviewer 1.74.0 / code-fixer 1.68.0 | §8/§9/§10/§12a gained bullets; no `dim` added, moved or removed | nothing splits here — but those four codes now cover more ground than they did pre-1.74, so a rate shift on them is a scope change, not a behaviour change |
+   | code-reviewer 1.77.0 / code-fixer 1.69.0 | §8 gained a bullet (remote create ignoring a stored id); §2p narrowed by one exception | no `dim` added — §8 widens again, and §2p loses the `upsert*`-that-only-creates shape to it. A §2p rate drop paired with a §8 rise across this release is the handover, not a regression |
 
 4. Ship rule changes like any lens change: edit `src/review-lens.md`, `python3 build.py`,
    bump both VERSIONs, CHANGELOG entry citing the *pattern* (not one PR), push.

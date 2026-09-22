@@ -1,0 +1,13 @@
+{
+  "description": "A publish path that calls the job board's create endpoint unconditionally and writes the returned id onto a model that already carries a job_board_id column — every re-publish leaves another live vacancy on the board that the app can no longer see.",
+  "must_fire": [
+    {
+      "dim": "8",
+      "path": "app/Services/JobBoard/VacancyPublisher.php"
+    }
+  ],
+  "must_not_fire": [
+    "2p"
+  ],
+  "notes": "The true positive for the 1.77.0 remote-create rule. §8 must fire on upsertVacancy(): the model declares one remote record per row by carrying job_board_id, the method writes that column from the response, and nothing ever reads it back — so push #2 creates a second live vacancy and the column forgets the first. The client deliberately exposes updateVacancy(), so the branch the finding asks for is available in the fixture; a reviewer that only says 'this looks non-idempotent' without naming it has not applied the rule. §2p must stay quiet, and that is the half this case exists to gate: name-matches-behaviour fires correctly on an upsert* that only creates, and its remedy — rename it createVacancy() — makes the name honest while leaving the duplicates in production. The 1.77.0 deferral moves this shape to §8; a §2p hit here means the deferral is not being read. §16c is deliberately NOT asserted: it should stay quiet (nothing here is queued, and the repeat is a deliberate re-publish rather than an at-least-once replay), but it shares enough vocabulary with §8's new bullet that an assertion either way would be measuring reviewer word association, not the rule. The HTTP client carries timeout() and throw() and the returned id is validated before use, so §9 and §10 have nothing to say — the fixture has to earn the silence it does not assert as well."
+}

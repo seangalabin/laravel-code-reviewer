@@ -5,6 +5,42 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.77.0 / code-fixer 1.69.0 — 2026-09-22
+
+### Added
+
+- **§8 — a create call to an external system where the local row already stores that
+  system's identifier (🟡, 🔴 when the remote record is public, billed, or undeletable).**
+  The `*_id` column a model keeps for a remote record is the code's own declaration that
+  **one** remote record belongs to that row. A write path that calls the `create` endpoint
+  unconditionally — writing the returned id back but never reading it on the next run —
+  breaks that declaration on the second invocation and every one after. Nothing surfaces
+  locally: the column only ever holds the most recent id, so every earlier remote record is
+  live and unreferenced, and the app has no way to enumerate what it created. Recovery is
+  not a code change but a reconciliation against the remote system, which is why this ships
+  as a Warning rather than a Suggestion.
+
+  The rule asks for the branch (stored id present and still live → edit; absent → create) and
+  treats a client with **no edit call at all** as the finding in its own right — an
+  integration that can only add can never converge, and the guard (skip or fail loudly when
+  an id is already stored) is owed until an edit exists. Escalates to 🔴 where duplicates
+  are visible to customers, billed per record, or cannot be withdrawn through the client.
+
+  Exempts append-only remote surfaces where each call *should* create (events, messages, log
+  lines, webhook deliveries), id columns that identify a batch rather than a record, and
+  deliberate re-create-then-withdraw paths.
+
+  Sits beside the existing external-resource-orphan bullet, on the same axis but the other
+  failure mode: that one is about the local write **failing**, this one about it **succeeding
+  repeatedly**. No new `dim` — §8 keeps one code.
+
+### Changed
+
+- **§2p now defers the `upsert*`-that-only-creates shape to §8.** Name-matches-behaviour
+  would fire on it correctly and prescribe exactly the wrong remedy: renaming the method to
+  `createListing()` makes the name honest and leaves the duplicates. Where the two rules
+  overlap, §8 owns the finding and asks for the branch.
+
 ## code-reviewer 1.76.0 — 2026-09-15
 
 ### Fixed

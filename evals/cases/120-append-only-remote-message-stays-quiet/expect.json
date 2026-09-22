@@ -1,0 +1,8 @@
+{
+  "description": "A reminder send against an append-only messaging provider. The booking stores the returned message id and the send call is unconditional — the shape the 1.77.0 §8 rule triggers on — but here a second send is a second message by design, which is exactly the carve-out.",
+  "must_fire": [],
+  "must_not_fire": [
+    "8"
+  ],
+  "notes": "The silence half of the 1.77.0 remote-create rule, and the case that decides whether it is shippable. Every mechanical signal the rule keys on is present: an unconditional create-style call to an external system, a returned identifier written onto a column the model already carries (last_reminder_message_id), and no branch reading it back. It must still stay quiet, because the remote surface is append-only — messages accumulate by definition, a second reminder is a second message rather than a duplicate of the first, and there is no remote record to converge on. Without this case the rule is indistinguishable from 'flag every external write that stores an id', which would fire on every notification, webhook delivery and audit push in the codebase. The column name carries the intent ('last_'), the docblock states it, and the method name claims only what it does — those are the signals a reviewer has to read before firing. A §8 hit here means the carve-out is not being applied and the rule needs tightening, not the fixture."
+}
