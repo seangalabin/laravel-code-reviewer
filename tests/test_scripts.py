@@ -1378,9 +1378,9 @@ class TestReviewLensIntegrity(unittest.TestCase):
         """The lens routes findings between rules by §-reference ("canonical: §4c").
         A reference to a deleted rule sends the agent nowhere, and deleting a rule
         is exactly when this breaks."""
-        defined = (set(re.findall(r'^#### (\d+[a-p])\.', self.src, re.M))
+        defined = (set(re.findall(r'^#### (\d+[a-z])\.', self.src, re.M))
                    | set(re.findall(r'^### (\d+)\.', self.src, re.M)))
-        referenced = set(re.findall(r'§(\d+[a-p]?)', self.src))
+        referenced = set(re.findall(r'§(\d+[a-z]?)', self.src))
         dangling = sorted(referenced - defined)
         self.assertEqual(
             dangling, [],
@@ -1596,7 +1596,7 @@ class TestEvalFixtures(unittest.TestCase):
         """A case asserting §2e — a rule that moved to Rector — would pass forever
         without testing anything, because nothing can ever raise it."""
         lens = (REPO_ROOT / 'src' / 'review-lens.md').read_text()
-        defined = (set(re.findall(r'^#### (\d+[a-p])\.', lens, re.M))
+        defined = (set(re.findall(r'^#### (\d+[a-z])\.', lens, re.M))
                    | set(re.findall(r'^### (\d+)\.', lens, re.M)))
         for case in self._cases():
             spec = json.loads((case / 'expect.json').read_text())

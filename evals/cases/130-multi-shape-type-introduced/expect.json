@@ -1,0 +1,19 @@
+{
+  "description": "A Service gains applyCoupon(): array|false, and a new DTO carries a `mixed $value` whose shape depends on a sibling `kind` field.",
+  "must_fire": [
+    {
+      "dim": "2q",
+      "path": "app/Services/CouponService.php"
+    },
+    {
+      "dim": "2q",
+      "path": "app/DTOs/CouponDiscountData.php"
+    }
+  ],
+  "must_not_fire": [
+    "2b",
+    "13a",
+    "2i"
+  ],
+  "notes": "The firing half of §2q, covering two of its four shapes on two files. (1) CouponService::applyCoupon() returns array|false — a sentinel return introduced by the '+' lines, on a public Service method, so every caller must branch on `=== false` before reading a key. That is the 🟡 escalation shape (public Service boundary), but severity is not asserted: the grader checks dim and path, and the rule's first release should be graded on whether it fires, not on the escalation. (2) CouponDiscountData::$value is `mixed` whose real type is decided by the sibling `kind` field — a discriminated field hiding behind `mixed`, which is exactly what the docblock admits. Both are new files/lines, so the legacy carve-out does not apply. §2b must stay quiet: every parameter and return is declared, and `mixed` is a declared type — the dedup rule gives §2b missing types, §2q multi-shape ones, and a §2b hit here means the two rules are not separated. §13a must stay quiet: CouponServiceTest covers unknown, expired, percentage and fixed paths in the same diff. §2i must stay quiet: 'percentage'/'fixed' are the discriminator values themselves, and flagging them as magic strings would be a second finding on the same problem §2q already names."
+}

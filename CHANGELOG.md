@@ -5,6 +5,53 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.76.0 / code-fixer 1.70.0 — 2026-09-29
+
+The lens said one thing about values with more than one shape: a §2b bullet calling `mixed`
+"acceptable as a deliberate choice, not a placeholder", with no test for which is which, and
+nothing at all about the types that carry the same problem without the keyword. `array|false`,
+`User|string` for an error message, a DTO `mixed $value` whose real type depends on a sibling
+`$kind` — each passes §2b because a type *is* declared, and each makes every caller write its own
+branch on what came back. The one that forgets fails at runtime, far from where the type widened.
+
+### Added
+
+- **§2q — multi-shape types (🔵, 🟡 across a layer boundary).** Fires when a `+` line introduces
+  `mixed`, a union of unrelated types, a sentinel return (`false` / a string / an empty array
+  standing for failure), or a discriminated field hiding behind one name. The fix is named per
+  shape: throw or return `?T` instead of a sentinel, one DTO or value object per variant instead of
+  a discriminated field. 🟡 when the type sits on something other code consumes — a public
+  Service/Repository method, a DTO property, an API Resource field.
+
+  The carve-outs are the point of the rule, because `mixed` is everywhere in legitimate Laravel
+  code: a type that **already existed** on the base side (legacy — the diff didn't choose it; only
+  *widening* it fires); signatures **dictated** by a parent, interface or the framework
+  (`ArrayAccess`, magic methods, `JsonSerializable`, `CastsAttributes`); genuinely generic
+  pass-throughs (cache, settings bag, serializer); nullable single types (`?T`, `T|null`);
+  Laravel's own `string|array` conventions in `rules()`, `$casts`, middleware; test code and
+  docblock-only types.
+
+### Changed
+
+- **§2b `mixed` bullet** — no longer rules on whether `mixed` is deliberate. §2b now only checks
+  that a type is declared and hands the shape question to §2q; §2b outranks §2q when a type is
+  missing, so the two never post on the same line.
+- **Lens-integrity tests** — the §-reference and eval-dimension regexes matched sub-dimension
+  letters `[a-p]` only. A `#### 2q.` heading would never register as defined, and a `§2q`
+  reference would silently match as `§2` and pass. Widened to `[a-z]`.
+- **`LENS-TUNING.md` dimension-split table** — new row: §2q has no history, and the §2b `mixed`
+  judgement moved to it.
+
+### Evals
+
+- **`130-multi-shape-type-introduced`** (must fire §2q on two files): a Service gains
+  `applyCoupon(): array|false`, and a new DTO carries `mixed $value` discriminated by `kind`.
+  Severity is not asserted; the rule's first release is graded on firing, not escalation.
+- **`140-legacy-mixed-stays-quiet`** (must not fire §2q): a pre-existing `get(string, mixed): mixed`
+  whose signature the diff leaves untouched, a new `ArrayAccess` implementation whose `mixed`
+  signatures PHP mandates, and a new `?User` repository method. Three independent silence reasons,
+  because a keyword-only rule would fire on all three.
+
 ## code-reviewer 1.75.0 / code-fixer 1.69.0 — 2026-09-18
 
 The lens had five rules touching hardcoded values (§2i magic literals, §3i secrets, §6a enum

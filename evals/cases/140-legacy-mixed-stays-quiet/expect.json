@@ -1,0 +1,10 @@
+{
+  "description": "A pre-existing settings bag with a `mixed` get() gains a body fix and an ArrayAccess implementation; a new repository method returns ?User.",
+  "must_fire": [],
+  "must_not_fire": [
+    "2q",
+    "2b",
+    "13a"
+  ],
+  "notes": "The silence half of §2q, and the half that decides whether the rule is usable: `mixed` is everywhere in legitimate Laravel code, so a rule that fires on the keyword alone fires on nearly every PR. Three independent reasons for silence are asserted at once. (1) SettingsBag::get(string, mixed): mixed already existed on the base side; the diff changes only its body (the ?? to array_key_exists fix so a stored null is honoured). The signature is context, not a '+' line — legacy, not introduced. It is also a genuinely generic pass-through, the second carve-out. (2) offsetExists/offsetGet/offsetSet/offsetUnset are '+' lines that DO introduce `mixed`, but PHP's ArrayAccess interface mandates those signatures — the author cannot narrow them without a fatal error. This is the 'the framework made it be used' half of the carve-out, and the case exists mainly to prove the rule reads the implemented interface before firing on a new `mixed`. (3) UserRepository::findByEmail(): ?User is a nullable single type — absence is not a second shape, and §2q must never fire on ?T or T|null. §2b must stay quiet: every signature is fully typed. §13a must stay quiet: SettingsBagTest covers the null-vs-default fix and the array-access paths, and findByEmail() is a single query with no branching business rule."
+}

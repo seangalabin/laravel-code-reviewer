@@ -256,7 +256,7 @@ namespace App\Http\Controllers;
 - `never` — always throws or exits
 - `self` / `static` — fluent setters
 - `?Type` — nullable; use instead of untyped nullable
-- `mixed` — acceptable as a deliberate choice, not a placeholder
+- `mixed` — declares a type, so §2b is satisfied; whether the value *should* have more than one shape is §2q's call, not this rule's
 - Eloquent relation types: `BelongsTo`, `HasMany`, `MorphMany`, etc. on Model relationship methods
 
 **Exemptions:**
@@ -403,6 +403,74 @@ public function getOrCreateActiveSubscription(User $user): Subscription { ... }
 ```
 
 Use judgement and read the body before flagging — this requires understanding what the method does, not just its signature. A correctly-named method with an obvious, expected side effect (e.g. `save()`, `dispatch()`) is fine.
+
+#### 2q. Multi-shape types — 🔵 Suggestion (🟡 across a layer boundary)
+
+A value that can be one of several unrelated shapes pushes a type check onto every caller. Each
+one writes its own `is_array()` / `=== false` / `instanceof` branch, and the one that forgets
+fails at runtime, far from where the type was widened. A single shape removes that branch
+everywhere at once. The exception is a mixed type that the code *inherited*, not chose:
+legacy lines the diff didn't write, and signatures the language or framework dictates.
+
+**Fires when a `+` line introduces** (not when the diff merely touches an existing one):
+
+- **`mixed`** on a parameter, return type, or property.
+- **A union of unrelated types** — `int|string|array`, `Model|string`, `Collection|array|null`.
+  A union within one family is a single concept, not two shapes, so it stays quiet: `int|float`,
+  or `A|B` where both implement a shared interface the caller uses.
+- **A sentinel return** — `false`, a string, or an empty array standing for failure
+  (`array|false`, `User|string` where the string is an error message, `int|false`). Fix: throw a
+  domain exception, return `?T` when absence is a normal outcome, or return a small result object.
+- **A discriminated field hiding behind one name** — an array key or DTO property whose type
+  depends on a sibling field (`'value' => $isBulk ? [...] : 42`, or `mixed $value` keyed by a
+  `$kind`). Fix: one typed field per case, one DTO per case, or a value object per variant.
+
+```php
+// FIRES — sentinel return; every caller must check `=== false` before reading a key
++public function applyCoupon(string $code, int $subtotalCents): array|false
+
+// GOOD — failure is an exception, success has one shape
++public function applyCoupon(string $code, int $subtotalCents): AppliedCoupon
+// throws CouponNotApplicable
+
+// FIRES — `mixed` whose real type is decided by $kind
++public function __construct(public string $kind, public mixed $value) {}
+
+// GOOD — one shape per variant
++final readonly class PercentageDiscount { public function __construct(public int $percent) {} }
++final readonly class FixedDiscount { public function __construct(public Money $amount) {} }
+```
+
+**Severity:** 🔵 by default. **🟡** when the multi-shape type sits on a **boundary other code
+consumes** — a public method on a Service or Repository, a DTO property, or a field in an API
+Resource payload. A private helper's union costs one class; a public one costs every consumer,
+and in an API payload it costs clients you don't deploy (see §17a if the shape of an *existing*
+field is being widened).
+
+**Do NOT flag — the legacy and "made to be" carve-outs:**
+- **The type already existed.** The signature or field is on the base side and the diff changes
+  only the body or neighbouring lines. Widening an existing union (adding `|string` to it) is
+  new, and does fire.
+- **The signature is dictated by a parent, an interface, or the framework** — `ArrayAccess`
+  (`offsetGet(mixed $offset): mixed`), `__get` / `__set` / `__call`, `JsonSerializable`,
+  `CastsAttributes::get()` / `set()`, a vendor interface or abstract method. Check what the class
+  implements or extends before firing: the author can't narrow these without breaking the contract.
+- **A genuinely generic pass-through** — a cache, settings bag, serializer, container, or
+  collection helper whose *job* is to hold or move any value untouched. `mixed` is the honest
+  type there.
+- **Nullable single types** — `?User`, `User|null`. Absence isn't a second shape.
+- **Laravel's own conventions** — `string|array` in `rules()` and validation rule values, `$casts`,
+  `array|string` on middleware and route parameters, `Closure|string` for the framework's callable
+  arguments.
+- **Test code**, and docblock-only types (`@param mixed`) with no native declaration — those are
+  PHPStan's job, not this rule's.
+
+**Overlaps — post one finding, not two:**
+- **§2b outranks §2q** when a type is *missing*: a missing type is the bigger gap, and adding one
+  is the first fix. §2q judges only declared types.
+- **§2q outranks §2i** when the literals are the discriminator itself (`'percentage'` /
+  `'fixed'` in a `kind` field): the fix to the shape removes the strings, so a second finding
+  would only repeat this one.
 
 ---
 
