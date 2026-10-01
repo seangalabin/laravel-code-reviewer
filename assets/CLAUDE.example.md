@@ -34,7 +34,7 @@ This layering is **non-negotiable**. Each layer has one job.
 - `declare(strict_types=1);` at the top of every PHP file in `app/`.
 - **Full type declarations** — every parameter and return type (`__construct` has none). Type class **properties** too, except Eloquent's framework arrays (`$fillable`, `$casts`, `$guarded`, …).
 - **Naming:** `PascalCase` classes, `camelCase` methods/variables, `SCREAMING_SNAKE_CASE` constants, singular Model names. Names must be descriptive — no `$d`, `$tmp`, `process()`, `getData()`.
-- **Methods are verb phrases that tell the truth.** `calculateTotal()`, not `total()`. A `get*`/`find*` method must not secretly mutate, persist, or dispatch — the name must match the behaviour.
+- **Methods are verb phrases that tell the truth.** `calculateTotal()`, not `total()` — strictest on `public` methods, whose name is the contract every caller reads. A `get*`/`find*` method must not secretly mutate, persist, or dispatch — the name must match the behaviour.
 - **Readability:** positive `if` conditions (not negated with an `else`), guard clauses over deep nesting, no redundant `else` after `return`, no nested ternaries, no boolean flag arguments, ≤5 parameters (group into a DTO). Test emptiness with `empty()` / `->isEmpty()`, not `count() > 0`.
 - **No magic numbers/strings** — HTTP codes, role/status strings, and business limits belong in a constant, enum, or config.
 

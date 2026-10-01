@@ -5,6 +5,20 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.78.0 / code-fixer 1.70.0 — 2026-10-01
+
+### Changed
+
+- **§2p — a noun-named `public` method is now 🟡 Warning (was 🔵).** The rule detected
+  these all along, but at 🔵 it never reached the PR: the CI severity floor defaults to
+  `warning`, and locally the three-suggestion cap let higher-value suggestions crowd it out.
+  So noun-named action methods kept merging with the finding sitting only in the ledger. A
+  public method's name is the contract every caller reads, and renaming it later means
+  touching every call site — that cost is what earns the higher tier. `protected` /
+  `private` methods stay 🔵: the name is class-local and cheap to fix in passing. The
+  exemptions (relationships, accessors, predicates, scopes, framework-required names, fluent
+  helpers) are unchanged, so the promotion widens what posts, not what is flagged.
+
 ## code-reviewer 1.77.0 / code-fixer 1.69.0 — 2026-09-22
 
 ### Added

@@ -362,9 +362,9 @@ $amount = (int) floor($cents);
 - **Intentional markers** — `// TODO`, `// FIXME`, `// HACK`. These are signals, not noise.
 - **Licence / file headers.**
 
-#### 2p. Method names — verb phrases (🔵) and name-matches-behaviour (🟡)
+#### 2p. Method names — verb phrases (🟡 public / 🔵 private) and name-matches-behaviour (🟡)
 
-A method *does* something, so its name should start with a verb: `calculateTotal()`, `sendInvoice()`, `markAsPaid()`, `syncTags()` — not a bare noun like `total()`, `invoiceData()`, or `tags()` (for a method that performs work). Flag a method whose name is a noun/adjective with no verb as 🔵 Suggestion, suggesting a verb-led rename. A **vague/opaque action name** that has a verb but says nothing — `process()`, `doStuff()`, `handle2()`, `getData()`, `manage()` — is worse: 🟡 Warning; name the action and its subject (`calculateInvoiceTotal()`, `markOrderShipped()`).
+A method *does* something, so its name should start with a verb: `calculateTotal()`, `sendInvoice()`, `markAsPaid()`, `syncTags()` — not a bare noun like `total()`, `invoiceData()`, or `tags()` (for a method that performs work). Flag a method whose name is a noun/adjective with no verb, suggesting a verb-led rename. Severity follows visibility: a **`public`** method (including one with no visibility keyword) — 🟡 Warning, because its name is the contract every caller reads and renaming it later means touching every call site; a `protected` / `private` method — 🔵 Suggestion, since the name is confined to the class and cheap to fix in passing. A **vague/opaque action name** that has a verb but says nothing — `process()`, `doStuff()`, `handle2()`, `getData()`, `manage()` — is worse: 🟡 Warning; name the action and its subject (`calculateInvoiceTotal()`, `markOrderShipped()`).
 
 ```php
 // BAD — noun names for methods that do work
