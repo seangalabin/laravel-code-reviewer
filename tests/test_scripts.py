@@ -875,6 +875,59 @@ class TestScanDiffHybridRules(unittest.TestCase):
         diff = _mkdiff('app/Services/Pay.php', "$mode = 'live';")
         self.assertNotIn('secret-literal', self.rules_hit(diff))
 
+    # raw-sql-interpolation (§3c)
+    def test_raw_sql_interpolated_where_raw(self):
+        diff = _mkdiff('app/Repositories/R.php', '->whereRaw("name = \'$name\'")')
+        self.assertIn('raw-sql-interpolation', self.rules_hit(diff))
+
+    def test_raw_sql_interpolated_db_select(self):
+        diff = _mkdiff('app/Repositories/R.php',
+                       'DB::select("SELECT * FROM users WHERE id = $id");')
+        self.assertIn('raw-sql-interpolation', self.rules_hit(diff))
+
+    def test_raw_sql_braced_interpolation(self):
+        diff = _mkdiff('app/Repositories/R.php',
+                       'DB::update("UPDATE users SET name = \'{$user->name}\'");')
+        self.assertIn('raw-sql-interpolation', self.rules_hit(diff))
+
+    def test_raw_sql_concatenated_value(self):
+        diff = _mkdiff('app/Repositories/R.php',
+                       "DB::delete('DELETE FROM users WHERE id = ' . $id);")
+        self.assertIn('raw-sql-interpolation', self.rules_hit(diff))
+
+    def test_raw_sql_interpolated_order_by_raw(self):
+        diff = _mkdiff('app/Repositories/R.php', '->orderByRaw("$column $direction")')
+        self.assertIn('raw-sql-interpolation', self.rules_hit(diff))
+
+    def test_raw_sql_interpolated_unprepared(self):
+        diff = _mkdiff('app/Services/S.php', 'DB::unprepared("DROP TABLE $table");')
+        self.assertIn('raw-sql-interpolation', self.rules_hit(diff))
+
+    def test_raw_sql_interpolated_pdo_query(self):
+        diff = _mkdiff('app/Services/S.php',
+                       '$pdo->query("SELECT * FROM users WHERE email = \'$email\'");')
+        self.assertIn('raw-sql-interpolation', self.rules_hit(diff))
+
+    def test_raw_sql_bound_placeholder_not_flagged(self):
+        diff = _mkdiff('app/Repositories/R.php',
+                       "DB::select('SELECT * FROM users WHERE id = ?', [$id]);")
+        self.assertNotIn('raw-sql-interpolation', self.rules_hit(diff))
+
+    def test_raw_sql_named_binding_not_flagged(self):
+        diff = _mkdiff('app/Repositories/R.php',
+                       "->whereRaw('id = :id', ['id' => $id])")
+        self.assertNotIn('raw-sql-interpolation', self.rules_hit(diff))
+
+    def test_raw_sql_single_quoted_dollar_not_flagged(self):
+        # PHP does not interpolate single-quoted strings; $1 is a Postgres placeholder
+        diff = _mkdiff('app/Repositories/R.php',
+                       "DB::select('SELECT * FROM users WHERE id = $1', [$id]);")
+        self.assertNotIn('raw-sql-interpolation', self.rules_hit(diff))
+
+    def test_eloquent_query_builder_not_flagged(self):
+        diff = _mkdiff('app/Repositories/R.php', '$q = User::query()->where("id", $id);')
+        self.assertNotIn('raw-sql-interpolation', self.rules_hit(diff))
+
     # select-star (§9)
     def test_select_star_quoted(self):
         diff = _mkdiff('app/Repositories/R.php', "->select('*')")

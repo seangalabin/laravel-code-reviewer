@@ -102,6 +102,19 @@ def model_predicate(m, _line):
     return m.group(1) not in NON_MODEL_PREFIXES
 
 
+# Raw-SQL sinks whose first argument is executed as SQL text (§3c).
+RAW_SQL_SINK = (
+    r"(?:->(?:where|orWhere|having|orHaving|orderBy|groupBy|select)Raw"
+    r"|DB::(?:raw|statement|unprepared|affectingStatement|select|selectOne|scalar|cursor|insert|update|delete)"
+    r"|::fromQuery|->(?:query|exec|prepare))\s*\(\s*"
+    r"|\bmysqli_query\s*\(\s*\$\w+\s*,\s*"
+)
+# Double-quoted string that interpolates a variable ("... $id", "... {$user->id}").
+RAW_SQL_INTERPOLATED = r'"(?:[^"\\]|\\.)*\$[A-Za-z_{]'
+# Any string literal followed by string concatenation of a variable ('... = ' . $id).
+RAW_SQL_CONCATENATED = r"""(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")\s*\.\s*\$"""
+
+
 # ─── Rules applied to every file ────────────────────────────────────────────
 
 ALWAYS_RULES = [
@@ -114,8 +127,8 @@ ALWAYS_RULES = [
      "PHP superglobal — use Laravel helpers (request(), config())", None),
 
     ("MUST", "raw-sql-interpolation",
-     re.compile(r"->whereRaw\s*\(\s*['\"][^'\"]*\$|DB::statement\s*\(\s*['\"][^'\"]*\$"),
-     "whereRaw/DB::statement with interpolated value — SQL injection risk; use bound parameters", None),
+     re.compile(r"(?:" + RAW_SQL_SINK + r")(?:" + RAW_SQL_INTERPOLATED + r"|" + RAW_SQL_CONCATENATED + r")"),
+     "variable interpolated/concatenated into raw SQL — SQL injection risk; use bound parameters (? or :name)", None),
 
     ("MUST", "no-debug-output",
      re.compile(r"\b(?:error_log|var_dump|print_r)\s*\("),

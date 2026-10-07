@@ -5,6 +5,26 @@ This repo ships two independently-versioned skills — **code-reviewer** and **c
 applies to and its `VERSION` at that release. Versions follow [semver](https://semver.org/);
 the format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## code-reviewer 1.79.0 / code-fixer 1.71.0 — 2026-10-07
+
+### Changed
+
+- **§3c — SQL injection now covers concatenation and every raw-SQL sink (🔴 Critical).**
+  The rule used to name interpolation only, and the `scan_diff.py` pattern behind it
+  checked just `whereRaw` / `DB::statement`. It also stopped at the first `'` inside the
+  string, so it missed the lens's own bad example, `whereRaw("name = '$name'")`. The
+  trigger is now any variable that reaches the SQL text, by interpolation (`"... $id"`,
+  `"{$x}"`) or by concatenation (`'... = ' . $id`). That includes a `$sql` variable built
+  that way earlier in the method. Sinks now also cover `DB::select/selectOne/insert/update/delete`,
+  `DB::unprepared`, `Model::fromQuery`, the remaining `*Raw` builders, and native
+  `PDO::query/exec/prepare` / `mysqli_query`. Severity no longer drops for values that
+  look trusted, like an int-typed id: the rule judges the query shape, not where the
+  value currently comes from. A quoted placeholder (`'?'`, `':name'`) is now called out
+  as a 🟡 bug. It is a string literal, so the binding goes unused. Single-quoted `$1`
+  (a Postgres placeholder) and bound calls stay quiet. New scanner tests cover both
+  directions, and eval case `130-raw-sql-concatenated-int` gates the lens-only
+  `$sql`-variable shape.
+
 ## code-reviewer 1.78.0 / code-fixer 1.70.0 — 2026-10-01
 
 ### Changed

@@ -446,20 +446,21 @@ $user->update($request->safe()->only(['name', 'email', 'phone']));
 
 #### 3c. SQL injection in raw queries
 
-🔴 Critical — **a variable interpolated into any raw-SQL sink**: `whereRaw` / `orderByRaw` / `havingRaw` / `groupByRaw` / `selectRaw`, `DB::raw()`, `DB::statement()`, and `DB::select/update/delete($sql)`. The trigger is string **interpolation**; a static string or an already-parameterised call does not fire.
+🔴 Critical — **a variable built into the SQL text of any raw-SQL sink** instead of passed as a bound parameter. Sinks: `whereRaw` / `orWhereRaw` / `orderByRaw` / `havingRaw` / `groupByRaw` / `selectRaw`, `DB::raw()`, `DB::statement()` / `DB::unprepared()`, `DB::select/selectOne/insert/update/delete($sql)`, `Model::fromQuery()`, and native `PDO::query/exec/prepare` / `mysqli_query`. The trigger is the variable reaching the SQL string by **interpolation** (`"... $id"`, `"... {$user->id}"`) **or concatenation** (`'... = ' . $id`, `sprintf`, `implode` into the clause) — including a `$sql` variable assembled that way earlier in the method and then passed in. A static string, or a call that sends every value through the bindings array, does not fire. Severity does not drop because the value looks trusted (an id, an int cast, an auth user's field): the rule is the query shape, not the value's current source.
 
 ```php
-// BAD — value injected
+// BAD — value interpolated / concatenated into the SQL text
 ->whereRaw("name = '$name'")
-DB::statement("DELETE FROM users WHERE id = $id")
+DB::select('SELECT * FROM users WHERE id = ' . $id)
 // BAD — column/direction injected (bindings can't fix this one)
 ->orderByRaw("$column $direction")
 
-// GOOD — bind values with ?
-->whereRaw('name = ?', [$name])
+// GOOD — parameterised: placeholder in the SQL, value in the bindings array
+DB::select('SELECT * FROM users WHERE id = ?', [$id])
+->whereRaw('name = :name', ['name' => $name])
 ```
 
-Values bind with `?` placeholders. **Identifiers (column/table/direction) cannot be bound** — validate them against an allow-list before interpolating; never pass a request value straight into `orderByRaw`.
+Values bind with `?` (positional) or `:name` (named) placeholders. **A placeholder is never quoted** — `'?'` / `':name'` is a string literal, not a placeholder; the query compares against a literal `?` and the binding goes unused (🟡 Warning — wrong result, not injection). **Identifiers (column/table/direction) cannot be bound** — validate them against an allow-list before interpolating; never pass a request value straight into `orderByRaw`. An identifier interpolated after an allow-list check in the same method does not fire.
 
 #### 3d. Insecure direct object reference (IDOR)
 

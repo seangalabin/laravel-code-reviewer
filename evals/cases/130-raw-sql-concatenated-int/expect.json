@@ -1,0 +1,13 @@
+{
+  "description": "A new report method assembles its SQL into a $sql variable by concatenating an int-typed year and a string region, then passes the variable to DB::select().",
+  "must_fire": [
+    {
+      "dim": "3c",
+      "path": "app/Repositories/SalesReportRepository.php"
+    }
+  ],
+  "must_not_fire": [
+    "3d"
+  ],
+  "notes": "The true positive for the 1.79.0 widening of §3c to concatenation and to a $sql variable built earlier in the method. The scanner cannot see this shape: the sink receives a bare variable, so only the lens catches it. The int-typed $year is deliberate pressure: it is not injectable today, and a reviewer that waves it through has missed that §3c judges the query shape, not the value's current source. The string $region is injectable outright. The existing totalsForYear() in the same file is the parameterised form the finding should point to. §3d must stay quiet: nothing is fetched by a request-supplied id, so an ownership finding here would be vocabulary association with 'SQL', not the IDOR rule."
+}
